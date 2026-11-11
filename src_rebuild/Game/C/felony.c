@@ -98,6 +98,14 @@ char GetPlayerDirectionOfTravel(PLAYER* pl)
 	return direction;
 }
 
+/* JERICHO: a game mode may silence the stock "suspect hit another vehicle"
+ * cop line (felony type 4 -> CopSay 7/8, below) for one collision. Called with
+ * the car the local player's car collided with (CarHitByPlayer: either side
+ * may have been the striker); nonzero = say nothing. NULL = stock. The felony
+ * points themselves are untouched. */
+int (*gJerCopHitLineVeto)(int victimCarId) = NULL;
+static int felonyHitVictim = -1;	// CarHitByPlayer's victim while it notes the felony
+
 // [D] [T]
 void NoteFelony(FELONY_DATA *pFelonyData, char type, short scale)
 {
@@ -198,6 +206,10 @@ void NoteFelony(FELONY_DATA *pFelonyData, char type, short scale)
 				break;
 			case 4:
 				if ((rnd % 3) & 0xff != 0)
+					break;
+
+				if (gJerCopHitLineVeto != NULL && felonyHitVictim >= 0 &&
+					gJerCopHitLineVeto(felonyHitVictim))
 					break;
 
 				CopSay((rnd & 1) + 7, 0);
@@ -452,7 +464,9 @@ void CarHitByPlayer(CAR_DATA *victim, int howHard)
 		{
 			if (howHard < 32) 
 			{
+				felonyHitVictim = victim->id;
 				NoteFelony(&felonyData, 4, (howHard << 0x17) >> 0x10);
+				felonyHitVictim = -1;
 				return;
 			}
 			
@@ -469,7 +483,9 @@ void CarHitByPlayer(CAR_DATA *victim, int howHard)
 			type = 5;
 		}
 
+		felonyHitVictim = victim->id;
 		NoteFelony(&felonyData, type, 4096);
+		felonyHitVictim = -1;
 	}
 }
 

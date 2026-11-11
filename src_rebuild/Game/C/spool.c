@@ -1476,6 +1476,18 @@ int UpdateSpoolPC(void)
 		SpoolLumpSize = 16 * 1024 * 1024; // allocate 16 MB of RAM for spoolable data
 		g_CurrentLevelSpoolData = (char*)malloc(16 * 1024 * 1024);
 
+		// JERICHO: a failed allocation used to be read from anyway (NULL - offset +
+		// sector) -- drop the queue instead; the next request tries again.
+		if (g_CurrentLevelSpoolData == NULL)
+		{
+			printWarning("spool: no memory for the level's 16 MB spool data - %d request(s) dropped\n",
+				spoolcounter - spoolpos_reading);
+			spoolcounter = 0;
+			spoolpos_reading = 0;
+			spoolactive = 0;
+			return 1;
+		}
+
 		loadsectors(g_CurrentLevelSpoolData, SpoolLumpOffset / CDSECTOR_SIZE, SpoolLumpSize);
 	}
 
@@ -1512,6 +1524,22 @@ int UpdateSpoolPC(void)
 
 		SPOOL_WARNING("spool type=%s cb=%d sec=%d cnt=%d id=%d\n", nameType, current->func ? 1 : 0, current->sector, current->nsectors, spoolpos_reading);
 #endif // _DEBUG
+
+		// JERICHO: a request must lie inside the 16 MB the level's spool lump was
+		// read into. One that does not was copied from outside the buffer: the
+		// 0.24.0 access violation in UpdateSpool's memcpy (source 0xB5E800) during a
+		// multiplayer placement's spool storm. Skip it and say which one it was.
+		{
+			long long from = (long long)current->sector * CDSECTOR_SIZE - SpoolLumpOffset;
+			long long len = (current->type == 1) ? 17LL * CDSECTOR_SIZE : (long long)current->nsectors * CDSECTOR_SIZE;
+
+			if (from < 0 || from + len > 16LL * 1024 * 1024)
+			{
+				printWarning("spool: request %d (type %d, sector %d, %d sector(s)) is outside the level's spool data (lump at %d) - skipped\n",
+					spoolpos_reading, current->type, current->sector, current->nsectors, SpoolLumpOffset);
+				continue;
+			}
+		}
 
 		// seek to required sector
 		spoolDataPtr = g_CurrentLevelSpoolData - SpoolLumpOffset + current->sector * CDSECTOR_SIZE;
@@ -2099,7 +2127,11 @@ void SpecialStartNextBlock(void)
 	DrawSyncCallback(NULL);
 
 	// if previous state blocks are fully loaded, start next state
-	if (specBlocksToLoad == 0)
+	// JERICHO: <= 0, not == 0. A state whose length came out 0 (a missed size
+	// header: lengthLowBlock & co. stay 0) used to request a block, drop to -1 and
+	// never match again - an endless LowSpool walking specmallocptr + n*2048 past
+	// the 2 MiB level heap (the Cops n Robbers crash). Now it just ends the state.
+	if (specBlocksToLoad <= 0)
 	{
 		specialState++;
 		switch (specialState) 
@@ -2198,17 +2230,44 @@ void CheckSpecialSpool(void)
 
 	if (startSpecSpool != -1 && startSpecSpool+400 < CameraCnt) 
 	{
+#ifndef PSX
+		int pass = 0;
+#endif
+
 		while (specSpoolComplete == 0)
 		{
 			SpoolSYNC();
 
+#ifndef PSX
+			// JERICHO: PsyX DrawSync runs the armed callback (SpecialStartNextBlock)
+			// AND returns 0 (PsyCross LIBGPU.C), so the stock line below started TWO
+			// blocks per pass; CleanSpooled then missed its size header
+			// (specBlocksToLoad == 6). Disarm it and start exactly one block, and
+			// only once the queue is empty: a block still queued (the stall that
+			// brought us here) is read first, so its callback sees its own count.
+			DrawSyncCallback(NULL);
+
+			if (spoolcounter == 0)
+				SpecialStartNextBlock();
+
+			// A whole special car is well under 512 blocks; never spin past that.
+			// The half-loaded model stays invalid and this level spools no more.
+			if (++pass > 512)
+			{
+				printWarning("spool: special car spool did not finish in %d passes (state %d, %d block(s) left) - stopped, special cars off for this level\n",
+					pass, specialState, specBlocksToLoad);
+				allowSpecSpooling = 0;
+				break;
+			}
+#else
 			if (DrawSync(1) == 0)
 				SpecialStartNextBlock();
+#endif
 
 			StartSpooling();
 		}
 
-		specModelValid = 1;
+		specModelValid = (specSpoolComplete != 0) ? 1 : 0;
 		specialState = SpecSpool_None;
 		specBlocksToLoad = 0;
 		specSpoolComplete = 0;

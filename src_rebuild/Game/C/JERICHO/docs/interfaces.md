@@ -99,6 +99,7 @@ another mod's header and no mod links to another mod's symbols.
 | header | asked by | answered by |
 |---|---|---|
 | `jer_carquery.h` | `mp`, `sandbox` | `carhacks` |
+| `jer_carquery.h` roles (`JER_CARQ_ROLES`, `JER_CARQ_ROLEPICK`) | `carhacks` (the join car select) | `mp` (the game mode) |
 | `jer_crumple.h` | `mp` | `crumple` |
 | `jer_ped_archive.h` | `mp` | `pedhacks` |
 

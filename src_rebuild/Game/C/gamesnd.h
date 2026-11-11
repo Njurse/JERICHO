@@ -91,6 +91,20 @@ extern int LoadBankFromLumpMax(int bank, int lump, int maxSamples);
 extern int CarHasSiren(int slot); // 0x000522EC
 extern int GetCarBankSample(int slot); // 0x0004D690
 
+/* JERICHO: the SOUND_BANK_VOICES sample for cop phrase `phrase` (the host's own
+ * numbering: heading clips 1..6, then chatter 7..17 - what CopSay/PlaySpeech
+ * index) spoken from the car in resident `slot`. A cop car from another city
+ * speaks that city's lines when they are resident (a Driver 1 cop: its own
+ * bank's baked lines, else Driver 1 Miami's - JerPoliceVoiceCity, models.h);
+ * otherwise, and for any slot < 0, the host city's. -1 = no cop lines loaded. */
+extern int GetCopPhraseSample(int slot, int phrase);
+
+/* JERICHO: should a heading clip (phrase direction + 1) follow `phrase` said
+ * from `slot`? For the stock Driver 2 lines, CopSay's rule: after 10 for cop
+ * banks 2/3, after 15 for banks 1/4. For a baked set (a Driver 1 / bank city's
+ * LUMP_POLICE_VOICES): always after 10 and 15. 0 when no cop lines are loaded. */
+extern int CopPhraseWantsHeading(int slot, int phrase);
+
 /* JERICHO-DIAG: log a horn/siren sample start. Inert unless JERICHO_DIAG_SIREN
  * is set; the car stress harness uses it to detect horn/siren contamination. */
 extern void SoundLogCarSample(const char* kind, int slot, int sample);

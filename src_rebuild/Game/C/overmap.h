@@ -14,6 +14,19 @@ extern int map_z_shift;
  * screen-relative cursor maps 1:1 to world space */
 extern int gUseRotatedMap;
 
+/* JERICHO-HOOK: non-zero = the map (overhead or multiplayer) shows the red/blue
+ * felony flash whatever the felony. A module sets it while it wants it and
+ * clears it after; the engine never writes it. */
+extern int gJerMapForceFlash;
+
+/* JERICHO-HOOK: bit N set = car_data[N] draws a cop sight cone on the overhead and
+ * multiplayer maps, beside the engine's own cops (CONTROL_TYPE_PURSUER_AI,
+ * CONTROL_FLAG_COP). For cops the engine does not drive: a remote player's police
+ * car carries CONTROL_TYPE_PLAYER and no cop flag. A module owns the mask and
+ * rewrites it every frame it cares; InitOverheadMap clears it each level. Drawing
+ * only: no AI, felony or sound reads it. */
+extern unsigned gJerMapCopCars;
+
 extern void InitOverheadMap(); // 0x000197BC
 extern void ProcessOverlayLump(char *lump_ptr, int lump_size); // 0x00016AE8
 

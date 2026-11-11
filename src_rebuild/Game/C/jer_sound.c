@@ -124,29 +124,117 @@ void jer_sound_request_menu_bank(void)
 	gJerMenuBankWanted = 1;
 }
 
+typedef struct JerSoundLumpReq
+{
+	int used;
+	int bank;
+	int lump;
+	int maxSamples;
+	int base;	/* first sample index after load, -1 if none */
+	int count;
+} JerSoundLumpReq;
+
+static JerSoundLumpReq gJerLump[JER_SOUND_LUMP_MAX];
+
+int jer_sound_request_lump(int bank, int lump, int maxSamples)
+{
+	int i, freeSlot = -1;
+
+	if (bank < 0 || lump < 0)
+		return -1;
+
+	for (i = 0; i < JER_SOUND_LUMP_MAX; i++)
+	{
+		if (!gJerLump[i].used)
+		{
+			if (freeSlot < 0)
+				freeSlot = i;
+			continue;
+		}
+
+		if (gJerLump[i].bank == bank && gJerLump[i].lump == lump)
+		{
+			/* a tighter cap wins; -1 means "the whole lump" and is the
+			 * looser bound, so it never overwrites a real cap */
+			if (maxSamples >= 0 && (gJerLump[i].maxSamples < 0 ||
+				maxSamples < gJerLump[i].maxSamples))
+				gJerLump[i].maxSamples = maxSamples;
+			return i;
+		}
+	}
+
+	if (freeSlot < 0)
+		return -1;
+
+	gJerLump[freeSlot].used = 1;
+	gJerLump[freeSlot].bank = bank;
+	gJerLump[freeSlot].lump = lump;
+	gJerLump[freeSlot].maxSamples = maxSamples;
+	gJerLump[freeSlot].base = -1;
+	gJerLump[freeSlot].count = 0;
+	return freeSlot;
+}
+
+int jer_sound_lump_base(int slot)
+{
+	if (slot < 0 || slot >= JER_SOUND_LUMP_MAX || !gJerLump[slot].used)
+		return -1;
+	return gJerLump[slot].base;
+}
+
+int jer_sound_lump_count(int slot)
+{
+	if (slot < 0 || slot >= JER_SOUND_LUMP_MAX || !gJerLump[slot].used)
+		return 0;
+	return gJerLump[slot].count;
+}
+
 void jer_sound_load_requested_banks(void)
 {
 	int before;
+	int i;
 
 	gJerMenuBankBase = -1;
 	gJerMenuBankCount = 0;
 
-	if (!gJerMenuBankWanted)
-		return;
+	if (gJerMenuBankWanted)
+	{
+		/* Only the four JER_MENU_SFX_* samples are needed. Loading the whole
+		 * frontend lump overflowed the in-game SFX bank, which refused it
+		 * outright, so every jer_sound_menu_play was silently a no-op. */
+		before = GetSoundBankSampleCount(SOUND_BANK_SFX);
+		gJerMenuBankCount = LoadBankFromLumpMax(SOUND_BANK_SFX, SBK_ID_MENU, JER_MENU_SFX_COUNT);
 
-	/* Only the four JER_MENU_SFX_* samples are needed. Loading the whole
-	 * frontend lump overflowed the in-game SFX bank, which refused it
-	 * outright, so every jer_sound_menu_play was silently a no-op. */
-	before = GetSoundBankSampleCount(SOUND_BANK_SFX);
-	gJerMenuBankCount = LoadBankFromLumpMax(SOUND_BANK_SFX, SBK_ID_MENU, JER_MENU_SFX_COUNT);
+		if (gJerMenuBankCount > 0)
+			gJerMenuBankBase = before;
+		else
+			gJerMenuBankCount = 0;
 
-	if (gJerMenuBankCount > 0)
-		gJerMenuBankBase = before;
-	else
-		gJerMenuBankCount = 0;
+		jer_log("[jer_sound] menu samples in game: %d at SFX %d (bank held %d of %d)\n",
+			gJerMenuBankCount, gJerMenuBankBase, before, GetSoundBankCapacity());
+	}
 
-	jer_log("[jer_sound] menu samples in game: %d at SFX %d (bank held %d of %d)\n",
-		gJerMenuBankCount, gJerMenuBankBase, before, GetSoundBankCapacity());
+	for (i = 0; i < JER_SOUND_LUMP_MAX; i++)
+	{
+		gJerLump[i].base = -1;
+		gJerLump[i].count = 0;
+
+		if (!gJerLump[i].used)
+			continue;
+
+		before = GetSoundBankSampleCount(gJerLump[i].bank);
+		gJerLump[i].count = LoadBankFromLumpMax(gJerLump[i].bank, gJerLump[i].lump,
+			gJerLump[i].maxSamples);
+
+		if (gJerLump[i].count > 0)
+			gJerLump[i].base = before;
+		else
+			gJerLump[i].count = 0;
+
+		jer_log("[jer_sound] lump %d -> bank %d: %d sample(s) at %d (bank held %d of %d)\n",
+			gJerLump[i].lump, gJerLump[i].bank, gJerLump[i].count, gJerLump[i].base,
+			before, GetSoundBankCapacity());
+	}
 }
 
 int jer_sound_menu_play(int sample)

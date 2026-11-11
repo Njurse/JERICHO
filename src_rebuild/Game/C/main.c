@@ -3,6 +3,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
+#include "jer_arrow.h"	// JERICHO-HOOK: module target arrows (stock Draw3DTarget)
 #include "jer_console.h"	// JERICHO-HOOK: unified status console stream
 #include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload/free)
 #include "jer_car_palette.h"	// JERICHO-HOOK: per-instance car colour (inert table)
@@ -2395,9 +2396,9 @@ int gBootOnFoot = 0;
 
 /* -mp: defined unconditionally (glaunch.c reads it when it computes the
  * take-a-ride mission number); the boot arguments are accepted in every
- * config. gBootMpArena selects which of the two
- * multiplayer maps per city (0 = the take-a-ride default arena, 1 = the
- * second arena; becomes gSubGameNumber). */
+ * config. gBootMpArena selects the multiplayer map, 0..3 (0 = the
+ * take-a-ride default arena, 1 = the second; 2 and 3 are reserved for maps
+ * the stock game does not ship; becomes gSubGameNumber). */
 int gBootMpLevel = 0;
 int gBootMpArena = 0;
 
@@ -3172,12 +3173,13 @@ int redriver2_main(int argc, char** argv)
 			gBootMpLevel = 1;
 			gBootMpArena = 0;
 
-			/* optional arena: -mp 0 | -mp 1 (two multiplayer maps per city) */
+			/* optional arena: -mp 0..3 (mp proto 24 widened the arena id; the
+			 * stock game ships two multiplayer maps per city, 0 and 1) */
 			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
 			{
 				int arena = atoi(argv[i + 1]);
 
-				if (arena == 0 || arena == 1)
+				if (arena >= 0 && arena <= 3)
 				{
 					gBootMpArena = arena;
 					i++;
@@ -3756,6 +3758,11 @@ void RenderGame2(int view)
 	}
 
 	DrawAllTheCars(view);
+
+	// JERICHO-HOOK: the target arrows modules registered with jer_arrow_at /
+	// jer_arrow_on_car, after the cars so an arrow follows this frame's car
+	// position. No slot set = nothing drawn.
+	jer_arrow_draw();
 
 	// JERICHO-HOOK: module world-space extras (projectiles, pickups) draw
 	// here, mid-render with the camera matrices live, into the real OT.

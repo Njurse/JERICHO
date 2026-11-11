@@ -870,6 +870,109 @@ short PrintDigit(int x, int y, char *string)
 	return width;
 }
 
+// JERICHO: PrintDigit at a scale, for HUD clocks smaller (or larger) than the
+// mission timer. 16 = PrintDigit's own size. Same glyphs ("0-9", ':' and '/'),
+// same fixed advance (16 px, 8 for ':') and the same top-aligned rows as
+// PrintDigit, drawn as POLY_FT4 quads like PrintScaledString (which is
+// centre-only and has no ':'). Returns the x after the last glyph, like
+// PrintDigit, so the ".FF" part can follow it with PrintString.
+int PrintDigitScaled(int x, int y, char *string, int scale)
+{
+	FONT_DIGIT* pDigit;
+	POLY_FT4* font;
+	char chr;
+	int index, fixedWidth, x16, gx, gw, gh;
+	u_char vOff, h;
+
+	if (scale == 16)
+		return PrintDigit(x, y, string);
+
+	if (scale < 1)
+		scale = 1;
+
+#ifdef HIRES_FONTS
+	SetHiresDigitsTexture(0);
+#endif
+
+	font = (POLY_FT4*)current->primptr;
+	x16 = x * 16;
+
+	while ((chr = *string++) != 0)
+	{
+		if (chr == ':')
+			index = 11;
+		else if (chr == '/')
+			index = 10;
+		else
+			index = chr - '0' & 0xff;
+
+		fixedWidth = (chr == ':') ? 8 : 16;
+
+		if (index > 11)
+		{
+			x16 += fixedWidth * scale;	// not a digit glyph: keep the advance
+			continue;
+		}
+
+		pDigit = &fontDigit[index];
+
+		if (index < 6)
+		{
+			vOff = 0;
+			h = 28;
+		}
+		else
+		{
+			vOff = 28;
+			h = 31;
+		}
+
+		gx = (x16 + (fixedWidth - pDigit->width) * scale / 2) / 16;
+		gw = (pDigit->width * scale + 8) / 16;
+		gh = (h * scale + 8) / 16;
+
+		setPolyFT4(font);
+		setSemiTrans(font, 1);
+		setRGB0(font, gFontColour.r, gFontColour.g, gFontColour.b);
+
+		font->x0 = gx;
+		font->y0 = y;
+		font->x1 = gx + gw;
+		font->y1 = y;
+		font->x2 = gx;
+		font->y2 = y + gh;
+		font->x3 = gx + gw;
+		font->y3 = y + gh;
+
+#ifdef HIRES_FONTS
+		if (gHiresDigitsTexture)
+		{
+			setUVWH(font, pDigit->xOffset, vOff, pDigit->width, h);
+		}
+		else
+#endif
+		{
+			setUVWH(font, digit_texture.coords.u0 + pDigit->xOffset, digit_texture.coords.v0 + vOff, pDigit->width, h);
+		}
+
+		font->clut = digit_texture.clutid;
+		font->tpage = digit_texture.tpageid;
+
+		addPrim(current->ot, font);
+		font++;
+
+		x16 += fixedWidth * scale;
+	}
+
+	current->primptr = (char*)font;
+
+#ifdef HIRES_FONTS
+	SetHiresDigitsTexture(1);
+#endif
+
+	return (x16 + 15) / 16;
+}
+
 // [D] [T]
 int PrintStringFeature(char *string, int x, int y, int w, int h, int transparent)
 {
@@ -1080,6 +1183,93 @@ int PrintScaledString(int y, char *string, int scale)
 #ifdef HIRES_FONTS
 	SetHiresDigitsTexture(1);
 #endif
+
+	return x;
+}
+
+// JERICHO: the race start's 3-2-1 for any caller. mdraw.c DrawMission draws it as
+// PrintScaledString(96, "3", 32 - (g321GoDelay & 31)): the digit texture, centred,
+// each digit shrinking from full size (32) over its 32 frames. count 1..99 is that
+// number at `scale` (clamped 1..64); count 0 is "GO!" -- the digit texture has no
+// letters, so it is the in-game hires font at the matching height (5x its default
+// 0.275 at scale 32), centred on the same x and y; with no hires font loaded, the
+// plain font, centred. Colour: SetTextColour first, as for PrintScaledString.
+// Returns the x after the last glyph.
+int Print321Go(int y, int count, int scale)
+{
+	char text[4];
+	char go[] = "GO!";
+
+	if (scale < 1)
+		scale = 1;
+	if (scale > 64)
+		scale = 64;
+
+	if (count > 0)
+	{
+		if (count > 99)
+			count = 99;
+
+		if (count > 9)
+		{
+			text[0] = (char)('0' + count / 10);
+			text[1] = (char)('0' + count % 10);
+			text[2] = 0;
+		}
+		else
+		{
+			text[0] = (char)('0' + count);
+			text[1] = 0;
+		}
+
+		return PrintScaledString(y, text, scale);
+	}
+
+#ifdef HIRES_FONTS
+	if (gHiresFontTexture)
+	{
+		float k = 5.0f * (float)scale / 32.0f;		/* x the default size */
+		int w = (int)(StrighWidthHires(go) * k);
+		int asc = (int)(HIRES_FONT_BASELINE * k);	/* the line's baked ascent at that size */
+
+		return PrintStringHiresScaled(go, 160 - w / 2, y - asc / 2, HIRES_FONT_DEFAULT_SCALE * k);
+	}
+#endif
+
+	PrintStringCentred(go, (short)(y - 7));
+	return 160;
+}
+
+// JERICHO: THE HUD TIMER. Every JERICHO clock looks like the mission timer
+// (mdraw.c DrawTimer): "MM:SS" in the digit texture (PrintDigit, here at scale/16
+// through PrintDigitScaled), then ".FF" hundredths in the small font, its baseline
+// on the digits' (DrawTimer's y + 13 at full size). `align` places it: x is the
+// left edge, the right edge, or the centre of the digits. Colour: SetTextColour
+// first -- the caller owns what the colour means (docs/screens.md, HUD timers).
+// ms < 0 draws 00:00.00. Returns the left x, so a label can sit beside it.
+int PrintTimer(int x, int y, int ms, int scale, int align)
+{
+	char mmss[8], frac[8];
+	int dw, fw, end;
+
+	if (scale < 1)
+		scale = 1;
+	if (ms < 0)
+		ms = 0;
+
+	snprintf(mmss, sizeof(mmss), "%02d:%02d", ms / 60000 % 100, ms / 1000 % 60);
+	snprintf(frac, sizeof(frac), ".%02d", ms % 1000 / 10);
+
+	dw = (4 * 16 + 8) * scale / 16;	/* four 16 px digits and an 8 px ':' */
+	fw = StringWidth(frac);
+
+	if (align == PRINT_TIMER_RIGHT)
+		x -= dw + fw;
+	else if (align == PRINT_TIMER_CENTRE)
+		x -= dw / 2;
+
+	end = PrintDigitScaled(x, y, mmss, scale);
+	PrintString(frac, end, y + 28 * scale / 16 - 15);
 
 	return x;
 }
