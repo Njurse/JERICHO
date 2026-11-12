@@ -410,10 +410,11 @@ JERICHO-PROBE: steps=239 ms=7986 steps_per_sec=29 max_speed=168 ff=0 lock=0 skip
 - `steps_per_sec` is the clock check, measured against **real milliseconds**
   (`PsyX_GetTicks`), never the vblank counter — the frame skip inflates that counter,
   which would make the fast case read *slow*.
-- 30 = stock. ~210 = `FastForward` (7 steps/frame). Anything else above 30 with
-  `ff=0` is the PsyX frame skip below (`skip=1`), which is what a latched BACKSPACE
-  produced: **355 steps/second, ~12x**, with the car's per-sim-second speed curve
-  unchanged (0, 67, 98, 130 ...) — i.e. the handling was never the problem.
+- 30 = stock. ~210 = `FastForward` (7 steps/frame), including a held or latched
+  BACKSPACE: the engine re-asserts `ff=1` from the PsyX hold (`skip=1`) every gated
+  frame. The skip alone no longer raises the rate — the wall-clock gate caps it —
+  so the old **355 steps/second, ~12x** was pre-gate. The car's per-sim-second speed
+  curve is unchanged (0, 67, 98, 130 ...) — i.e. the handling was never the problem.
 - Drive it headlessly: `JERICHO_HANDLING_PROBE=1 JERICHO_PADPROBE_FORCE=cross
   JERICHO_dev.exe -level chicago -frames 240` (gas is `cross`; use `square` under the
   tmb_buttons scheme). The verdict line only prints on the `-frames` exit path.
@@ -454,8 +455,11 @@ same throttle, `speed` must not differ between `mbc=0/30` and `mbc>0` seconds.
 The engine offers fast-forward two ways, and both are the sim's business, so a
 module that owns the sim rate (an mp session) must be able to turn the offer OFF:
 
-- `BACKSPACE` — a debug/cutscene convenience (`redriver2_psxpc.cpp`): one press runs
-  the sim fast from then on.
+- `BACKSPACE` — a debug/cutscene convenience: **hold it** to run the sim fast and
+  release it for normal speed. PsyX owns the hold (`PsyX_GetFastForwardHeld`, the
+  same latch as the frame skip: key-down sets it; key-up, a lost focus and the mp
+  lock clear it), because the per-frame clear below would otherwise cut a hold off
+  after the single frame its key-down landed in.
 - the fullscreen map — `overlay.c` sets `FastForward` on **every frame** the map is
   open, so the world keeps moving behind it.
 
@@ -474,17 +478,17 @@ different rate from every other machine, which is a desync by definition.
 
 `FastForwardLocked` gated the engine's own `BACKSPACE` handler but not PsyX's, and
 PsyX has its own: on BACKSPACE key-down it sets `g_skipSwapInterval`, which makes
-`PsyX_Sys_GetVBlankCount()` advance the counter an extra time per call, so the game's
-2-vblank/30 Hz gate in `FilterFrameTime` passes on nearly every frame and the sim
-runs at whatever rate the machine renders. Turning off "the fast-forward key" in a
+`PsyX_Sys_GetVBlankCount()` advance the counter an extra time per call. Back when the
+step gate followed that counter, this satisfied the gate on nearly every frame and
+the sim ran at whatever rate the machine renders. Turning off "the fast-forward key" in a
 session therefore turned off one of two, and the surviving one was worse: it is
 latched on key-DOWN and cleared **only** by key-UP, so a key-up that never arrives
 (focus stolen mid-press, a handler that swallows it) leaves the skip on for the rest
 of the process.
 
-That is a ~12x sim, measured at **355 steps/second against a stock 29-30**, and it
-reads as "the player's car drives way too fast / the handling model is broken". Three
-things close it:
+That was a ~12x sim, measured at **355 steps/second against a stock 29-30** before
+the step gate moved to wall-clock time, and it reads as "the player's car drives way
+too fast / the handling model is broken". Three things close it:
 
 - `PsyX_SetFastForwardLocked(int)` (`PsyX_public.h`) mirrors the engine's
   `FastForwardLocked`; the engine pushes it once per frame from `State_GameLoop`.
@@ -497,10 +501,20 @@ things close it:
   them, so those frames inherited whatever a map or a BACKSPACE tap had set and the
   sim stayed at 7 steps/frame afterwards.
 
+The per-frame clear is also why a key-down alone is not enough. BACKSPACE is a
+**hold**, so `State_GameLoop` re-asserts `FastForward` from
+`PsyX_GetFastForwardHeld()` on every gated frame while the key is down (and the clock
+is unlocked). Release, focus loss and the lock all clear the PsyX latch, so the
+re-assert stops and the next clear returns the sim to 30 Hz. Today a held or latched
+key measures ~210 steps/second (the deliberate 7x path); the 355 above was the old
+render-coupled skip.
+
 `JERICHO_FF_LATCH=1` reproduces the latched state at boot for testing (it is the
-skipped key-up, without the keyboard); it is test-only. A live 2-seat session with it
-set is the end-to-end check: both seats log the release on the first frame, and
-every probe sample afterwards reads `lock=1 skip=0`.
+skipped key-up, without the keyboard); it is test-only. It is the same latch the key
+drives, so the engine re-asserts it too: a single-player run reads `ff=1 skip=1` at
+~210 steps/s. A live 2-seat session with it set is the end-to-end check: both seats
+log the release on the first frame, and every probe sample afterwards reads
+`lock=1 skip=0 ff=0`.
 
 ### The step gate itself is wall-clock, and every step path goes through it
 

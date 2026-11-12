@@ -54,6 +54,14 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### Fast-forward
+
+- **Holding BACKSPACE fast-forwards again.** The wall-clock step gate stopped the
+  old frame-skip path from speeding the sim up, and the engine's 7x flag was
+  cleared every frame, so a press only bought a single frame. The flag is now
+  re-asserted for as long as the key is held, and released on key-up, on focus
+  loss, or in an online session, where fast-forward stays disabled.
+
 ## v0.13.9
 
 *Released 2026-11-05.*

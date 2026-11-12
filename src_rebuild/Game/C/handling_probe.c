@@ -228,7 +228,9 @@ void JerHandleProbeFrame(void)
 
 	now = PsyX_GetTicks();
 
-	ff = FastForward;
+	/* Report the EFFECTIVE fast-forward: DisplayOverlays clears FastForward at the
+	 * end of a frame, so a held key reads 0 here unless the PsyX hold is counted. */
+	ff = FastForward || PsyX_GetFastForwardHeld();
 	lock = FastForwardLocked;
 	skip = PsyX_GetFrameSkip();
 	cut = gSkipInGameCutscene;
@@ -301,10 +303,13 @@ void JerHandleProbeSummary(void)
 	// The clock is PsyX_GetTicks (real milliseconds), NOT the vblank counter: while
 	// the frame skip is on the vblank counter advances extra times per frame, so a
 	// rate derived from it reads LOW in exactly the case this has to catch.
-	// 30 = stock. ~210 = FastForward (main.c: cnt = 7). Above 30 with ff=0 is the
-	// PsyX frame-skip path (skip=1), which Psyx_SetFastForwardLocked now gates.
+	// 30 = stock. ~210 = FastForward (main.c: cnt = 7); a held or latched
+	// BACKSPACE now reads ff=1 skip=1, because the engine re-asserts ff from the
+	// PsyX hold on every gated frame. The skip alone no longer raises the rate
+	// (the wall-clock gate caps it); the lock still gates both paths.
 	printInfo("JERICHO-PROBE: steps=%u ms=%u steps_per_sec=%u max_speed=%d ff=%d lock=%d skip=%d verdict=%s\n",
-		(unsigned int)probeSteps, elapsedMs, perSec, probeMaxSpeed, FastForward, FastForwardLocked,
+		(unsigned int)probeSteps, elapsedMs, perSec, probeMaxSpeed,
+		FastForward || PsyX_GetFastForwardHeld(), FastForwardLocked,
 		PsyX_GetFrameSkip(),
 		(perSec > (unsigned int)(PROBE_STEPS_PER_SEC + PROBE_STEPS_PER_SEC / 2)) ? "CLOCK_FAST"
 			: (perSec == 0) ? "NO_STEPS" : "RATE_OK");

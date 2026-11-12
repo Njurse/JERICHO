@@ -2196,6 +2196,14 @@ void State_GameLoop(void* param)
 		StepGame();
 	}
 #else
+	/* JERICHO: BACKSPACE is a HELD key, and DisplayOverlays clears FastForward at
+	 * the end of every frame (that is how the map turns its own fast-forward off).
+	 * The key-down alone therefore buys exactly ONE frame; re-assert the engine
+	 * flag for as long as PsyX says the key is down. PsyX owns the release (key-up,
+	 * focus loss, the mp lock), so this cannot latch on after the key is released. */
+	if (FastForwardLocked == 0 && PsyX_GetFastForwardHeld())
+		FastForward = 1;
+
 	cnt = FastForward ? 7 : 1;
 	while (--cnt >= 0)
 		StepGame();
