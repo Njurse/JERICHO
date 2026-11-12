@@ -41,12 +41,17 @@ void InitCarImport(void);
 void InitCarImportMidLevel(void);
 char* GetCarImportModels(int slot);
 
-// The wheel models an imported city carries in its own LUMP_CAR_WHEELS segment
-// (the D1 bake writes it). `kind` is one of CAR_IMPORT_WHEEL_*; NULL means that
-// variant is absent or unusable, and the caller keeps the host level's wheel
-// texture. The models are copied out of the import buffer, already FT4 +
-// set-remapped + mangled, and are used as the texture/UV source over the host
-// wheel mesh.
+// The wheel models an imported city carries in its own wheel segment (the bake
+// writes it). `kind` is one of CAR_IMPORT_WHEEL_*; NULL means that variant is
+// absent or unusable, and the caller keeps the host level's wheel texture. The
+// models are copied out of the import buffer, already FT4 + set-remapped +
+// mangled, and are used as the texture/UV source over the host wheel mesh.
+//
+// TWO segment layouts feed this: LUMP_CAR_WHEELS (200) holds ONE set for the
+// whole import, which every imported car wears; LUMP_CAR_WHEELS2 (204) names the
+// MODEL each set belongs to, so a bank can carry a wheel set per car. The
+// GetCarImportWheelFor / ...TexFor / ...SetsFor accessors ask per model and fall
+// back to the default set, so a caller reads the same either way.
 #define CAR_IMPORT_WHEEL_CLEAN		0
 #define CAR_IMPORT_WHEEL_DAMAGED	1
 #define CAR_IMPORT_WHEEL_FAST		2

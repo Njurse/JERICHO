@@ -239,6 +239,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)
 #define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
 #define CAR_IMPORT_LUMP_WHEELS	200	// JERICHO: optional wheel models (the D1 bake)
+#define CAR_IMPORT_LUMP_WHEELS2	204	// JERICHO: the same, one wheel set PER MODEL SLOT
 #define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
 #define CAR_IMPORT_LUMP_SIRENS	202	// JERICHO: per-model cop flags (the D1 bake)
 #define CAR_IMPORT_LUMP_POLICE_VOICES	203	// JERICHO: the city's police radio lines (bake declare.police_voices)
@@ -540,8 +541,14 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 
 	// JERICHO: optional wheel models. A Driver 1 bake writes them beside the car
 	// models so an imported D1 car can wear D1 wheels; a real Driver 2 level has
-	// no such segment and keeps the host level's shared wheel models.
-	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_WHEELS, &imp->carWheels, &imp->carWheelsSize);
+	// no such segment and keeps the host level's shared wheel models. The v2
+	// segment (a wheel set per MODEL) is preferred when present; a bank baked
+	// before it existed carries v1, and both land in imp->carWheels because
+	// BuildCarImportWheels tells the two layouts apart by their first word.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_WHEELS2, &imp->carWheels, &imp->carWheelsSize);
+
+	if (imp->carWheels == NULL)
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_WHEELS, &imp->carWheels, &imp->carWheelsSize);
 
 	// JERICHO: the synthetic Driver 1 LEVs embed a per-model car-sound table in
 	// their own segment. Optional: D2 levels and older D1 bakes simply have none,
