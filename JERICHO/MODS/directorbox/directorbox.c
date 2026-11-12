@@ -166,7 +166,7 @@ static const DB_SHOT kShots[] =
 #define DB_BAG_MAX	(DB_BAG_BASE + 1)
 
 /* every shot is kept at least this far above the ground under the camera */
-#define DB_GROUND_CLEARANCE	150
+#define DB_GROUND_CLEARANCE	300
 
 /* moving shot parameters: degrees from the subject's heading, world units */
 #define DB_ORBIT_START_AZ	60
