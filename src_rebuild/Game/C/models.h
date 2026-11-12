@@ -83,7 +83,7 @@ int GetCarImportWheelSetsFor(int city, int model, int kind, unsigned char* out,
 void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts);
 int CarImportIsWheelSet(int city, int sourceSet);
 void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub);
-int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors);
+int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigned char* colors);
 int CarImportWheelPaletteRow(int city, int cluts);
 int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub);
 void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow);

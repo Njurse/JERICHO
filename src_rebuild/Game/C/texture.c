@@ -5180,14 +5180,14 @@ void LoadImportedTPages(void)
 
 			if (hubRow != wheelRow)
 			{
-				int hubClut = CarImportReserveWheelPalette(sc, 1,
+				int hubClut = CarImportReserveWheelPalette(sc, set, 1,
 					(const unsigned char*)buf + 4 + hubRow * 32);
 
 				if (hubClut != 0)
 					CarImportSetWheelPaletteClut(sc, set, hubClut, 1);
 			}
 
-			wheelClut = CarImportReserveWheelPalette(sc, 0,
+			wheelClut = CarImportReserveWheelPalette(sc, set, 0,
 				(const unsigned char*)buf + 4 + wheelRow * 32);
 
 			if (wheelClut != 0)

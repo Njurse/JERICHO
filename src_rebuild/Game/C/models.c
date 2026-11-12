@@ -3580,7 +3580,7 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 			tyreRow >= 0 && tyreRow < npal)
 		{
 			memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
-			clut = CarImportReserveWheelPalette(city, 0, (const unsigned char*)row);
+			clut = CarImportReserveWheelPalette(city, sourceSet, 0, (const unsigned char*)row);
 
 			if (clut != 0)
 			{
@@ -3632,7 +3632,7 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, tyreRow, bg, row[bg]);
 
 	row[bg] = 0;
-	clut = CarImportReserveWheelPalette(city, 2, (const unsigned char*)row);
+	clut = CarImportReserveWheelPalette(city, sourceSet, 2, (const unsigned char*)row);
 
 	if (clut != 0)
 		wt->reservedClut = clut;
@@ -3666,7 +3666,7 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 		wt->clut >= 0 && wt->clut < npal)
 	{
 		memcpy(row, page + 4 + wt->clut * 32, sizeof(row));
-		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+		clut = CarImportReserveWheelPalette(city, sourceSet, 3, (const unsigned char*)row);
 
 		if (clut != 0)
 			wt->reservedClut = clut;
@@ -3682,7 +3682,7 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 		tyreRow >= 0 && tyreRow < npal)
 	{
 		memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
-		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+		clut = CarImportReserveWheelPalette(city, sourceSet, 3, (const unsigned char*)row);
 
 		if (clut != 0)
 			wt->reservedClut = clut;
