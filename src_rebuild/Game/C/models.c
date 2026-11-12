@@ -249,6 +249,28 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
 #define CAR_IMPORT_MODEL_SLOTS	13	// LUMP_CAR_MODELS is a fixed 13-entry table
 
+// JERICHO: one wheel sprite's record. `sets` are the SOURCE-city set numbers the
+// record names (before CarSetRemap), so a lookup by set finds the record whose
+// page is being loaded and has its rect and CLUT ids right beside it. Row 0 of
+// CAR_IMPORT.wheel is the bank default (a v1 LUMP_CAR_WHEELS fills it); rows
+// 1..13 are one model's set each (a v2 LUMP_CAR_WHEELS2).
+typedef struct CAR_WHEEL_REC
+{
+	JER_WHEEL_TEX tex;			// page, rects, CLUT ids
+	unsigned char sets[8];		// SOURCE set numbers, before CarSetRemap
+	int setCount;
+	unsigned char present;		// a usable record lives in this row
+} CAR_WHEEL_REC;
+
+#define CAR_IMPORT_WHEEL_ROWS		(1 + CAR_IMPORT_MODEL_SLOTS)
+// model < 0 (or out of range) is the bank default row; 0..12 index rows 1..13
+#define CAR_IMPORT_WHEEL_ROW(model)	(((model) >= 0 && (model) < CAR_IMPORT_MODEL_SLOTS) ? 1 + (model) : 0)
+#define CAR_WHEEL(imp, model, kind)	(&(imp)->wheel[CAR_IMPORT_WHEEL_ROW(model)][(kind)])
+#define CAR_WHEEL_ROW_PRESENT(imp, model) \
+	(CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_CLEAN)->present || \
+	 CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_DAMAGED)->present || \
+	 CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_FAST)->present)
+
 extern int PolySizes[56];		// draw.c: the poly-stream walk
 
 typedef struct
@@ -273,8 +295,15 @@ typedef struct
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
 	MODEL* wheels[CAR_IMPORT_WHEEL_VARIANTS];
 	char* wheelTexMem[CAR_IMPORT_WHEEL_VARIANTS];	// per-model D2 texture-source blocks
-	unsigned char wheelSet[CAR_IMPORT_WHEEL_VARIANTS][8];	// source-city set numbers
-	int wheelSetCount[CAR_IMPORT_WHEEL_VARIANTS];		// ...before CarSetRemap
+	/* JERICHO: ONE record per wheel sprite, covering the bank default (row 0,
+	 * what a v1 LUMP_CAR_WHEELS fills) and every per-model set (rows 1..13, a
+	 * v2 LUMP_CAR_WHEELS2). A record's texture, the source sets it names and its
+	 * count used to live in three parallel arrays - and the per-model copies in
+	 * three MORE - which is how the v2 metadata became invisible to the
+	 * set-keyed palette code: it rewrote wheelSet/wheelTex and never saw the
+	 * per-model rows. tex + sets + count travel together now, so whoever finds a
+	 * record by its set already has the rect and the reserved CLUTs beside it. */
+	CAR_WHEEL_REC wheel[CAR_IMPORT_WHEEL_ROWS][CAR_IMPORT_WHEEL_VARIANTS];
 	char* data2;		// malloc'd DATA2 (D2 levels: the model table lives here)
 	int data2Size;
 	char* models;		// LUMP_MODELS body in data2
@@ -283,17 +312,12 @@ typedef struct
 	int modelNamesSize;
 	char* textureNames;	// LUMP_TEXTURENAMES body in region
 	int textureNamesSize;
-	JER_WHEEL_TEX wheelTex[CAR_IMPORT_WHEEL_VARIANTS];	// D2 TEXINF wheel sprites
-	// JERICHO: per-MODEL wheel sets (LUMP_CAR_WHEELS2). A v1 segment fills only
-	// the default tables above and every imported car wears that one set; a v2
-	// segment names the model each set belongs to, so two cars in one bank can
-	// wear different wheels. The MODEL pointers point into wheelMem - the
-	// per-model blocks are copied into that ONE allocation, not malloc'd each.
-	unsigned char wheelModelPresent[CAR_IMPORT_MODEL_SLOTS];
+	// JERICHO: the D2 named-model wheel table. `wheels[]` (above) and this one
+	// are row 0 only: the D2 path mangles its own MODELs, while a bake fills the
+	// record table above. Rows 1..13 of CAR_WHEEL_REC carry the per-model sets
+	// (LUMP_CAR_WHEELS2); `wheelsModel` is the per-model MODEL* mirror for the
+	// accessors, and both point into wheelMem - one allocation, not one each.
 	MODEL* wheelsModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
-	JER_WHEEL_TEX wheelTexModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
-	unsigned char wheelSetModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS][8];
-	int wheelSetCountModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
 	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
@@ -3034,7 +3058,7 @@ static void BuildCarImportWheelsV2(int city)
 
 	for (m = 0; m < CAR_IMPORT_MODEL_SLOTS; m++)
 	{
-		if (imp->wheelModelPresent[m])
+		if (CAR_WHEEL_ROW_PRESENT(imp, m))
 			return;		// already built (level load, then a hot load)
 	}
 
@@ -3051,7 +3075,7 @@ static void BuildCarImportWheelsV2(int city)
 
 	for (s = 0; s < nslots; s++)
 	{
-		int model, count, slotBytes, k, present = 0;
+		int model, count, slotBytes, k;
 
 		if (at + 12 > size)
 			break;
@@ -3079,20 +3103,18 @@ static void BuildCarImportWheelsV2(int city)
 			snprintf(what, sizeof(what), "model %d wheel %d", model, k);
 
 			if (CarImportWheelBlock(city, body, size, off,
-									&imp->wheelTexModel[model][k],
-									imp->wheelSetModel[model][k],
-									&imp->wheelSetCountModel[model][k], what) &&
-				imp->wheelTexModel[model][k].present)
-				present = 1;
+									&CAR_WHEEL(imp, model, k)->tex,
+									CAR_WHEEL(imp, model, k)->sets,
+									&CAR_WHEEL(imp, model, k)->setCount, what))
+				CAR_WHEEL(imp, model, k)->present =
+					(unsigned char)CAR_WHEEL(imp, model, k)->tex.present;
 		}
-
-		imp->wheelModelPresent[model] = (unsigned char)present;
 
 		printInfo("cross-city: %s model %d wheels - clean %s, damaged %s, fast %s\n",
 			LevelNames[city], model,
-			imp->wheelTexModel[model][CAR_IMPORT_WHEEL_CLEAN].present ? "yes" : "host",
-			imp->wheelTexModel[model][CAR_IMPORT_WHEEL_DAMAGED].present ? "yes" : "host",
-			imp->wheelTexModel[model][CAR_IMPORT_WHEEL_FAST].present ? "yes" : "host");
+			CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_CLEAN)->present ? "yes" : "host",
+			CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_DAMAGED)->present ? "yes" : "host",
+			CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_FAST)->present ? "yes" : "host");
 
 		at += slotBytes;
 	}
@@ -3121,7 +3143,7 @@ static void BuildCarImportWheels(int city)
 
 	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
 	{
-		if (imp->wheelTex[i].present)
+		if (CAR_WHEEL(imp, -1, i)->present)
 			return;		// already built (level load, then a hot load)
 	}
 
@@ -3155,7 +3177,7 @@ static void BuildCarImportWheels(int city)
 	for (i = 0; i < count; i++)
 	{
 		int off = *(int*)(imp->carWheels + 4 + i * (int)sizeof(int));
-		JER_WHEEL_TEX* wt = &imp->wheelTex[i];
+		JER_WHEEL_TEX* wt = &CAR_WHEEL(imp, -1, i)->tex;
 		MODEL* src;
 		POLYFT4* p;
 		int k;
@@ -3195,9 +3217,9 @@ static void BuildCarImportWheels(int city)
 		}
 
 		// the SOURCE set numbers, for the pin; CollectWheelSets only reads the record
-		imp->wheelSetCount[i] = CollectWheelSets(src, imp->wheelSet[i], 8);
+		CAR_WHEEL(imp, -1, i)->setCount = CollectWheelSets(src, CAR_WHEEL(imp, -1, i)->sets, 8);
 
-		if (imp->wheelSetCount[i] <= 0)
+		if (CAR_WHEEL(imp, -1, i)->setCount <= 0)
 			continue;
 
 		WheelPolyRect(&p[2], &wt->u0, &wt->v0, &wt->u1, &wt->v1);
@@ -3210,6 +3232,7 @@ static void BuildCarImportWheels(int city)
 		wt->clut = p[2].texture_id;
 		wt->hubClut = p[4].texture_id;	// the page loader puts the wheel row here
 		wt->present = (wt->set > 0 && wt->set < 128);
+		CAR_WHEEL(imp, -1, i)->present = (unsigned char)wt->present;
 
 		printInfo("cross-city: %s wheel %d texture: source set %d -> %d, face (%d,%d)-(%d,%d), tread (%d,%d)-(%d,%d)\n",
 			LevelNames[city], i, p[2].texture_set, wt->set,
@@ -3218,9 +3241,9 @@ static void BuildCarImportWheels(int city)
 
 	printInfo("cross-city: %s wheels - host meshes, imported textures: clean %s, damaged %s, fast %s\n",
 		LevelNames[city],
-		imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present ? "yes" : "host",
-		imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present ? "yes" : "host",
-		imp->wheelTex[CAR_IMPORT_WHEEL_FAST].present ? "yes" : "host");
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->present ? "yes" : "host",
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->present ? "yes" : "host",
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_FAST)->present ? "yes" : "host");
 }
 
 MODEL* GetCarImportWheel(int city, int kind)
@@ -3237,7 +3260,7 @@ int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out)
 		out == NULL)
 		return 0;
 
-	*out = gCarImports[city].wheelTex[kind];
+	*out = CAR_WHEEL(&gCarImports[city], -1, kind)->tex;
 
 	return out->present;
 }
@@ -3251,7 +3274,7 @@ MODEL* GetCarImportWheelFor(int city, int model, int kind)
 		return NULL;
 
 	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
-		gCarImports[city].wheelModelPresent[model])
+		CAR_WHEEL_ROW_PRESENT(&gCarImports[city], model))
 		return gCarImports[city].wheelsModel[model][kind];
 
 	return gCarImports[city].wheels[kind];
@@ -3264,48 +3287,148 @@ int GetCarImportWheelTexFor(int city, int model, int kind, JER_WHEEL_TEX* out)
 		return 0;
 
 	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
-		gCarImports[city].wheelModelPresent[model])
+		CAR_WHEEL_ROW_PRESENT(&gCarImports[city], model))
 	{
-		*out = gCarImports[city].wheelTexModel[model][kind];
+		*out = CAR_WHEEL(&gCarImports[city], model, kind)->tex;
 		return out->present;
 	}
 
-	*out = gCarImports[city].wheelTex[kind];
+	*out = CAR_WHEEL(&gCarImports[city], -1, kind)->tex;
 
 	return out->present;
 }
 
+// One wheel record plus where it came from, for the palette code that is keyed by
+// page set rather than by model: the page loader knows a (city, set) and nothing
+// about models, so it has to find EVERY record that names that set.
+typedef struct CAR_WHEEL_REF
+{
+	CAR_WHEEL_REC* rec;
+	int model;			// -1 = the bank default row, else the source model slot
+	int kind;			// CAR_IMPORT_WHEEL_
+} CAR_WHEEL_REF;
+
+// The i-th wheel record this city holds: row 0 (the bank default) first, then one
+// row per model the segment named. Returns 0 past the end.
+static int CarImportWheelRef(int city, int i, CAR_WHEEL_REF* out)
+{
+	int row, kind, n = 0;
+
+	if (city < 0 || city >= CITY_COUNT || out == NULL || i < 0)
+		return 0;
+
+	for (row = 0; row < CAR_IMPORT_WHEEL_ROWS; row++)
+	{
+		int model = row - 1;
+
+		if (row > 0 && !CAR_WHEEL_ROW_PRESENT(&gCarImports[city], model))
+			continue;			// a model the segment did not name
+
+		for (kind = 0; kind < CAR_IMPORT_WHEEL_VARIANTS; kind++, n++)
+		{
+			if (n != i)
+				continue;
+
+			out->rec = &gCarImports[city].wheel[row][kind];
+			out->model = model;
+			out->kind = kind;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int CarImportWheelRefCount(int city)
+{
+	CAR_WHEEL_REF ref;
+	int n = 0;
+
+	while (CarImportWheelRef(city, n, &ref))
+		n++;
+
+	return n;
+}
+
+// The record of `kind` (any row) that was built from `sourceSet`, or NULL.
+static int CarImportWheelRefNamesSet(const CAR_WHEEL_REF* ref, int sourceSet);
+
+static CAR_WHEEL_REC* CarImportWheelRecFor(int city, int sourceSet, int kind)
+{
+	CAR_WHEEL_REF ref;
+	int i;
+
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
+	{
+		if (ref.kind == kind && CarImportWheelRefNamesSet(&ref, sourceSet))
+			return ref.rec;
+	}
+
+	return NULL;
+}
+
+// The record whose page carries the rect a hub/tyre derivation needs: the damaged
+// variant holds the WHLBOTH hubcap rect, the clean variant the tyre, and either
+// may be the one that names this set.
+static CAR_WHEEL_REC* CarImportWheelRecForSet(int city, int sourceSet, int wantHub)
+{
+	CAR_WHEEL_REC* rec = CarImportWheelRecFor(city, sourceSet,
+		wantHub ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN);
+
+	if (rec != NULL && rec->present)
+		return rec;
+
+	rec = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_CLEAN);
+
+	return (rec != NULL && rec->present) ? rec : NULL;
+}
+
+// Does this record name `sourceSet` among the source sets it was built from?
+static int CarImportWheelRefNamesSet(const CAR_WHEEL_REF* ref, int sourceSet)
+{
+	int k;
+
+	if (ref == NULL || ref->rec == NULL)
+		return 0;
+
+	for (k = 0; k < ref->rec->setCount; k++)
+		if (ref->rec->sets[k] == sourceSet)
+			return 1;
+
+	return 0;
+}
+
 // The page loader knows how many CLUT rows the source wheel page really has.
-// The WHLBOTH (hubcap) palette is the page's last row; record it for the wheel
-// structs that name this source set.
+// The WHLBOTH (hubcap) palette is the page's last row; record it for every wheel
+// record that names this source set - the bank default AND each per-model set, so
+// a second tri-set's records get it too.
 void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts)
 {
-	int v;
+	CAR_WHEEL_REF ref;
+	int i;
 
 	if (city < 0 || city >= CITY_COUNT || cluts <= 0)
 		return;
 
-	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
 	{
-		CAR_IMPORT* imp = &gCarImports[city];
-
-		if (imp->wheelSetCount[v] > 0 && imp->wheelSet[v][0] == sourceSet)
-			imp->wheelTex[v].hubClut = (cluts > 32) ? 31 : cluts - 1;
+		if (CarImportWheelRefNamesSet(&ref, sourceSet))
+			ref.rec->tex.hubClut = (cluts > 32) ? 31 : cluts - 1;
 	}
 }
 
 int CarImportIsWheelSet(int city, int sourceSet)
 {
-	int v, k;
+	CAR_WHEEL_REF ref;
+	int i;
 
 	if (city < 0 || city >= CITY_COUNT)
 		return 0;
 
-	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
 	{
-		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
-			if (gCarImports[city].wheelSet[v][k] == sourceSet)
-				return 1;
+		if (CarImportWheelRefNamesSet(&ref, sourceSet))
+			return 1;
 	}
 
 	return 0;
@@ -3313,23 +3436,21 @@ int CarImportIsWheelSet(int city, int sourceSet)
 
 void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub)
 {
-	int v, k;
+	CAR_WHEEL_REF ref;
+	int i;
 
 	if (city < 0 || city >= CITY_COUNT || clut <= 0)
 		return;
 
-	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
 	{
-		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
-		{
-			if (gCarImports[city].wheelSet[v][k] == sourceSet)
-			{
-				if (hub)
-					gCarImports[city].wheelTex[v].reservedHubClut = clut;
-				else
-					gCarImports[city].wheelTex[v].reservedClut = clut;
-			}
-		}
+		if (!CarImportWheelRefNamesSet(&ref, sourceSet))
+			continue;
+
+		if (hub)
+			ref.rec->tex.reservedHubClut = clut;
+		else
+			ref.rec->tex.reservedClut = clut;
 	}
 }
 
@@ -3367,7 +3488,7 @@ int CarImportWheelPaletteRow(int city, int cluts)
 // unpack, or a sprite no row paints.
 int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub)
 {
-	CAR_IMPORT* imp;
+	CAR_WHEEL_REC* rec;
 	const JER_WHEEL_TEX* wt;
 	const unsigned char* pix;
 	int npal, hist[16];
@@ -3381,27 +3502,25 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
 		return -1;
 
-	imp = &gCarImports[city];
-	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
+	/* hub: the WHLBOTH hubcap rect (on the damaged variant's page), else the
+	 * WHLCLEAN tyre rect (on the clean one). The record is picked by the SET, so
+	 * a bank with a wheel set per car derives each car's page from its own
+	 * record instead of always the bank default. */
+	dam = hub;
+	rec = CarImportWheelRecForSet(city, sourceSet, dam);
 
-	/* D1 baked cities have no D2-style wheelTex metadata for DAM/FAST.
+	/* D1 baked cities have no D2-style wheel metadata for DAM/FAST.
 	 * Fall back to the measured table row instead of bailing. -1 is the
 	 * caller's "use CarImportWheelPaletteRow()" sentinel; 0 would select
 	 * page row 0, which is not a wheel row. */
-	if (city >= CITY_D2_COUNT && !wt->present)
+	if (rec == NULL)
+	{
+		printInfo("cross-city: %s no wheel record names page set %d - keeping the page's own colours for the %s\n",
+			LevelNames[city], sourceSet, dam ? "hubcap" : "tyre");
 		return -1;
+	}
 
-	if (!wt->present)
-		return -1;
-
-	/* hub: the WHLBOTH hubcap rect (on the damaged variant's last source set),
-	 * else the WHLCLEAN tyre rect (on the clean set). */
-	dam = hub;
-
-	if (imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] <= 0 ||
-		imp->wheelSet[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN]
-			[imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] - 1] != sourceSet)
-		return -1;
+	wt = &rec->tex;
 
 	if (dam)
 	{
@@ -3430,7 +3549,11 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 
 		memset(sUnpacked, 0, 0x10000);
 		if (decomp_asm_n((char*)sUnpacked, (char*)page + 4 + npal * 32, size - 4 - npal * 32) == NULL)
+		{
+			printInfo("cross-city: %s wheel page set %d does not unpack - keeping the page's own colours for the %s\n",
+				LevelNames[city], sourceSet, dam ? "hubcap" : "tyre");
 			return -1;
+		}
 
 		pix = sUnpacked;
 	}
@@ -3557,7 +3680,7 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 // tyre row with its background cleared to 0x0000 (transparent).
 void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
 {
-	CAR_IMPORT* imp;
+	CAR_WHEEL_REC* rec;
 	JER_WHEEL_TEX* wt;
 	static unsigned char* sUnpacked = NULL;
 	unsigned short row[16];
@@ -3573,15 +3696,15 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 	if (city < CITY_D2_COUNT)
 		return;
 
-	imp = &gCarImports[city];
-	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_FAST];
 	npal = *(const int*)page;
 
-	/* A D1 bake has no D2-style wheelTex metadata for FASTWHEEL. Use the
-	 * tyre row that was already derived for the clean wheel instead of
-	 * leaving the fast wheel on the host palette. */
-	if (!wt->present || imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] <= 0 ||
-		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] != sourceSet)
+	/* The FAST record built from THIS page's set: a bank may carry a wheel set
+	 * per car, so the fast sprite belongs to a page, not to the city. A D1 bake
+	 * with no such metadata uses the tyre row already derived for the clean wheel
+	 * instead of leaving the fast wheel on the host palette. */
+	rec = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_FAST);
+
+	if (rec == NULL || !rec->present || rec->setCount <= 0)
 	{
 		if (npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
 			tyreRow >= 0 && tyreRow < npal)
@@ -3590,14 +3713,13 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 			clut = CarImportReserveWheelPalette(city, sourceSet, 0, (const unsigned char*)row);
 
 			if (clut != 0)
-			{
 				CarImportSetWheelPaletteClut(city, sourceSet, clut, 0);
-				wt->reservedClut = clut;
-			}
 		}
 
 		return;
 	}
+
+	wt = &rec->tex;
 
 	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
 		return;
@@ -3651,7 +3773,7 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 // damaged wheel needs its own row or it draws the clean wheel's colours.
 void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
 {
-	CAR_IMPORT* imp;
+	CAR_WHEEL_REC* rec;
 	JER_WHEEL_TEX* wt;
 	unsigned short row[16];
 	int npal, clut;
@@ -3663,15 +3785,18 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 	if (city < CITY_D2_COUNT)
 		return;
 
-	imp = &gCarImports[city];
-	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED];
 	npal = *(const int*)page;
 
-	if (wt->present && imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] > 0 &&
-		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] == sourceSet &&
+	/* The DAMAGED record built from THIS page's set. A bank may carry a wheel set
+	 * per car, so the damaged sprite belongs to a page: without the lookup every
+	 * tri-set after the first kept the page's raw palette. */
+	rec = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_DAMAGED);
+
+	if (rec != NULL && rec->present && rec->setCount > 0 &&
 		npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
-		wt->clut >= 0 && wt->clut < npal)
+		rec->tex.clut >= 0 && rec->tex.clut < npal)
 	{
+		wt = &rec->tex;
 		memcpy(row, page + 4 + wt->clut * 32, sizeof(row));
 		clut = CarImportReserveWheelPalette(city, sourceSet, 3, (const unsigned char*)row);
 
@@ -3692,7 +3817,7 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 		clut = CarImportReserveWheelPalette(city, sourceSet, 3, (const unsigned char*)row);
 
 		if (clut != 0)
-			wt->reservedClut = clut;
+			CarImportSetWheelPaletteClut(city, sourceSet, clut, 0);
 
 		printInfo("cross-city: %s damaged wheel palette fell back to tyre row %d (clut %04x)\n",
 			LevelNames[city], tyreRow, clut);
@@ -3864,48 +3989,48 @@ static int BuildD2WheelTextureRects(int city)
 		CarSetRemapEnable(0, -1);
 
 		/* SOURCE sets for the pin walk, not the remapped draw indices. */
-		imp->wheelSet[CAR_IMPORT_WHEEL_CLEAN][0] = (unsigned char)cleanSource;
-		imp->wheelSetCount[CAR_IMPORT_WHEEL_CLEAN] = 1;
-		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] = (unsigned char)cleanSource;
-		imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] = 1;
-		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] = (unsigned char)cleanSource;
-		imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 1;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->sets[0] = (unsigned char)cleanSource;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->setCount = 1;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_FAST)->sets[0] = (unsigned char)cleanSource;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_FAST)->setCount = 1;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->sets[0] = (unsigned char)cleanSource;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->setCount = 1;
 
 		if (damSource != cleanSource)
 		{
-			imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][1] = (unsigned char)damSource;
-			imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 2;
+			CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->sets[1] = (unsigned char)damSource;
+			CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->setCount = 2;
 		}
 	}
 
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present = 1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].set = cleanSet;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].clut = 0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u0 = cleanU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v0 = cleanV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u1 = cleanU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v1 = cleanV1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubU0 = damU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubV0 = damV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubU1 = damU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubV1 = damV1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->present = 1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.set = cleanSet;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.clut = 0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.u0 = cleanU0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.v0 = cleanV0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.u1 = cleanU1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.v1 = cleanV1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.hubU0 = damU0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.hubV0 = damV0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.hubU1 = damU1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.hubV1 = damV1;
 
-	imp->wheelTex[CAR_IMPORT_WHEEL_FAST] = imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_FAST)->tex = CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex;
 
 	/* A damaged wheel keeps the CLEAN tyre sprite and takes only its hubcap
 	 * poly from WHLBOTH. Using WHLBOTH for the whole wheel is what garbled
 	 * the tyre (a hubcap image stretched over it). */
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present = 1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set = cleanSet;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].clut = 0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u0 = cleanU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v0 = cleanV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u1 = cleanU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v1 = cleanV1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubU0 = damU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubV0 = damV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubU1 = damU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubV1 = damV1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->present = 1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.set = cleanSet;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.clut = 0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.u0 = cleanU0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.v0 = cleanV0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.u1 = cleanU1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.v1 = cleanV1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.hubU0 = damU0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.hubV0 = damV0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.hubU1 = damU1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.hubV1 = damV1;
 
 	return 1;
 }
@@ -3941,8 +4066,8 @@ static void BuildD2WheelTextureSources(int city)
 	{
 		printInfo("cross-city: %s wheels - WHLCLEAN/WHLBOTH TEXINF sprites (sets %d/%d)\n",
 			LevelNames[city],
-			imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].set,
-			imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set);
+			CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.set,
+			CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.set);
 		return;
 	}
 
@@ -4012,7 +4137,7 @@ static void BuildD2WheelTextureSources(int city)
 
 				if (m != NULL)
 				{
-					imp->wheelSetCount[v] = CollectWheelSets(m, imp->wheelSet[v], 8);
+					CAR_WHEEL(imp, -1, v)->setCount = CollectWheelSets(m, CAR_WHEEL(imp, -1, v)->sets, 8);
 					RemapWheelSets(m, city);
 					imp->wheels[v] = m;
 					imp->wheelTexMem[v] = (char*)m;
@@ -4042,13 +4167,13 @@ int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max)
 		out == NULL || max <= 0)
 		return 0;
 
-	n = gCarImports[city].wheelSetCount[kind];
+	n = CAR_WHEEL(&gCarImports[city], -1, kind)->setCount;
 
 	if (n > max)
 		n = max;
 
 	for (i = 0; i < n; i++)
-		out[i] = gCarImports[city].wheelSet[kind][i];
+		out[i] = CAR_WHEEL(&gCarImports[city], -1, kind)->sets[i];
 
 	return n;
 }
@@ -4065,26 +4190,26 @@ int GetCarImportWheelSetsFor(int city, int model, int kind, unsigned char* out,
 		return 0;
 
 	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
-		gCarImports[city].wheelModelPresent[model])
+		CAR_WHEEL_ROW_PRESENT(&gCarImports[city], model))
 	{
-		n = gCarImports[city].wheelSetCountModel[model][kind];
+		n = CAR_WHEEL(&gCarImports[city], model, kind)->setCount;
 
 		if (n > max)
 			n = max;
 
 		for (i = 0; i < n; i++)
-			out[i] = gCarImports[city].wheelSetModel[model][kind][i];
+			out[i] = CAR_WHEEL(&gCarImports[city], model, kind)->sets[i];
 
 		return n;
 	}
 
-	n = gCarImports[city].wheelSetCount[kind];
+	n = CAR_WHEEL(&gCarImports[city], -1, kind)->setCount;
 
 	if (n > max)
 		n = max;
 
 	for (i = 0; i < n; i++)
-		out[i] = gCarImports[city].wheelSet[kind][i];
+		out[i] = CAR_WHEEL(&gCarImports[city], -1, kind)->sets[i];
 
 	return n;
 }

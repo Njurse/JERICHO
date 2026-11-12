@@ -4993,9 +4993,35 @@ void LoadImportedTPages(void)
 		for (wk = 0; wk < CAR_IMPORT_WHEEL_VARIANTS; wk++)
 		{
 			unsigned char found[8];
-			int n, k;
+			int n = 0, k, slot;
 
-			n = GetCarImportWheelSets(wc, wk, found, 8);
+			/* JERICHO: ask every resident slot that imports from this city, at its
+			 * OWN model. A bank may carry a wheel set per car, so planning only the
+			 * city-wide default left the second tri-set's page unpaged - and a page
+			 * that never loads is a palette that is never derived (it then samples
+			 * whatever host page sits at that index). */
+			for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+			{
+				unsigned char one[8];
+				int got, m;
+
+				if (GetCarModelSourceCity(slot) != wc)
+					continue;
+
+				got = GetCarImportWheelSetsFor(wc, residentCarModels[slot], wk, one, 8);
+
+				for (m = 0; m < got && n < 8; m++)
+				{
+					int dup = 0, d;
+
+					for (d = 0; d < n; d++)
+						if (found[d] == one[m])
+							dup = 1;
+
+					if (!dup)
+						found[n++] = one[m];
+				}
+			}
 
 			for (k = 0; k < n; k++)
 			{
