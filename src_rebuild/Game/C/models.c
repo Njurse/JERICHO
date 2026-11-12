@@ -283,6 +283,16 @@ typedef struct
 	char* textureNames;	// LUMP_TEXTURENAMES body in region
 	int textureNamesSize;
 	JER_WHEEL_TEX wheelTex[CAR_IMPORT_WHEEL_VARIANTS];	// D2 TEXINF wheel sprites
+	// JERICHO: per-MODEL wheel sets (LUMP_CAR_WHEELS2). A v1 segment fills only
+	// the default tables above and every imported car wears that one set; a v2
+	// segment names the model each set belongs to, so two cars in one bank can
+	// wear different wheels. The MODEL pointers point into wheelMem - the
+	// per-model blocks are copied into that ONE allocation, not malloc'd each.
+	unsigned char wheelModelPresent[CAR_IMPORT_MODEL_SLOTS];
+	MODEL* wheelsModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
+	JER_WHEEL_TEX wheelTexModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
+	unsigned char wheelSetModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS][8];
+	int wheelSetCountModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
 	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
@@ -2933,6 +2943,154 @@ static void WheelPolyRect(const POLYFT4* p, int* u0, int* v0, int* u1, int* v1)
 	*v1 += 1;
 }
 
+// One wheel MODEL block -> the texture record and the source-city sets it names.
+// `body`/`size` are the wheel segment, `off` the block's offset from its start,
+// `what` names it in the log ("wheel 0", "model 1 wheel 2"). Returns 0 when the
+// block cannot be used, leaving *wt untouched (absent), which is the fail-soft
+// the D1 wheel path has always had.
+static int CarImportWheelBlock(int city, char* body, int size, int off,
+							   JER_WHEEL_TEX* wt, unsigned char* sets,
+							   int* setCount, const char* what)
+{
+	MODEL* src;
+	POLYFT4* p;
+	int k;
+
+	if (off < 0 || off + (int)sizeof(MODEL) > size)
+	{
+		printInfo("cross-city: %s %s offset %d is outside the segment (%d bytes) - absent\n",
+			LevelNames[city], what, off, size);
+		return 0;
+	}
+
+	src = (MODEL*)(body + off);
+
+	if (src->num_polys < 8 || src->num_polys > 24 || src->poly_block <= (int)sizeof(MODEL) ||
+		src->poly_block + src->num_polys * (int)sizeof(POLYFT4) > size - off)
+	{
+		printInfo("cross-city: %s %s has an unusable MODEL header (polys %d, %d bytes) - absent\n",
+			LevelNames[city], what, src->num_polys, src->poly_block);
+		return 0;
+	}
+
+	p = (POLYFT4*)((char*)src + src->poly_block);
+
+	for (k = 0; k < 8; k++)
+	{
+		if ((p[k].id & 0x1f) != 21)
+			break;
+	}
+
+	if (k < 8)
+	{
+		printInfo("cross-city: %s %s is not the 8-quad FT4 wheel - absent\n",
+			LevelNames[city], what);
+		return 0;
+	}
+
+	// the SOURCE set numbers, for the pin; CollectWheelSets only reads the record
+	*setCount = CollectWheelSets(src, sets, 8);
+
+	if (*setCount <= 0)
+		return 0;
+
+	WheelPolyRect(&p[2], &wt->u0, &wt->v0, &wt->u1, &wt->v1);
+	WheelPolyRect(&p[4], &wt->hubU0, &wt->hubV0, &wt->hubU1, &wt->hubV1);
+
+	CarSetRemapEnable(1, city);
+	wt->set = CarSetRemap(p[2].texture_set);
+	CarSetRemapEnable(0, -1);
+
+	wt->clut = p[2].texture_id;
+	wt->hubClut = p[4].texture_id;	// the page loader puts the wheel row here
+	wt->present = (wt->set > 0 && wt->set < 128);
+
+	printInfo("cross-city: %s %s texture: source set %d -> %d, face (%d,%d)-(%d,%d), tread (%d,%d)-(%d,%d)\n",
+		LevelNames[city], what, p[2].texture_set, wt->set,
+		wt->u0, wt->v0, wt->u1, wt->v1, wt->hubU0, wt->hubV0, wt->hubU1, wt->hubV1);
+
+	return 1;
+}
+
+// LUMP_CAR_WHEELS2: "WHL2", nslots, then per slot
+//   [i32 model][i32 count][i32 slot_bytes][count x i32 offset][MODEL blocks]
+// with the offsets from the segment body. Each slot is ONE model's wheel set, so
+// two cars in a bank can wear different wheels. A model the segment does not
+// name keeps the bank default (imp->wheelTex), and a slot that does not parse is
+// skipped - never fatal, because the host level's wheels still work.
+static void BuildCarImportWheelsV2(int city)
+{
+	CAR_IMPORT* imp = &gCarImports[city];
+	char* body = imp->carWheels;
+	int size = imp->carWheelsSize;
+	int nslots, at, s, m;
+
+	for (m = 0; m < CAR_IMPORT_MODEL_SLOTS; m++)
+	{
+		if (imp->wheelModelPresent[m])
+			return;		// already built (level load, then a hot load)
+	}
+
+	nslots = *(int*)(body + 4);
+
+	if (nslots < 1 || nslots > CAR_IMPORT_MODEL_SLOTS)
+	{
+		printInfo("cross-city: %s wheel2 segment is malformed (%d slots, %d bytes) - keeping the host wheels\n",
+			LevelNames[city], nslots, size);
+		return;
+	}
+
+	at = 8;
+
+	for (s = 0; s < nslots; s++)
+	{
+		int model, count, slotBytes, k, present = 0;
+
+		if (at + 12 > size)
+			break;
+
+		model = *(int*)(body + at);
+		count = *(int*)(body + at + 4);
+		slotBytes = *(int*)(body + at + 8);
+
+		if (model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || count < 1 ||
+			count > CAR_IMPORT_WHEEL_VARIANTS || slotBytes < 12 || at + slotBytes > size)
+		{
+			printInfo("cross-city: %s wheel2 slot %d is unusable (model %d, %d variants, %d bytes) - skipped\n",
+				LevelNames[city], s, model, count, slotBytes);
+			break;
+		}
+
+		for (k = 0; k < count; k++)
+		{
+			int off = *(int*)(body + at + 12 + k * (int)sizeof(int));
+			char what[48];
+
+			if (off == -1)
+				continue;
+
+			snprintf(what, sizeof(what), "model %d wheel %d", model, k);
+
+			if (CarImportWheelBlock(city, body, size, off,
+									&imp->wheelTexModel[model][k],
+									imp->wheelSetModel[model][k],
+									&imp->wheelSetCountModel[model][k], what) &&
+				imp->wheelTexModel[model][k].present)
+				present = 1;
+		}
+
+		imp->wheelModelPresent[model] = (unsigned char)present;
+
+		printInfo("cross-city: %s model %d wheels - clean %s, damaged %s, fast %s\n",
+			LevelNames[city], model,
+			imp->wheelTexModel[model][CAR_IMPORT_WHEEL_CLEAN].present ? "yes" : "host",
+			imp->wheelTexModel[model][CAR_IMPORT_WHEEL_DAMAGED].present ? "yes" : "host",
+			imp->wheelTexModel[model][CAR_IMPORT_WHEEL_FAST].present ? "yes" : "host");
+
+		at += slotBytes;
+	}
+}
+
 // JERICHO: a D1 car keeps the HOST wheel models (CLEANWHEEL/FASTWHEEL/DAMWHEEL)
 // and takes only its wheel TEXTURE from LUMP_CAR_WHEELS: the record is read in
 // place for its page, its face rect (polys 2/3, the quads MangleWheelModel keeps
@@ -2964,6 +3122,16 @@ static void BuildCarImportWheels(int city)
 	{
 		printInfo("cross-city: %s wheel segment is too small (%d bytes) - keeping the host wheels\n",
 			LevelNames[city], imp->carWheelsSize);
+		return;
+	}
+
+	// JERICHO: LUMP_CAR_WHEELS2 names the MODEL each set belongs to, so one bank
+	// can carry a wheel set per car. "WHL2" cannot be read as a v1 count (1..3),
+	// which is how the two layouts are told apart without a version field: a
+	// bank baked before this change, and every real D2 city, take the v1 path.
+	if (imp->carWheelsSize >= 8 && memcmp(imp->carWheels, "WHL2", 4) == 0)
+	{
+		BuildCarImportWheelsV2(city);
 		return;
 	}
 
@@ -3061,6 +3229,39 @@ int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out)
 	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
 		out == NULL)
 		return 0;
+
+	*out = gCarImports[city].wheelTex[kind];
+
+	return out->present;
+}
+
+// JERICHO: the per-MODEL wheel set, when the bank carries one (LUMP_CAR_WHEELS2).
+// A model the v2 segment does not name - and every model of a v1 bank - answers
+// from the bank default above, so a caller never branches on the layout.
+MODEL* GetCarImportWheelFor(int city, int model, int kind)
+{
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS)
+		return NULL;
+
+	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
+		gCarImports[city].wheelModelPresent[model])
+		return gCarImports[city].wheelsModel[model][kind];
+
+	return gCarImports[city].wheels[kind];
+}
+
+int GetCarImportWheelTexFor(int city, int model, int kind, JER_WHEEL_TEX* out)
+{
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL)
+		return 0;
+
+	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
+		gCarImports[city].wheelModelPresent[model])
+	{
+		*out = gCarImports[city].wheelTexModel[model][kind];
+		return out->present;
+	}
 
 	*out = gCarImports[city].wheelTex[kind];
 
@@ -3833,6 +4034,42 @@ int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max)
 	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
 		out == NULL || max <= 0)
 		return 0;
+
+	n = gCarImports[city].wheelSetCount[kind];
+
+	if (n > max)
+		n = max;
+
+	for (i = 0; i < n; i++)
+		out[i] = gCarImports[city].wheelSet[kind][i];
+
+	return n;
+}
+
+// JERICHO: the same for ONE model of the import (LUMP_CAR_WHEELS2), falling back
+// to the bank default when the segment names no set for that model.
+int GetCarImportWheelSetsFor(int city, int model, int kind, unsigned char* out,
+                             int max)
+{
+	int i, n;
+
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL || max <= 0)
+		return 0;
+
+	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
+		gCarImports[city].wheelModelPresent[model])
+	{
+		n = gCarImports[city].wheelSetCountModel[model][kind];
+
+		if (n > max)
+			n = max;
+
+		for (i = 0; i < n; i++)
+			out[i] = gCarImports[city].wheelSetModel[model][kind][i];
+
+		return n;
+	}
 
 	n = gCarImports[city].wheelSetCount[kind];
 

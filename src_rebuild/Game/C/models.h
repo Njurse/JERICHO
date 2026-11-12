@@ -70,6 +70,16 @@ typedef struct JER_WHEEL_TEX
 } JER_WHEEL_TEX;
 
 int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out);
+
+// JERICHO: the same three questions, asked about ONE model of the import. A bank
+// may carry a wheel set per car (LUMP_CAR_WHEELS2); `model` is the source bank's
+// model slot, which is what the import record puts in a resident slot. A model
+// the segment does not name - and every model of a v1 bank - answers from the
+// bank default above, so a caller needs no special case for the old layout.
+MODEL* GetCarImportWheelFor(int city, int model, int kind);
+int GetCarImportWheelTexFor(int city, int model, int kind, JER_WHEEL_TEX* out);
+int GetCarImportWheelSetsFor(int city, int model, int kind, unsigned char* out,
+                             int max);
 void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts);
 int CarImportIsWheelSet(int city, int sourceSet);
 void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub);
