@@ -399,10 +399,13 @@ jobs:
         run: |
           python JERICHO/build.py mods
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Dev-only addons ship in Release_dev (and the mod repo) only.
+          $devOnly = @('directorbox')
           Get-ChildItem "JERICHO/MODS/*/*.dll" | ForEach-Object {
             $id = $_.Directory.Name
             if ($_.BaseName -ne $id) { return }
             foreach ($cfg in @('Release', 'Release_dev')) {
+              if ($devOnly -contains $id -and $cfg -eq 'Release') { continue }
               $dst = "src_rebuild/bin/$cfg/JERICHO/MODS/$id"
               New-Item -ItemType Directory -Force -Path $dst | Out-Null
               Copy-Item $_.FullName $dst -Force
@@ -722,10 +725,12 @@ jobs:
           test -f JERICHO/sdk/example/example.so
           # ship the addons in BOTH packages (build.py lands them in bin/Release only);
           # bake.so missing means the core suite refuses every store addon
+          # Dev-only addons ship in Release_dev (and the mod repo) only.
           for so in JERICHO/MODS/*/*.so; do
             id=$(basename "$(dirname "$so")")
             [ "$(basename "$so" .so)" = "$id" ] || continue
             for cfg in Release Release_dev; do
+              case "$cfg:$id" in Release:directorbox) continue ;; esac
               mkdir -p "src_rebuild/bin/$cfg/JERICHO/MODS/$id"
               cp "$so" "src_rebuild/bin/$cfg/JERICHO/MODS/$id/"
             done

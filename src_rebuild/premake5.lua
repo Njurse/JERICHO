@@ -341,7 +341,7 @@ local function jer_version_defines()
    -- never become the window title (it once read "checkpoint/getrdun-...").
    -- Stamped when premake generates the project, not at compile time. Re-run
    -- premake after a commit or tag or the exe keeps the previous string.
-   local JERICHO_BASE_VERSION = "0.13.11"
+   local JERICHO_BASE_VERSION = "0.14.0"
    local desc = git("git describe --tags --exact-match --match \"v*\" HEAD"):gsub("^v", "")
    if desc == "" then
       desc = JERICHO_BASE_VERSION
