@@ -662,7 +662,7 @@ void CarReapplyHubcapState(int slot)
 void CarApplyHubcapState(int slot, int lost)
 {
 	CAR_DATA* cp;
-	int city, v, k, n;
+	int city, model, v, k, n;
 	unsigned char sets[8];
 
 	if (slot < 0 || slot >= MAX_CARS)
@@ -674,12 +674,16 @@ void CarApplyHubcapState(int slot, int lost)
 	cp->ap.flags = (u_char)((cp->ap.flags & ~0x0f) | (lost & 0x0f));
 
 	city = GetCarModelSourceCity(cp->ap.model);
+	// JERICHO: the pin follows this CAR's wheel pages, since a bank may carry a
+	// set per model (residentCarModels[] is the model the import put here)
+	model = (cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS)
+		? residentCarModels[cp->ap.model] : -1;
 
 	if (city >= 0 && city < CITY_COUNT && sWheelPalClut[city][1] != 0)
 	{
 		for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
 		{
-			n = GetCarImportWheelSets(city, v, sets, 8);
+			n = GetCarImportWheelSetsFor(city, model, v, sets, 8);
 
 			for (k = 0; k < n; k++)
 				CarImportSetWheelPaletteClut(city, sets[k], sWheelPalClut[city][1], 1);
@@ -2225,6 +2229,7 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	SVECTOR wheelVerts[24];	// per-wheel copy for the damage transform
 	int numWheelVerts;
 	int wheelCity = -1;
+	int wheelModel = -1;	// the SOURCE bank's model this car was imported from
 
 #ifdef PSX
 	MATRIX& WheelPos = *(MATRIX*)((u_char*)getScratchAddr(0) + sizeof(MATRIX) * 2);
@@ -2265,7 +2270,13 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 	WheelTexDam = NULL;
 
 	if (cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS)
+	{
 		wheelCity = GetCarModelSourceCity(cp->ap.model);
+		// JERICHO: the wheel set belongs to the bank's MODEL, not to the city -
+		// residentCarModels[] holds the model the import put in this slot, which
+		// is what a per-car wheel segment is keyed by (carhacks sets both).
+		wheelModel = residentCarModels[cp->ap.model];
+	}
 
 	if (wheelCity >= 0)
 	{
@@ -2273,13 +2284,13 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		memset(&WheelTexFastRect, 0, sizeof(WheelTexFastRect));
 		memset(&WheelTexDamRect, 0, sizeof(WheelTexDamRect));
 
-		WheelTexClean = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_CLEAN);
-		WheelTexFast = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_FAST);
-		WheelTexDam = GetCarImportWheel(wheelCity, CAR_IMPORT_WHEEL_DAMAGED);
+		WheelTexClean = GetCarImportWheelFor(wheelCity, wheelModel, CAR_IMPORT_WHEEL_CLEAN);
+		WheelTexFast = GetCarImportWheelFor(wheelCity, wheelModel, CAR_IMPORT_WHEEL_FAST);
+		WheelTexDam = GetCarImportWheelFor(wheelCity, wheelModel, CAR_IMPORT_WHEEL_DAMAGED);
 
-		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_CLEAN, &WheelTexCleanRect);
-		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_FAST, &WheelTexFastRect);
-		GetCarImportWheelTex(wheelCity, CAR_IMPORT_WHEEL_DAMAGED, &WheelTexDamRect);
+		GetCarImportWheelTexFor(wheelCity, wheelModel, CAR_IMPORT_WHEEL_CLEAN, &WheelTexCleanRect);
+		GetCarImportWheelTexFor(wheelCity, wheelModel, CAR_IMPORT_WHEEL_FAST, &WheelTexFastRect);
+		GetCarImportWheelTexFor(wheelCity, wheelModel, CAR_IMPORT_WHEEL_DAMAGED, &WheelTexDamRect);
 
 		/* Fail soft: a wheel page that is not resident yet (or was dropped)
 		 * must not leave the wheel on the dummy page. */
