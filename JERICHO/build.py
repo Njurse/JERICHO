@@ -413,8 +413,11 @@ class WindowsBackend(Backend):
         rc = self.premake(ctx, mods_only=True)
         if rc:
             return rc
+        # Match the game configuration: the addon links that config's import
+        # library (JERICHO.lib / JERICHO_dev.lib / JERICHO_dbg.lib), and a dev
+        # tree has only the dev one.
         return self._build_proj(ctx, os.path.join("build_mods", "JERICHO_MODS.sln"),
-                                "Release")
+                                ctx.config)
 
     def build_sdk_addon(self, ctx, include, folder, mod_id, out):
         sources = [os.path.join(folder, f) for f in sorted(os.listdir(folder))
@@ -480,8 +483,8 @@ class LinuxBackend(Backend):
         rc = self.premake(ctx, mods_only=True)
         if rc:
             return rc
-        # the mods workspace is { Release } x { x64 } only -> release_x64
-        return self._make(ctx, "build_mods", None, "release_x64")
+        # match the game configuration (release_x64 / release_dev_x64 / debug_x64)
+        return self._make(ctx, "build_mods", None, self.make_config(ctx))
 
     def build_sdk_addon(self, ctx, include, folder, mod_id, out):
         sources = [os.path.join(folder, f) for f in sorted(os.listdir(folder))
@@ -506,21 +509,36 @@ def copy_addons(ctx):
     root = mods_dir(ctx.src)
     targets = []
 
-    # the runtime JERICHO beside the exe (mods always build Release)
-    rt = os.path.join(ctx.src, "bin", "Release", "JERICHO", "MODS")
+    def add_target(path):
+        path = os.path.abspath(path)
+        if path not in targets:
+            targets.append(path)
+
+    # the runtime JERICHO beside the exe for the configuration we just built.
+    # A dev tree's runtime is bin/Release_dev, not bin/Release: without this the
+    # addon was built but never installed, so the loader reported "no compiled
+    # binary found" and the module's pause page was missing.
+    rt = os.path.join(ctx.src, "bin", ctx.config, "JERICHO", "MODS")
     if os.path.isdir(os.path.dirname(rt)):
-        targets.append(rt)
+        add_target(rt)
+
+    # addons are configuration-neutral, so an existing Release runtime still
+    # gets them (CI builds Release with `--config Release`; older trees may have
+    # both and run either).
+    legacy = os.path.join(ctx.src, "bin", "Release", "JERICHO", "MODS")
+    if os.path.isdir(os.path.dirname(legacy)):
+        add_target(legacy)
 
     # when the driver itself runs from the runtime JERICHO folder, land them
     # right there too (the loader looks beside the exe).
     if ctx.runtime and os.path.basename(ctx.runtime) == "JERICHO":
         own = os.path.join(ctx.runtime, "MODS")
         if os.path.abspath(own) != os.path.abspath(root):
-            targets.append(own)
+            add_target(own)
     elif os.path.basename(SCRIPT_DIR) == "JERICHO":
         own = os.path.join(SCRIPT_DIR, "MODS")
         if os.path.abspath(own) != os.path.abspath(root):
-            targets.append(own)
+            add_target(own)
 
     if not targets:
         return 0

@@ -67,15 +67,26 @@ end
 
 workspace "JERICHO_MODS"
 	location "build_mods"
-	configurations { "Release" }
+	-- Match the game build's configurations. A dev tree only has a
+	-- Release_dev exe, and its import library is JERICHO_dev.lib (the file is
+	-- named after the exe target), so a Release-only addon workspace could not
+	-- link anything there -- FULL TWIST's DLL was never produced, and its pause
+	-- page was therefore missing. Release stays first so packaging and the CI
+	-- keep using it by default.
+	configurations { "Release", "Release_dev", "Debug" }
 	platforms { "x64" }
 
-	-- the game exe export surface (bin/<cfg>/JERICHO.lib) is built in the
-	-- same configuration family; Release is the canonical mod target
-	configuration "Release"
+	filter { "configurations:Release or Release_dev" }
 		defines { "NDEBUG", "JERICHO_MODULE_BUILD" }
 		optimize "Speed"
 		symbols "On"	-- debuggable mods
+
+	filter "configurations:Debug"
+		defines { "JERICHO_MODULE_BUILD" }
+		optimize "Off"
+		symbols "On"
+
+	filter {}
 
 for _, JER_MOD in ipairs(MODS) do
 	filter {}
@@ -86,11 +97,12 @@ for _, JER_MOD in ipairs(MODS) do
 		kind "SharedLib"
 		language "c++"
 
-		-- include the JERICHO SDK + game headers + the mod's own folder
+		-- Include the addon SDK, not the game tree: an addon may only use the
+		-- host API, and Game/C on the include path SHADOWS standard headers
+		-- (Game/C/time.h is the engine's timestamp helper), which broke any
+		-- addon that includes <time.h>.
 		includedirs {
-			"Game",
-			"Game/C",
-			"Game/C/JERICHO/include",
+			"../JERICHO/sdk/include",
 			JER_DIR,
 			SDL2_DIR .. "/include",
 			OPENAL_DIR .. "/include",
@@ -116,11 +128,23 @@ for _, JER_MOD in ipairs(MODS) do
 		targetname (JER_MOD)
 
 		filter "system:Windows"
-			-- Windows has no exported-symbol table to resolve against at load
-			-- time, so link the game's import library (JERICHO.lib).
-			libdirs { "bin/%{cfg.buildcfg}" }
-			links { "JERICHO" }
 			disablewarnings { "4996", "4244", "4018", "4267", "4101", "4013" }
+
+		-- Windows has no exported-symbol table to resolve against at load time,
+		-- so link the game's import library. MSVC names that file after the exe
+		-- target, which carries the configuration suffix: JERICHO.lib for
+		-- Release, JERICHO_dev.lib for Release_dev, JERICHO_dbg.lib for Debug.
+		filter { "system:Windows", "configurations:Release" }
+			libdirs { "bin/Release" }
+			links { "JERICHO" }
+
+		filter { "system:Windows", "configurations:Release_dev" }
+			libdirs { "bin/Release_dev" }
+			links { "JERICHO_dev" }
+
+		filter { "system:Windows", "configurations:Debug" }
+			libdirs { "bin/Debug" }
+			links { "JERICHO_dbg" }
 
 		filter "system:linux"
 			-- No import library on Linux. The exe is linked with

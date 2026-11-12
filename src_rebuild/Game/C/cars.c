@@ -160,6 +160,10 @@ static int sCivClutTexMaxSlot[CIV_CLUT_ROWS][32];   // ...and per texture_id wit
 // Nothing is fabricated for them (see the upload loop). Declared up here because
 // CarImportReclaimRows resets it for a row given back to the pool.
 static int sJerRowWritten[CIV_CLUT_ROWS];
+// JERICHO: rows uploaded directly by CarImportReserveWheelPalette, not by the
+// city's palette lump. They are real wheel palettes; the lump diagnostics must
+// not report them as empty body rows.
+static unsigned char sWheelDirectRow[CIV_CLUT_ROWS];
 
 // JERICHO: WHICH resident slot baked each civ_clut row, and from which set. The census can
 // say a row offers no colour variants; it cannot say which car reads it, and that is the
@@ -235,6 +239,7 @@ static void CarPalRowClear(void)
 
 	memset(sWheelPalClut, 0, sizeof(sWheelPalClut));
 	memset(sWheelPalRow, 0xFF, sizeof(sWheelPalRow));	/* all -1: nothing reserved */
+	memset(sWheelDirectRow, 0, sizeof(sWheelDirectRow));
 
 	// The colour-column coverage goes with the writers: a new level re-uploads the rows it
 	// needs, so a stale maximum would let the draw pick a column this level never filled.
@@ -460,6 +465,10 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 	// The civ_clut ROW stays one per (city, hub): it is bookkeeping for the reclaim,
 	// while the VRAM row above is what a draw samples. Allocating per set instead would
 	// spend the 120-row import pool on wheel pages alone.
+	//
+	// The wheel page is 4bpp and its entry carries its own 16-entry CLUT rows. The
+	// row derived from the sprite is copied into this dedicated civ_clut row; it is
+	// not the body page's CLUT and is never shared with it.
 	row = CarAllocSetRow(hub == 2 ? CAR_IMPORT_WHEEL_FAST_PAL_SET :
 		hub == 3 ? CAR_IMPORT_WHEEL_DAM_PAL_SET :
 		hub ? CAR_IMPORT_WHEEL_HUB_PAL_SET : CAR_IMPORT_WHEEL_PAL_SET, city);
@@ -470,6 +479,8 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 			LevelNames[city], sourceSet);
 		return 0;
 	}
+
+	sWheelDirectRow[row] = 1;
 
 	/* The import's own row, in the lower half pool's CLUT column (y >= 512),
 	 * not at the host level's clutpos: the wheel's CLUT is then the same in
@@ -633,6 +644,7 @@ static void CarForgetSetRow(int c, int s)
 	sJerRowWritten[row] = 0;
 	sCivClutRowWriters[row] = 0;
 	sBakeRowN[row] = 0;
+	sWheelDirectRow[row] = 0;
 
 	/* This includes the wheel palette rows (sets 124..127). Their ROW mapping and
 	 * contents go back; the cached wheel CLUT id is cleared by a CITY unload, not by a
@@ -1970,8 +1982,12 @@ static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4
 }
 
 // [D] [T]
-void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect, SVECTOR* verts, int transparent, int wheelnum)
+void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect, SVECTOR* verts, int transparent, int wheelnum, int importModel, int variant)
 {
+	static const char* sVariantName[CAR_IMPORT_WHEEL_VARIANTS] = { "clean", "damaged", "fast" };
+	static int sClutLogLevel = -1;
+	static unsigned int sClutLogMask;
+	static unsigned int sClutFallbackMask;
 	ushort clut;
 	ushort tpage;
 	int i;
@@ -1994,6 +2010,74 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 	primaryId = src->texture_id;
 	primarySet = src->texture_set;
 	poly = (POLY_FT4*)current->primptr;
+
+	if (texRect != NULL && texRect->present)
+	{
+		int slot = (importModel >= 0 && importModel < CAR_IMPORT_MODEL_SLOTS) ? importModel : 0;
+		int kind = (variant >= 0 && variant < CAR_IMPORT_WHEEL_VARIANTS) ? variant : 0;
+		int bit = slot * CAR_IMPORT_WHEEL_VARIANTS + kind;
+		int clutId = texRect->clut;
+		ushort fallback;
+		ushort tyreClut;
+		ushort hubClut;
+		const char* tyreSource;
+		const char* hubSource;
+
+		if (clutId <= 0)
+			clutId = primaryId;
+
+		if (clutId > 31)
+			clutId = 0;
+
+		fallback = texture_cluts[texRect->set][clutId];
+
+		if (texRect->reservedClut)
+		{
+			tyreClut = (ushort)texRect->reservedClut;
+			tyreSource = "reservedClut";
+		}
+		else
+		{
+			tyreClut = fallback;
+			tyreSource = "texture_cluts fallback";
+		}
+
+		if (texRect->reservedHubClut)
+		{
+			hubClut = (ushort)texRect->reservedHubClut;
+			hubSource = "reservedHubClut";
+		}
+		else
+		{
+			hubClut = tyreClut;
+			hubSource = tyreSource;
+		}
+
+		if (sClutLogLevel != GameLevel)
+		{
+			sClutLogLevel = GameLevel;
+			sClutLogMask = 0;
+			sClutFallbackMask = 0;
+		}
+
+		if (!(sClutLogMask & (1u << bit)))
+		{
+			sClutLogMask |= 1u << bit;
+			printInfo("cross-city: wheel model %d %s page set %d: tyre CLUT %04x via %s, hub CLUT %04x via %s, fallback texture_cluts[%d][%d] %04x\n",
+				importModel, sVariantName[kind], texRect->set,
+				tyreClut, tyreSource, hubClut, hubSource,
+				texRect->set, clutId, fallback);
+		}
+
+		if (!texRect->reservedClut && !texRect->reservedHubClut &&
+			!(sClutFallbackMask & (1u << bit)))
+		{
+			sClutFallbackMask |= 1u << bit;
+			printWarning("cross-city: wheel model %d %s page set %d has NO reserved wheel CLUT - using texture_cluts[%d][%d] %04x\n",
+				importModel, sVariantName[kind], texRect->set,
+				texRect->set, clutId, fallback);
+		}
+	}
 
 
 	// This controls the color of the wheels
@@ -2629,10 +2713,16 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 			if (jerArgs.hide == 0)
 			{
+				int wheelVariant = (texRect == &WheelTexDamRect) ? CAR_IMPORT_WHEEL_DAMAGED :
+					(texRect == &WheelTexFastRect) ? CAR_IMPORT_WHEEL_FAST :
+					CAR_IMPORT_WHEEL_CLEAN;
+
 				if (numWheelVerts > 0)
-					DrawWheelObject(model, texModel, texRect, wheelVerts, TransparentObject, wheelnum);
+					DrawWheelObject(model, texModel, texRect, wheelVerts, TransparentObject, wheelnum,
+						wheelModel, wheelVariant);
 				else
-					DrawWheelObject(model, texModel, texRect, VertPtr, TransparentObject, wheelnum);
+					DrawWheelObject(model, texModel, texRect, VertPtr, TransparentObject, wheelnum,
+						wheelModel, wheelVariant);
 			}
 		}
 
@@ -3618,7 +3708,8 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		{
 			int row = CarImportCityRowAt(city, k);
 
-			if (row >= 0 && row < CIV_CLUT_ROWS && rowNeeded[row] && histWrite[row] == 0)
+			if (row >= 0 && row < CIV_CLUT_ROWS && rowNeeded[row] &&
+				histWrite[row] == 0 && !sWheelDirectRow[row])
 				printInfo("cross-city: %s palettes: row %d is READ by the built model but the lump wrote nothing to it (%d of its entries map to other rows) - the row stays empty and its polys draw their own page CLUT (slot 0)\n",
 					LevelNames[city], row, histRow[row]);
 		}
@@ -3825,7 +3916,8 @@ int ProcessImportedPaletteRows(const unsigned char* rowNeeded)
 			{
 				int row = CarImportCityRowAt(city, r2);
 
-				if (row >= 0 && row < CIV_CLUT_ROWS && sJerRowWritten[row] == 0 && rowNeeded[row])
+				if (row >= 0 && row < CIV_CLUT_ROWS && sJerRowWritten[row] == 0 &&
+					rowNeeded[row] && !sWheelDirectRow[row])
 					printInfo("cross-city: %s palettes: row %d is read by a built model but this city's lump has no entries for it - left to the poly's own page CLUT (slot 0), nothing fabricated\n",
 						LevelNames[city], row);
 			}

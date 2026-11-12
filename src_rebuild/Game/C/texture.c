@@ -4782,7 +4782,7 @@ void LoadImportedTPages(void)
 	int pref[64];		// preferred slot per set: the rectangle the replaced car used, or -1
 	int nsets = 0;
 	int i, j;
-	int wc, wk;
+	int wc, wk, model;
 
 	// (placement moved to draw time - see CarImportPin/CarPageFindSlot - so the load
 	// no longer tracks slots, positions or CLUT rows)
@@ -4992,25 +4992,25 @@ void LoadImportedTPages(void)
 
 		for (wk = 0; wk < CAR_IMPORT_WHEEL_VARIANTS; wk++)
 		{
-			unsigned char found[8];
-			int n = 0, k, slot;
+			unsigned char found[64];
+			int n = 0, k;
+			int warned = 0;
 
-			/* JERICHO: ask every resident slot that imports from this city, at its
-			 * OWN model. A bank may carry a wheel set per car, so planning only the
-			 * city-wide default left the second tri-set's page unpaged - and a page
-			 * that never loads is a palette that is never derived (it then samples
-			 * whatever host page sits at that index). */
-			for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
+			/* JERICHO: ask EVERY model this bank carries, not only the one
+			 * resident in a slot now. A car bank may hold several cars and the
+			 * player can switch between them without reloading the level; a
+			 * wheel page planned only for the model selected at load is never
+			 * pinned or given a CLUT when another car is chosen, so its wheels
+			 * fall back to the body page's CLUT. Models the v2 segment does not
+			 * name return the bank default, so a v1 bank is unchanged. */
+			for (model = 0; model < CAR_IMPORT_MODEL_SLOTS; model++)
 			{
 				unsigned char one[8];
 				int got, m;
 
-				if (GetCarModelSourceCity(slot) != wc)
-					continue;
+				got = GetCarImportWheelSetsFor(wc, model, wk, one, 8);
 
-				got = GetCarImportWheelSetsFor(wc, residentCarModels[slot], wk, one, 8);
-
-				for (m = 0; m < got && n < 8; m++)
+				for (m = 0; m < got; m++)
 				{
 					int dup = 0, d;
 
@@ -5018,8 +5018,21 @@ void LoadImportedTPages(void)
 						if (found[d] == one[m])
 							dup = 1;
 
-					if (!dup)
-						found[n++] = one[m];
+					if (dup)
+						continue;
+
+					if (n >= (int)sizeof(found))
+					{
+						if (!warned)
+						{
+							printWarning("cross-city: %s has more wheel sets than the pin plan can hold; further sets are not planned\n",
+								LevelNames[wc]);
+							warned = 1;
+						}
+						break;
+					}
+
+					found[n++] = one[m];
 				}
 			}
 
@@ -5050,6 +5063,11 @@ void LoadImportedTPages(void)
 					setCity[nsets] = wc;
 					setMask[nsets] = owners;
 					sets[nsets++] = set;
+				}
+				else
+				{
+					printWarning("cross-city: %s wheel set %d is not planned - the 64-set pin plan is full\n",
+						LevelNames[wc], set);
 				}
 			}
 		}
@@ -5219,7 +5237,7 @@ void LoadImportedTPages(void)
 			if (wheelClut != 0)
 			{
 				CarImportSetWheelPaletteClut(sc, set, wheelClut, 0);
-				CarImportReserveDamagedWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow);
+				CarImportReserveDamagedWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow, hubRow);
 				CarImportReserveFastWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow);
 			}
 		}

@@ -56,6 +56,7 @@ char* GetCarImportModels(int slot);
 #define CAR_IMPORT_WHEEL_DAMAGED	1
 #define CAR_IMPORT_WHEEL_FAST		2
 #define CAR_IMPORT_WHEEL_VARIANTS	3
+#define CAR_IMPORT_MODEL_SLOTS		13	// LUMP_CAR_MODELS is a fixed 13-entry table
 MODEL* GetCarImportWheel(int city, int kind);
 
 // A D2 city's wheel art is a pair of TEXINF details on a permanent page
@@ -92,7 +93,7 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 int CarImportWheelPaletteRow(int city, int cluts);
 int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub);
 void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow);
-void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow);
+void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow);
 
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
 // maps these to the page it pins; the MODEL carries the remapped draw index.

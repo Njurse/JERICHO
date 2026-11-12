@@ -393,7 +393,8 @@ jobs:
       # Runtime addons (runtime = "dll": bake, fulltwist, yarisbounce, ...). The
       # solution build above makes the exe only; without bake.dll the core suite
       # is incomplete and the loader refuses every store addon (FULL TWIST
-      # included). build.py lands them in bin/Release; Release_dev ships them too.
+      # included). build.py installs them into bin/<config>; both packages ship
+      # them, so copy the built DLLs into the other configuration as well.
       - name: Build runtime addon DLLs
         shell: pwsh
         run: |

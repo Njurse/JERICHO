@@ -247,7 +247,6 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
-#define CAR_IMPORT_MODEL_SLOTS	13	// LUMP_CAR_MODELS is a fixed 13-entry table
 
 // JERICHO: one wheel sprite's record. `sets` are the SOURCE-city set numbers the
 // record names (before CarSetRemap), so a lookup by set finds the record whose
@@ -3534,6 +3533,18 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	if (u0 < 0 || v0 < 0 || u1 > 256 || v1 > 256 || u1 <= u0 || v1 <= v0)
 		return -1;
 
+	/* The bake now writes the wheel's own page row into poly 2's texture id.
+	 * Trust it as authoritative: it is the row the sprite was quantised
+	 * against, and the smoothness search below can disagree (CIVICOPS set 58:
+	 * assigned rows 27/28, search picked 29). A record with no valid assigned
+	 * row falls through to the search. */
+	if (wt->clut >= 0 && wt->clut < npal)
+	{
+		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) uses bake-assigned row %d\n",
+			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, wt->clut);
+		return wt->clut;
+	}
+
 	memset(hist, 0, sizeof(hist));
 
 	/* The page image is stored compressed (LoadTPageAndCluts runs decomp_asm on
@@ -3750,11 +3761,11 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		if (votes[i] > votes[bg])
 			bg = i;
 
-	/* The fast face names its own row (MIAMI's FASTWHEEL: 8). The clean
-	 * sprite's tyre row (6) painted it colour-inverted. */
-	if (wt->clut >= 0 && wt->clut < npal)
-		tyreRow = wt->clut;
-
+	/* A baked wheel carrier's tex.clut is a texture id, not a page row. Using
+	 * it copied page row 0 - the car's body palette - and is why the VEGAS
+	 * fast wheel came out in body colours. The clean tyre row derived from
+	 * the page is the right base; clear the fast sprite's background in a
+	 * fast-only copy of that row. */
 	memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
 
 	printInfo("cross-city: %s fast wheel sprite (%d,%d)-(%d,%d) row %d, background index %d is %04x - cleared in a fast-only row\n",
@@ -3767,14 +3778,15 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		wt->reservedClut = clut;
 }
 
-// The damaged wheel's face names its OWN CLUT row, which need not be the clean
-// tyre's: MIAMI's DAMWHEEL is row 5 while the clean wheel is row 6. The clean
-// palette reservation sets every variant that names the page to row 6, so the
-// damaged wheel needs its own row or it draws the clean wheel's colours.
-void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
+// The damaged wheel's face names its OWN palette row, which need not be the
+// clean tyre's: MIAMI's DAMWHEEL is row 5 while the clean wheel is row 6. That
+// row is DERIVED from the damaged sprite's pixels (`hubRow`); the record's
+// `tex.clut` is a texture id, not a page row, for a baked wheel carrier. A
+// split page (VEGAS set 4) would otherwise copy row 0 - the body palette - and
+// draw the damaged wheel in the car's colours.
+void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow)
 {
 	CAR_WHEEL_REC* rec;
-	JER_WHEEL_TEX* wt;
 	unsigned short row[16];
 	int npal, clut;
 
@@ -3794,17 +3806,16 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 
 	if (rec != NULL && rec->present && rec->setCount > 0 &&
 		npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
-		rec->tex.clut >= 0 && rec->tex.clut < npal)
+		hubRow >= 0 && hubRow < npal)
 	{
-		wt = &rec->tex;
-		memcpy(row, page + 4 + wt->clut * 32, sizeof(row));
+		memcpy(row, page + 4 + hubRow * 32, sizeof(row));
 		clut = CarImportReserveWheelPalette(city, sourceSet, 3, (const unsigned char*)row);
 
 		if (clut != 0)
-			wt->reservedClut = clut;
+			rec->tex.reservedClut = clut;
 
 		printInfo("cross-city: %s damaged wheel palette row %d reserved (clut %04x)\n",
-			LevelNames[city], wt->clut, clut);
+			LevelNames[city], hubRow, clut);
 		return;
 	}
 
