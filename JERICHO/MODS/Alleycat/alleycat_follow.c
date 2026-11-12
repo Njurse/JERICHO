@@ -1,7 +1,7 @@
 /*
- * jerai_follow.c -- who the AI car chases in multiplayer. See jerai_follow.h.
+ * alleycat_follow.c -- who the AI car chases in multiplayer. See alleycat_follow.h.
  *
- * The joyride behavior owns WHAT to do with the answer (drive to the target,
+ * The pursuit behavior owns WHAT to do with the answer (drive to the target,
  * idle within the clearance). This file only answers "which car, and how far
  * away is it" - and it is the one place that knows about the mp module.
  *
@@ -10,8 +10,8 @@
  * with no session: jer_net_is_active() is a plain SDK call and only mp's
  * registry is consulted after it says a session is live.
  */
-#include "jerai_internal.h"
-#include "jerai_follow.h"
+#include "alleycat_internal.h"
+#include "alleycat_follow.h"
 
 #include "cars.h"	/* car_data, MAX_CARS */
 #include "jer_net.h"	/* jer_net_is_active / jer_net_is_host */
@@ -24,7 +24,7 @@
  * MpGetPlayer(0) answers NULL. There, "the host" to chase or run from is the
  * NEAREST other connected player with a car. A listen server's host row is
  * always there, so this never runs on one. -1 when nobody qualifies. */
-static int JerAiNearestPeerCar(CAR_DATA* car)
+static int AlleycatNearestPeerCar(CAR_DATA* car)
 {
 	int best = -1, i;
 	long long bestD2 = 0;
@@ -46,7 +46,7 @@ static int JerAiNearestPeerCar(CAR_DATA* car)
 		if (slot < 0 || slot >= MAX_CARS || &car_data[slot] == car)
 			continue;
 
-		d2 = JerAiDist2(car_data[slot].hd.where.t[0], car_data[slot].hd.where.t[2],
+		d2 = AlleycatDist2(car_data[slot].hd.where.t[0], car_data[slot].hd.where.t[2],
 			car->hd.where.t[0], car->hd.where.t[2]);
 
 		if (best < 0 || d2 < bestD2)
@@ -63,16 +63,16 @@ static int JerAiNearestPeerCar(CAR_DATA* car)
  *
  * Order matters: the single-player test lever wins, because it is exactly the
  * "pretend there is a target, with no session" case. */
-static int JerAiResolveTargetCar(CAR_DATA* car)
+static int AlleycatResolveTargetCar(CAR_DATA* car)
 {
 	int slot;
 
-	/* the test lever: follow a named car unconditionally (see JerAI.ini
+	/* the test lever: follow a named car unconditionally (see Alleycat.ini
 	 * `follow_car`). It is how the approach + clearance + idle are exercised
 	 * in SINGLE PLAYER, where no session exists. */
-	if (gJerAi.followCar >= 0)
+	if (gAlleycat.followCar >= 0)
 	{
-		slot = gJerAi.followCar;
+		slot = gAlleycat.followCar;
 	}
 	else
 	{
@@ -90,7 +90,7 @@ static int JerAiResolveTargetCar(CAR_DATA* car)
 
 		/* No player 0 at all: a dedicated server. Follow the nearest player. */
 		if (host == NULL)
-			return JerAiNearestPeerCar(car);
+			return AlleycatNearestPeerCar(car);
 
 		/* No car yet (they have not picked), gone, or on foot: nothing to
 		 * drive after this frame. */
@@ -112,7 +112,7 @@ static int JerAiResolveTargetCar(CAR_DATA* car)
 	return slot;
 }
 
-int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2)
+int AlleycatFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2)
 {
 	int slot;
 	long long dx, dz, d2;
@@ -120,7 +120,7 @@ int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2)
 	if (car == NULL)
 		return 0;
 
-	slot = JerAiResolveTargetCar(car);
+	slot = AlleycatResolveTargetCar(car);
 
 	if (slot < 0)
 		return 0;
@@ -138,9 +138,9 @@ int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2)
 	 * the planner's window and re-plans as the car closes, so an unlimited chase
 	 * still crosses a whole city to rendezvous. A non-zero range makes the AI
 	 * give the target up (and wander again) once they are farther than that. */
-	if (gJerAi.followRange > 0)
+	if (gAlleycat.followRange > 0)
 	{
-		long long r = (long long)gJerAi.followRange;
+		long long r = (long long)gAlleycat.followRange;
 
 		if (d2 > r * r)
 			return 0;
@@ -150,16 +150,16 @@ int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2)
 	if (z != NULL) *z = car_data[slot].hd.where.t[2];
 	if (dist2 != NULL) *dist2 = d2;
 
-	/* tell the driver this car is a DESTINATION, not traffic - see JerAiCarAhead */
-	gJerAi.followCarId = slot;
+	/* tell the driver this car is a DESTINATION, not traffic - see AlleycatCarAhead */
+	gAlleycat.followCarId = slot;
 
 	return 1;
 }
 
 /* The car to RUN FROM: the nearest other player's, on the host only. See
- * jerai_follow.h - this is the host's half of the multiplayer pairing, the
- * mirror of JerAiFollowTarget's client half. */
-int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
+ * alleycat_follow.h - this is the host's half of the multiplayer pairing, the
+ * mirror of AlleycatFollowTarget's client half. */
+int AlleycatThreatTarget(CAR_DATA* car, int* x, int* z)
 {
 	int best = -1;
 	long long bestD2 = 0;
@@ -168,9 +168,9 @@ int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
 	if (car == NULL)
 		return 0;
 
-	if (gJerAi.fleeCar >= 0)
+	if (gAlleycat.fleeCar >= 0)
 	{
-		best = gJerAi.fleeCar;
+		best = gAlleycat.fleeCar;
 	}
 	else
 	{
@@ -212,7 +212,7 @@ int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
 	if (&car_data[best] == car)
 		return 0;	/* never run from ourselves */
 
-	gJerAi.followCarId = best;	/* a destination, not traffic - see JerAiCarAhead */
+	gAlleycat.followCarId = best;	/* a destination, not traffic - see AlleycatCarAhead */
 
 	if (x != NULL) *x = car_data[best].hd.where.t[0];
 	if (z != NULL) *z = car_data[best].hd.where.t[2];
@@ -222,18 +222,18 @@ int JerAiThreatTarget(CAR_DATA* car, int* x, int* z)
 
 /* The CLIENT's half of the multiplayer flee (config flee_host): run FROM the host.
  *
- * JerAiThreatTarget above is deliberately the host's half and returns 0 on a client,
- * because a client's job was to CHASE the host (JerAiFollowTarget). With flee_host on
+ * AlleycatThreatTarget above is deliberately the host's half and returns 0 on a client,
+ * because a client's job was to CHASE the host (AlleycatFollowTarget). With flee_host on
  * it is the other way round, and this answers "who am I running from" the same way -
- * player 0 - so the caller's flee block, and JerAiLocalFleeGoal behind it (which
+ * player 0 - so the caller's flee block, and AlleycatLocalFleeGoal behind it (which
  * scores the bolt-hole on the reachable grid rather than a straight line away through
  * a building), are reused as they are.
  *
  * Off by default: a joining AI car still chases. */
-/* the last reason JerAiHostThreatTarget logged, so it says each one once */
+/* the last reason AlleycatHostThreatTarget logged, so it says each one once */
 static const char* sHostThreatWhy;
 
-int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
+int AlleycatHostThreatTarget(CAR_DATA* car, int* x, int* z)
 {
 	MP_PLAYER* host;
 	int slot;
@@ -242,7 +242,7 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 	if (car == NULL)
 		return 0;
 
-	/* The host has JerAiThreatTarget; a single-player run has nobody to run from. */
+	/* The host has AlleycatThreatTarget; a single-player run has nobody to run from. */
 	if (!jer_net_is_active() || jer_net_is_host())
 		return 0;
 
@@ -251,11 +251,11 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 	/* no player 0 at all: a dedicated server - run from the nearest player */
 	if (host == NULL)
 	{
-		slot = JerAiNearestPeerCar(car);
+		slot = AlleycatNearestPeerCar(car);
 
 		if (slot >= 0)
 		{
-			gJerAi.followCarId = slot;	/* a destination, not traffic - see JerAiCarAhead */
+			gAlleycat.followCarId = slot;	/* a destination, not traffic - see AlleycatCarAhead */
 			sHostThreatWhy = NULL;
 
 			if (x != NULL) *x = car_data[slot].hd.where.t[0];
@@ -282,7 +282,7 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 			why = "the host's car slot is our own";
 		else
 		{
-			gJerAi.followCarId = slot;	/* a destination, not traffic - see JerAiCarAhead */
+			gAlleycat.followCarId = slot;	/* a destination, not traffic - see AlleycatCarAhead */
 			sHostThreatWhy = NULL;
 
 			if (x != NULL) *x = car_data[slot].hd.where.t[0];
@@ -295,9 +295,9 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 	/* A CLIENT in a live session that cannot name the host is worth one line: it is
 	 * the whole reason the flee silently does nothing. Once per reason (a state
 	 * change), not every few seconds; only reachable on the client side. */
-	if (gJerAi.ctx != NULL && why != sHostThreatWhy)
-		gJerAi.ctx->jer_log(gJerAi.ctx,
-			"[JerAI] flee_host is on but cannot run from the host: %s (local player %d)\n",
+	if (gAlleycat.ctx != NULL && why != sHostThreatWhy)
+		gAlleycat.ctx->jer_log(gAlleycat.ctx,
+			"[Alleycat] flee_host is on but cannot run from the host: %s (local player %d)\n",
 			why, jer_net_local_player());
 
 	sHostThreatWhy = why;
@@ -306,9 +306,9 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z)
 }
 
 /* The nearest police car, when the police are actually after this car. See
- * jerai_follow.h - the flags are the engine's own pursuit state, so a police car
+ * alleycat_follow.h - the flags are the engine's own pursuit state, so a police car
  * merely parked nearby is not a threat. */
-int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z)
+int AlleycatPoliceThreat(CAR_DATA* car, int* x, int* z)
 {
 	int best = -1;
 	long long bestD2 = 0;
@@ -318,7 +318,7 @@ int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z)
 		return 0;
 
 	/* The engine's own answer to "are they after us": either a pursuit is
-	 * running or a cop has line of sight. Both are cleared by JerAI's `immune`
+	 * running or a cop has line of sight. Both are cleared by Alleycat's `immune`
 	 * option, which is why immunity makes this unreachable (see the header). */
 	if (!copsAreInPursuit && !CopsCanSeePlayer)
 		return 0;
@@ -333,7 +333,7 @@ int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z)
 
 		dx = (long long)o->hd.where.t[0] - (long long)car->hd.where.t[0];
 		dz = (long long)o->hd.where.t[2] - (long long)car->hd.where.t[2];
-		d2 = dx * dx + dz * dz;		/* 64-bit: see JerAiFollowTarget */
+		d2 = dx * dx + dz * dz;		/* 64-bit: see AlleycatFollowTarget */
 
 		if (best < 0 || d2 < bestD2)
 		{
@@ -345,7 +345,7 @@ int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z)
 	if (best < 0)
 		return 0;
 
-	gJerAi.followCarId = best;	/* a destination, not traffic - see JerAiCarAhead */
+	gAlleycat.followCarId = best;	/* a destination, not traffic - see AlleycatCarAhead */
 
 	if (x != NULL) *x = car_data[best].hd.where.t[0];
 	if (z != NULL) *z = car_data[best].hd.where.t[2];
@@ -358,7 +358,7 @@ int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z)
  * CONTROL_FLAG_COP - a patrolling civ-AI cop car, or a multiplayer cop player.
  * Writes its position and squared distance (even when it is outside `radius`,
  * for the readout, as long as there is one). */
-int JerAiCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2)
+int AlleycatCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2)
 {
 	int best = -1, i;
 	long long bestD2 = 0;
@@ -380,7 +380,7 @@ int JerAiCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2)
 		if (o->controlType != CONTROL_TYPE_PURSUER_AI && (o->controlFlags & CONTROL_FLAG_COP) == 0)
 			continue;
 
-		d2 = JerAiDist2(o->hd.where.t[0], o->hd.where.t[2], car->hd.where.t[0], car->hd.where.t[2]);
+		d2 = AlleycatDist2(o->hd.where.t[0], o->hd.where.t[2], car->hd.where.t[0], car->hd.where.t[2]);
 
 		if (best < 0 || d2 < bestD2)
 		{
@@ -397,7 +397,7 @@ int JerAiCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2)
 	if (radius <= 0 || bestD2 > (long long)radius * radius)
 		return 0;
 
-	gJerAi.followCarId = best;	/* a threat, not traffic - see JerAiCarAhead */
+	gAlleycat.followCarId = best;	/* a threat, not traffic - see AlleycatCarAhead */
 
 	if (x != NULL) *x = car_data[best].hd.where.t[0];
 	if (z != NULL) *z = car_data[best].hd.where.t[2];

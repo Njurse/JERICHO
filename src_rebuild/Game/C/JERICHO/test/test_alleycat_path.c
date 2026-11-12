@@ -1,15 +1,15 @@
-/* Host-side tests for JerAI's PATHFINDER (MODS/JerAI): the grid queries, the cost
+/* Host-side tests for Alleycat's PATHFINDER (MODS/Alleycat): the grid queries, the cost
  * model and A* itself, with no engine, no level and no game.
  *
- * This is the JerAI port of test_ai_path.c (which covers mp's own copy of the
+ * This is the Alleycat port of test_ai_path.c (which covers mp's own copy of the
  * same library). This directory is excluded from the game build (premake5.lua),
  * so the file only ever builds on its own, linking the two PURE pieces of the
- * library and NOT jerai_map.c (which is nothing but engine probes):
+ * library and NOT alleycat_map.c (which is nothing but engine probes):
  *
- *   gcc -std=c99 -Wall -Wextra -I JERICHO/MODS/JerAI -o /tmp/test_jerai_path \
- *       src_rebuild/Game/C/JERICHO/test/test_jerai_path.c \
- *       JERICHO/MODS/JerAI/jerai_mapgrid.c JERICHO/MODS/JerAI/jerai_star.c \
- *       JERICHO/MODS/JerAI/jerai_local.c -lm && /tmp/test_jerai_path
+ *   gcc -std=c99 -Wall -Wextra -I JERICHO/MODS/Alleycat -o /tmp/test_alleycat_path \
+ *       src_rebuild/Game/C/JERICHO/test/test_alleycat_path.c \
+ *       JERICHO/MODS/Alleycat/alleycat_mapgrid.c JERICHO/MODS/Alleycat/alleycat_star.c \
+ *       JERICHO/MODS/Alleycat/alleycat_local.c -lm && /tmp/test_alleycat_path
  *
  *   (and once with a 32-bit `long`, the way Windows has it, so the driver's
  *   polyline math is proven not to wrap: add -m32, or `zig cc -target x86-linux-gnu`)
@@ -20,9 +20,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../../../../JERICHO/MODS/JerAI/jerai_map.h"
-#include "../../../../../JERICHO/MODS/JerAI/jerai_star.h"
-#include "../../../../../JERICHO/MODS/JerAI/jerai_local.h"
+#include "../../../../../JERICHO/MODS/Alleycat/alleycat_map.h"
+#include "../../../../../JERICHO/MODS/Alleycat/alleycat_star.h"
+#include "../../../../../JERICHO/MODS/Alleycat/alleycat_local.h"
 
 static int gFails, gChecks;
 
@@ -33,11 +33,11 @@ static int gFails, gChecks;
 /* A grid to plan over                                                 */
 /* ------------------------------------------------------------------ */
 
-static JERAI_MAP gMap;
+static ALLEYCAT_MAP gMap;
 
 static int W(int sample)	/* sample index -> world units (origin at 0,0) */
 {
-	return sample * JERAI_MAP_STEP;
+	return sample * ALLEYCAT_MAP_STEP;
 }
 
 static void gridReset(void)
@@ -50,33 +50,33 @@ static void gridReset(void)
 	gMap.valid = 1;
 
 	/* The road preference lives in the map, so a hand-built one has to set it the
-	 * way the driver does (JerAiMapBuild defaults it, JerAiDrivePlanTo takes the
+	 * way the driver does (AlleycatMapBuild defaults it, AlleycatDrivePlanTo takes the
 	 * config value). At 0 there is no road preference at all and the
 	 * "the road sample is cheaper" check below would fail on a bare grid. */
-	gMap.offroadCost = JERAI_MAP_OFFROAD_DEFAULT;
+	gMap.offroadCost = ALLEYCAT_MAP_OFFROAD_DEFAULT;
 
 	/* wide open until a wall is put down */
-	for (iz = 0; iz < JERAI_MAP_SIZE; iz++)
-		for (ix = 0; ix < JERAI_MAP_SIZE; ix++)
-			gMap.clear[iz][ix] = JERAI_MAP_CLEAR_MAX;
+	for (iz = 0; iz < ALLEYCAT_MAP_SIZE; iz++)
+		for (ix = 0; ix < ALLEYCAT_MAP_SIZE; ix++)
+			gMap.clear[iz][ix] = ALLEYCAT_MAP_CLEAR_MAX;
 }
 
 static void gridWall(int ix, int iz)
 {
-	gMap.cell[iz][ix] |= JERAI_MAP_BLOCKED;
+	gMap.cell[iz][ix] |= ALLEYCAT_MAP_BLOCKED;
 
-	/* keep the clearance honest the way JerAiMapBuild's measurement would: a blocked
+	/* keep the clearance honest the way AlleycatMapBuild's measurement would: a blocked
 	 * sample reports 0, its neighbours report their distance to it */
 	{
 		int dx, dz;
 
-		for (dz = -JERAI_MAP_CLEAR_MAX; dz <= JERAI_MAP_CLEAR_MAX; dz++)
+		for (dz = -ALLEYCAT_MAP_CLEAR_MAX; dz <= ALLEYCAT_MAP_CLEAR_MAX; dz++)
 		{
-			for (dx = -JERAI_MAP_CLEAR_MAX; dx <= JERAI_MAP_CLEAR_MAX; dx++)
+			for (dx = -ALLEYCAT_MAP_CLEAR_MAX; dx <= ALLEYCAT_MAP_CLEAR_MAX; dx++)
 			{
 				int sx = ix + dx, sz = iz + dz, d;
 
-				if (sx < 0 || sz < 0 || sx >= JERAI_MAP_SIZE || sz >= JERAI_MAP_SIZE)
+				if (sx < 0 || sz < 0 || sx >= ALLEYCAT_MAP_SIZE || sz >= ALLEYCAT_MAP_SIZE)
 					continue;
 
 				d = (dx < 0 ? -dx : dx);
@@ -92,14 +92,14 @@ static void gridWall(int ix, int iz)
 
 static void gridRoad(int ix, int iz)
 {
-	gMap.cell[iz][ix] |= JERAI_MAP_ROAD;
+	gMap.cell[iz][ix] |= ALLEYCAT_MAP_ROAD;
 }
 
-static JERAI_PATH gPath;
+static ALLEYCAT_PATH gPath;
 
 static int planTo(int fromS, int toS)
 {
-	return JerAiStarPlan(&gMap, W(fromS), W(fromS), W(toS), W(toS), &gPath);
+	return AlleycatStarPlan(&gMap, W(fromS), W(fromS), W(toS), W(toS), &gPath);
 }
 
 static void gridWallRow(int y, int x0, int x1)
@@ -120,54 +120,54 @@ static void test_queries(void)
 
 	gridReset();
 
-	CHECK(JerAiMapValid(&gMap) == 1);
-	CHECK(JerAiMapValid(NULL) == 0);
+	CHECK(AlleycatMapValid(&gMap) == 1);
+	CHECK(AlleycatMapValid(NULL) == 0);
 
 	/* inside the window */
-	CHECK(JerAiMapSampleIndex(&gMap, W(4), W(7), &ix, &iz) == 1);
+	CHECK(AlleycatMapSampleIndex(&gMap, W(4), W(7), &ix, &iz) == 1);
 	CHECK(ix == 4 && iz == 7);
 
 	/* the very edge is in, one sample past it is not */
-	CHECK(JerAiMapSampleIndex(&gMap, W(JERAI_MAP_SIZE - 1), W(0), &ix, &iz) == 1);
-	CHECK(JerAiMapSampleIndex(&gMap, W(JERAI_MAP_SIZE), W(0), &ix, &iz) == 0);
-	CHECK(JerAiMapSampleIndex(&gMap, -W(1), W(0), &ix, &iz) == 0);
+	CHECK(AlleycatMapSampleIndex(&gMap, W(ALLEYCAT_MAP_SIZE - 1), W(0), &ix, &iz) == 1);
+	CHECK(AlleycatMapSampleIndex(&gMap, W(ALLEYCAT_MAP_SIZE), W(0), &ix, &iz) == 0);
+	CHECK(AlleycatMapSampleIndex(&gMap, -W(1), W(0), &ix, &iz) == 0);
 
 	/* world <-> sample round trip */
 	{
 		int x = 0, z = 0;
 
-		JerAiMapWorld(&gMap, 9, 3, &x, &z);
+		AlleycatMapWorld(&gMap, 9, 3, &x, &z);
 		CHECK(x == W(9) && z == W(3));
 	}
 
 	/* outside the window is "blocked", not "clear": we do not drive off the map */
-	CHECK(JerAiMapBlocked(&gMap, JERAI_MAP_SIZE, 3) == 1);
-	CHECK(JerAiMapBlocked(&gMap, 3, -1) == 1);
+	CHECK(AlleycatMapBlocked(&gMap, ALLEYCAT_MAP_SIZE, 3) == 1);
+	CHECK(AlleycatMapBlocked(&gMap, 3, -1) == 1);
 
 	/* a wall, and the cost of the samples around it */
 	gridWall(10, 10);
-	CHECK(JerAiMapBlocked(&gMap, 10, 10) == 1);
-	CHECK(JerAiMapCost(&gMap, 10, 10) == JERAI_MAP_COST_BLOCKED);
-	CHECK(JerAiMapClearance(&gMap, 10, 10) == 0);
-	CHECK(JerAiMapClearance(&gMap, 11, 10) == 1);
+	CHECK(AlleycatMapBlocked(&gMap, 10, 10) == 1);
+	CHECK(AlleycatMapCost(&gMap, 10, 10) == ALLEYCAT_MAP_COST_BLOCKED);
+	CHECK(AlleycatMapClearance(&gMap, 10, 10) == 0);
+	CHECK(AlleycatMapClearance(&gMap, 11, 10) == 1);
 
 	/* touching a wall costs more than the middle of the road */
-	CHECK(JerAiMapCost(&gMap, 11, 10) > JerAiMapCost(&gMap, 12, 10));
+	CHECK(AlleycatMapCost(&gMap, 11, 10) > AlleycatMapCost(&gMap, 12, 10));
 
 	/* a road sample is cheaper than an off-road one with the same clearance */
 	gridReset();
 	gridRoad(5, 5);
-	CHECK(JerAiMapRoad(&gMap, 5, 5) == 1);
-	CHECK(JerAiMapRoad(&gMap, 5, 6) == 0);
-	CHECK(JerAiMapCost(&gMap, 5, 5) < JerAiMapCost(&gMap, 5, 6));
+	CHECK(AlleycatMapRoad(&gMap, 5, 5) == 1);
+	CHECK(AlleycatMapRoad(&gMap, 5, 6) == 0);
+	CHECK(AlleycatMapCost(&gMap, 5, 5) < AlleycatMapCost(&gMap, 5, 6));
 
 	/* an invalid grid is never planable */
 	{
-		JERAI_MAP bad;
+		ALLEYCAT_MAP bad;
 
 		memset(&bad, 0, sizeof(bad));
-		CHECK(JerAiMapValid(&bad) == 0);
-		CHECK(JerAiMapCost(&bad, 1, 1) == JERAI_MAP_COST_BLOCKED);
+		CHECK(AlleycatMapValid(&bad) == 0);
+		CHECK(AlleycatMapCost(&bad, 1, 1) == ALLEYCAT_MAP_COST_BLOCKED);
 	}
 }
 
@@ -179,29 +179,29 @@ static void test_line_clear(void)
 {
 	gridReset();
 
-	CHECK(JerAiStarLineClear(&gMap, W(2), W(2), W(20), W(20)) == 1);
-	CHECK(JerAiStarLineClear(&gMap, W(2), W(2), W(2), W(2)) == 1);
+	CHECK(AlleycatStarLineClear(&gMap, W(2), W(2), W(20), W(20)) == 1);
+	CHECK(AlleycatStarLineClear(&gMap, W(2), W(2), W(2), W(2)) == 1);
 
-	gridWallRow(10, 0, JERAI_MAP_SIZE - 1);
-	CHECK(JerAiStarLineClear(&gMap, W(2), W(10), W(20), W(10)) == 0);	/* straight through */
-	CHECK(JerAiStarLineClear(&gMap, W(2), W(2), W(2), W(20)) == 0);	/* crosses it */
+	gridWallRow(10, 0, ALLEYCAT_MAP_SIZE - 1);
+	CHECK(AlleycatStarLineClear(&gMap, W(2), W(10), W(20), W(10)) == 0);	/* straight through */
+	CHECK(AlleycatStarLineClear(&gMap, W(2), W(2), W(2), W(20)) == 0);	/* crosses it */
 
 	gridReset();
 	gridWall(3, 3);
 	gridWall(4, 3);
 	gridWall(5, 3);
-	CHECK(JerAiStarLineClear(&gMap, W(4), W(2), W(4), W(4)) == 0);	/* a thumb of wall */
+	CHECK(AlleycatStarLineClear(&gMap, W(4), W(2), W(4), W(4)) == 0);	/* a thumb of wall */
 
 	/* not knowing is not clear: a line that leaves the window is refused */
 	gridReset();
-	CHECK(JerAiStarLineClear(&gMap, W(2), W(2), W(JERAI_MAP_SIZE + 4), W(2)) == 0);
+	CHECK(AlleycatStarLineClear(&gMap, W(2), W(2), W(ALLEYCAT_MAP_SIZE + 4), W(2)) == 0);
 
 	/* and an invalid grid refuses everything */
 	{
-		JERAI_MAP bad;
+		ALLEYCAT_MAP bad;
 
 		memset(&bad, 0, sizeof(bad));
-		CHECK(JerAiStarLineClear(&bad, 0, 0, W(4), W(4)) == 0);
+		CHECK(AlleycatStarLineClear(&bad, 0, 0, W(4), W(4)) == 0);
 	}
 }
 
@@ -231,11 +231,11 @@ static void test_open_grid(void)
 		int k;
 
 		for (k = 1; k < gPath.waypoints; k++)
-			CHECK(JerAiStarLineClear(&gMap, gPath.wx[k - 1], gPath.wz[k - 1], gPath.wx[k], gPath.wz[k]) == 1);
+			CHECK(AlleycatStarLineClear(&gMap, gPath.wx[k - 1], gPath.wz[k - 1], gPath.wx[k], gPath.wz[k]) == 1);
 	}
 
 	/* the work is bounded */
-	CHECK(gPath.expanded <= JERAI_STAR_EXPANSIONS);
+	CHECK(gPath.expanded <= ALLEYCAT_STAR_EXPANSIONS);
 
 	/* planning to where we already are is not a failure */
 	CHECK(planTo(7, 7) == 1);
@@ -250,7 +250,7 @@ static void test_wall_with_a_gap(void)
 
 	/* a wall across the middle with one gap at x = 20 */
 	gridWallRow(16, 1, 19);
-	gridWallRow(16, 21, JERAI_MAP_SIZE - 1);
+	gridWallRow(16, 21, ALLEYCAT_MAP_SIZE - 1);
 
 	CHECK(planTo(3, 30) == 1);
 	CHECK(gPath.complete == 1);
@@ -259,7 +259,7 @@ static void test_wall_with_a_gap(void)
 	for (k = 1; k < gPath.waypoints; k++)
 	{
 		legs++;
-		CHECK(JerAiStarLineClear(&gMap, gPath.wx[k - 1], gPath.wz[k - 1], gPath.wx[k], gPath.wz[k]) == 1);
+		CHECK(AlleycatStarLineClear(&gMap, gPath.wx[k - 1], gPath.wz[k - 1], gPath.wx[k], gPath.wz[k]) == 1);
 	}
 
 	CHECK(legs >= 2);	/* it had to turn: a straight line is blocked */
@@ -269,8 +269,8 @@ static void test_wall_with_a_gap(void)
 	{
 		int ix, iz;
 
-		CHECK(JerAiMapSampleIndex(&gMap, gPath.wx[k], gPath.wz[k], &ix, &iz) == 1);
-		CHECK(JerAiMapBlocked(&gMap, ix, iz) == 0);
+		CHECK(AlleycatMapSampleIndex(&gMap, gPath.wx[k], gPath.wz[k], &ix, &iz) == 1);
+		CHECK(AlleycatMapBlocked(&gMap, ix, iz) == 0);
 	}
 }
 
@@ -347,14 +347,14 @@ static void test_road_preference(void)
 		gridRoad(ix, 11);
 	}
 
-	CHECK(JerAiStarPlan(&gMap, W(1), W(10), W(30), W(10), &gPath) == 1);
+	CHECK(AlleycatStarPlan(&gMap, W(1), W(10), W(30), W(10), &gPath) == 1);
 	CHECK(gPath.complete == 1);
 
 	for (k = 0; k < gPath.waypoints; k++)
 	{
-		CHECK(JerAiMapSampleIndex(&gMap, gPath.wx[k], gPath.wz[k], &ix, &iz) == 1);
+		CHECK(AlleycatMapSampleIndex(&gMap, gPath.wx[k], gPath.wz[k], &ix, &iz) == 1);
 
-		if (JerAiMapRoad(&gMap, ix, iz))
+		if (AlleycatMapRoad(&gMap, ix, iz))
 			onRoad++;
 	}
 
@@ -369,7 +369,7 @@ static void test_road_preference(void)
 	for (ix = 1; ix <= 20; ix++)
 		gridRoad(ix, 10);
 
-	CHECK(JerAiStarPlan(&gMap, W(1), W(10), W(30), W(30), &gPath) == 1);
+	CHECK(AlleycatStarPlan(&gMap, W(1), W(10), W(30), W(30), &gPath) == 1);
 	CHECK(gPath.complete == 1);
 }
 
@@ -384,7 +384,7 @@ static void test_start_inside_a_wall_sample(void)
 	gridWall(8, 9);
 
 	/* start exactly on the wall sample */
-	CHECK(JerAiStarPlan(&gMap, W(8), W(8), W(20), W(20), &gPath) == 1);
+	CHECK(AlleycatStarPlan(&gMap, W(8), W(8), W(20), W(20), &gPath) == 1);
 	CHECK(gPath.complete == 1);
 	CHECK(gPath.waypoints > 0);
 
@@ -400,23 +400,23 @@ static void test_start_inside_a_wall_sample(void)
 					gridWall(8 + dx, 8 + dz);
 	}
 
-	CHECK(JerAiStarPlan(&gMap, W(8), W(8), W(20), W(20), &gPath) == 0);
+	CHECK(AlleycatStarPlan(&gMap, W(8), W(8), W(20), W(20), &gPath) == 0);
 	CHECK(gPath.waypoints == 0);
 }
 
 static void test_invalid_map(void)
 {
-	JERAI_MAP bad;
+	ALLEYCAT_MAP bad;
 
 	memset(&bad, 0, sizeof(bad));	/* valid == 0 */
 
-	CHECK(JerAiStarPlan(&bad, 0, 0, W(20), W(20), &gPath) == 0);
+	CHECK(AlleycatStarPlan(&bad, 0, 0, W(20), W(20), &gPath) == 0);
 	CHECK(gPath.waypoints == 0);
 	CHECK(gPath.complete == 0);
 
 	/* a goal outside the window is not reachable either */
 	gridReset();
-	CHECK(JerAiStarPlan(&gMap, W(2), W(2), W(JERAI_MAP_SIZE + 5), W(2), &gPath) == 0);
+	CHECK(AlleycatStarPlan(&gMap, W(2), W(2), W(ALLEYCAT_MAP_SIZE + 5), W(2), &gPath) == 0);
 }
 
 static void test_determinism(void)
@@ -428,7 +428,7 @@ static void test_determinism(void)
 	/* a maze with plenty of equal-cost options, so a non-deterministic tie break
 	 * would show up as a different answer */
 	gridWallRow(6, 1, 25);
-	gridWallRow(12, 5, JERAI_MAP_SIZE - 1);
+	gridWallRow(12, 5, ALLEYCAT_MAP_SIZE - 1);
 	gridWallRow(18, 1, 28);
 
 	CHECK(planTo(2, 30) == 1);
@@ -450,7 +450,7 @@ static void test_determinism(void)
 /* The local search: get back to a road                                */
 /* ------------------------------------------------------------------ */
 
-static JERAI_GOAL gGoal;
+static ALLEYCAT_GOAL gGoal;
 
 static void test_local_goal(void)
 {
@@ -458,25 +458,25 @@ static void test_local_goal(void)
 
 	/* nothing but open ground: the answer is OPEN, not silence */
 	gridReset();
-	CHECK(JerAiLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
-	CHECK(gGoal.kind == JERAI_GOAL_OPEN);
+	CHECK(AlleycatLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
+	CHECK(gGoal.kind == ALLEYCAT_GOAL_OPEN);
 	CHECK(gGoal.samples == 0);		/* already as open as it gets */
 
 	/* a road strip to the right, reachable: ROAD, and the NEAREST road sample */
 	gridReset();
-	for (ix = 20; ix < JERAI_MAP_SIZE; ix++)
+	for (ix = 20; ix < ALLEYCAT_MAP_SIZE; ix++)
 		gridRoad(ix, 5);
 
-	CHECK(JerAiLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
-	CHECK(gGoal.kind == JERAI_GOAL_ROAD);
+	CHECK(AlleycatLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
+	CHECK(gGoal.kind == ALLEYCAT_GOAL_ROAD);
 	CHECK(gGoal.samples == 15);		/* (5,5) -> (20,5) */
 	CHECK(gGoal.x == W(20) && gGoal.z == W(5));
 
 	/* already on the road: the goal is here, and the caller can tell */
 	gridReset();
 	gridRoad(7, 7);
-	CHECK(JerAiLocalGoal(&gMap, W(7), W(7), &gGoal) == 1);
-	CHECK(gGoal.kind == JERAI_GOAL_ROAD);
+	CHECK(AlleycatLocalGoal(&gMap, W(7), W(7), &gGoal) == 1);
+	CHECK(gGoal.kind == ALLEYCAT_GOAL_ROAD);
 	CHECK(gGoal.samples == 0);
 
 	/* THE ONE THAT MATTERS: a road behind a wall is not a way out. Reachability is the
@@ -488,17 +488,17 @@ static void test_local_goal(void)
 	 * this test made exactly that mistake and the search was right to ignore it.) So
 	 * the wall is a full column, the whole height of the window. */
 	gridReset();
-	for (ix = 15; ix < JERAI_MAP_SIZE; ix++)
+	for (ix = 15; ix < ALLEYCAT_MAP_SIZE; ix++)
 		gridRoad(ix, 5);
 	{
 		int iz;
 
-		for (iz = 0; iz < JERAI_MAP_SIZE; iz++)
+		for (iz = 0; iz < ALLEYCAT_MAP_SIZE; iz++)
 			gridWall(14, iz);
 	}
 
-	CHECK(JerAiLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
-	CHECK(gGoal.kind == JERAI_GOAL_OPEN);	/* NOT the unreachable road */
+	CHECK(AlleycatLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
+	CHECK(gGoal.kind == ALLEYCAT_GOAL_OPEN);	/* NOT the unreachable road */
 	CHECK(gGoal.x < W(14));			/* and on our side of the wall */
 
 	/* a road reachable only the LONG way round is still the answer, and this is the
@@ -507,11 +507,11 @@ static void test_local_goal(void)
 	gridReset();
 	for (ix = 0; ix <= 10; ix++)
 		gridWall(ix, 5);
-	for (ix = 20; ix < JERAI_MAP_SIZE; ix++)
+	for (ix = 20; ix < ALLEYCAT_MAP_SIZE; ix++)
 		gridRoad(ix, 5);
 
-	CHECK(JerAiLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
-	CHECK(gGoal.kind == JERAI_GOAL_ROAD);
+	CHECK(AlleycatLocalGoal(&gMap, W(5), W(5), &gGoal) == 1);
+	CHECK(gGoal.kind == ALLEYCAT_GOAL_ROAD);
 	CHECK(gGoal.x >= W(20));
 
 	/* walled in completely: nothing to say, and the caller finds out */
@@ -524,17 +524,17 @@ static void test_local_goal(void)
 				if (dx || dz)
 					gridWall(8 + dx, 8 + dz);
 	}
-	CHECK(JerAiLocalGoal(&gMap, W(8), W(8), &gGoal) == 1);
-	CHECK(gGoal.kind == JERAI_GOAL_OPEN);
+	CHECK(AlleycatLocalGoal(&gMap, W(8), W(8), &gGoal) == 1);
+	CHECK(gGoal.kind == ALLEYCAT_GOAL_OPEN);
 	CHECK(gGoal.samples == 0);		/* its own sample: the only open one it has */
 
 	/* an invalid grid is never a goal */
 	{
-		JERAI_MAP bad;
+		ALLEYCAT_MAP bad;
 
 		memset(&bad, 0, sizeof(bad));
-		CHECK(JerAiLocalGoal(&bad, 0, 0, &gGoal) == 0);
-		CHECK(gGoal.kind == JERAI_GOAL_NONE);
+		CHECK(AlleycatLocalGoal(&bad, 0, 0, &gGoal) == 0);
+		CHECK(gGoal.kind == ALLEYCAT_GOAL_NONE);
 	}
 }
 
@@ -544,15 +544,15 @@ static void test_flee_goal(void)
 
 	/* the threat is due north; the goal must be AWAY from it, and reachable */
 	gridReset();
-	CHECK(JerAiLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
+	CHECK(AlleycatLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
 
 	{
 		int sx = 0, sz = 0;
 		int dStart, dGoal;
 
-		CHECK(JerAiMapSampleIndex(&gMap, gGoal.x, gGoal.z, &sx, &sz) == 1);
-		CHECK(JerAiMapBlocked(&gMap, sx, sz) == 0);
-		CHECK(JerAiStarLineClear(&gMap, W(16), W(16), gGoal.x, gGoal.z) == 1);
+		CHECK(AlleycatMapSampleIndex(&gMap, gGoal.x, gGoal.z, &sx, &sz) == 1);
+		CHECK(AlleycatMapBlocked(&gMap, sx, sz) == 0);
+		CHECK(AlleycatStarLineClear(&gMap, W(16), W(16), gGoal.x, gGoal.z) == 1);
 
 		dStart = (16 - 16) * (16 - 16) + (16 - 10) * (16 - 10);
 		dGoal = (sx - 16) * (sx - 16) + (sz - 10) * (sz - 10);
@@ -567,11 +567,11 @@ static void test_flee_goal(void)
 	 * - a road at the far edge of the WINDOW is not a candidate at all, which is the
 	 * ring's job. */
 	gridReset();
-	for (ix = 0; ix < JERAI_MAP_SIZE; ix++)
+	for (ix = 0; ix < ALLEYCAT_MAP_SIZE; ix++)
 		gridRoad(ix, 24);
 
-	CHECK(JerAiLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
-	CHECK(gGoal.kind == JERAI_GOAL_ROAD);
+	CHECK(AlleycatLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
+	CHECK(gGoal.kind == ALLEYCAT_GOAL_ROAD);
 
 	/* reachability again: with a full wall down the middle, the goal cannot be on the
 	 * far side, however attractive it looks */
@@ -579,25 +579,25 @@ static void test_flee_goal(void)
 	{
 		int wz;
 
-		for (wz = 0; wz < JERAI_MAP_SIZE; wz++)
+		for (wz = 0; wz < ALLEYCAT_MAP_SIZE; wz++)
 			gridWall(20, wz);
 	}
 
-	CHECK(JerAiLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
+	CHECK(AlleycatLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
 	CHECK(gGoal.x < W(20));
 
 	/* an invalid grid is never a goal */
 	{
-		JERAI_MAP bad;
+		ALLEYCAT_MAP bad;
 
 		memset(&bad, 0, sizeof(bad));
-		CHECK(JerAiLocalFleeGoal(&bad, 0, 0, W(4), W(4), &gGoal) == 0);
-		CHECK(gGoal.kind == JERAI_GOAL_NONE);
+		CHECK(AlleycatLocalFleeGoal(&bad, 0, 0, W(4), W(4), &gGoal) == 0);
+		CHECK(gGoal.kind == ALLEYCAT_GOAL_NONE);
 	}
 }
 
 /* REACHABILITY, NOT LINE OF SIGHT. A road that can only be reached by driving AROUND a
- * wall is still a goal. The old gate was JerAiStarLineClear, which asks "is the straight
+ * wall is still a goal. The old gate was AlleycatStarLineClear, which asks "is the straight
  * line clear" - so this road was rejected outright and the flee never used the network
  * next to it (the "it does not follow the road" symptom). The wall below blocks the
  * direct line to every in-ring road sample, but the flood walks round its end and finds
@@ -613,22 +613,22 @@ static void test_flee_goal_around_a_corner(void)
 	for (ix = 0; ix <= 24; ix++)
 		gridWall(ix, 20);
 
-	for (ix = 0; ix < JERAI_MAP_SIZE; ix++)
+	for (ix = 0; ix < ALLEYCAT_MAP_SIZE; ix++)
 		gridRoad(ix, 24);
 
-	CHECK(JerAiLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
-	CHECK(gGoal.kind == JERAI_GOAL_ROAD);
+	CHECK(AlleycatLocalFleeGoal(&gMap, W(16), W(16), W(16), W(10), &gGoal) == 1);
+	CHECK(gGoal.kind == ALLEYCAT_GOAL_ROAD);
 
 	/* and prove the point: the direct line to the road straight ahead of the car really is
 	 * blocked, so a line-of-sight gate could not have picked it */
-	CHECK(JerAiStarLineClear(&gMap, W(16), W(16), W(16), W(24)) == 0);
+	CHECK(AlleycatStarLineClear(&gMap, W(16), W(16), W(16), W(24)) == 0);
 }
 
 /* ------------------------------------------------------------------ */
-/* The driver's polyline math (JerAiPathProjectArc / JerAiPathAimPoint) */
+/* The driver's polyline math (AlleycatPathProjectArc / AlleycatPathAimPoint) */
 /* ------------------------------------------------------------------ */
 
-/* The aim's "not behind the car" gate, as jerai_drive.c passes it. */
+/* The aim's "not behind the car" gate, as alleycat_drive.c passes it. */
 #define AIM_BEHIND_COS	(-1450)
 
 static void test_project_long_segments(void)
@@ -644,7 +644,7 @@ static void test_project_long_segments(void)
 		int L = lens[i];
 		int wx[2] = { 0, 0 }, wz[2] = { 0, L };
 		long long cross = 0;
-		long long arc = JerAiPathProjectArc(wx, wz, 2, 100, L / 2, &cross);
+		long long arc = AlleycatPathProjectArc(wx, wz, 2, 100, L / 2, &cross);
 
 		CHECK(arc == L / 2);
 		CHECK(cross == 100LL * 100LL);
@@ -654,7 +654,7 @@ static void test_project_long_segments(void)
 	{
 		int wx[2] = { 90000, 90000 }, wz[2] = { -120000, -110000 };
 		long long cross = 0;
-		long long arc = JerAiPathProjectArc(wx, wz, 2, 90300, -115000, &cross);
+		long long arc = AlleycatPathProjectArc(wx, wz, 2, 90300, -115000, &cross);
 
 		CHECK(arc == 5000);
 		CHECK(cross == 300LL * 300LL);
@@ -667,66 +667,66 @@ static void test_project_polyline(void)
 	int wx[3] = { 0, 0, 6000 }, wz[3] = { 0, 4000, 4000 };
 	long long cross = 0;
 
-	CHECK(JerAiPathProjectArc(wx, wz, 3, 3000, 4100, &cross) == 7000);
+	CHECK(AlleycatPathProjectArc(wx, wz, 3, 3000, 4100, &cross) == 7000);
 	CHECK(cross == 100LL * 100LL);
 
 	/* before the start clamps to 0, past the end clamps to the whole length */
-	CHECK(JerAiPathProjectArc(wx, wz, 3, 0, -500, &cross) == 0);
+	CHECK(AlleycatPathProjectArc(wx, wz, 3, 0, -500, &cross) == 0);
 	CHECK(cross == 500LL * 500LL);
-	CHECK(JerAiPathProjectArc(wx, wz, 3, 9000, 4000, &cross) == 10000);
+	CHECK(AlleycatPathProjectArc(wx, wz, 3, 9000, 4000, &cross) == 10000);
 	CHECK(cross == 3000LL * 3000LL);
 
 	/* one point is not a line: arc 0, no cross-track */
-	CHECK(JerAiPathProjectArc(wx, wz, 1, 50, 50, &cross) == 0);
+	CHECK(AlleycatPathProjectArc(wx, wz, 1, 50, 50, &cross) == 0);
 	CHECK(cross == -1);
-	CHECK(JerAiPathProjectArc(NULL, NULL, 3, 0, 0, &cross) == 0);
+	CHECK(AlleycatPathProjectArc(NULL, NULL, 3, 0, 0, &cross) == 0);
 }
 
 static void test_aim_point(void)
 {
 	int wx[2] = { 0, 0 }, wz[2] = { 0, 10000 };
 	int ax = -1, az = -1, sdx = -1, sdz = -1;
-	long long arc = JerAiPathProjectArc(wx, wz, 2, 0, 2000, NULL);
+	long long arc = AlleycatPathProjectArc(wx, wz, 2, 0, 2000, NULL);
 
 	CHECK(arc == 2000);
 
 	/* facing up the plan: the aim sits look_ahead further along, on this leg */
-	CHECK(JerAiPathAimPoint(wx, wz, 2, 0, 2000, 0, 4096, arc, 3000, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
+	CHECK(AlleycatPathAimPoint(wx, wz, 2, 0, 2000, 0, 4096, arc, 3000, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
 	CHECK(ax == 0 && az == 5000);
 	CHECK(sdx == 0 && sdz == 10000);
 
 	/* facing away: every point ahead on the plan is behind the car, so the
 	 * fallback is the goal itself, with no segment direction */
-	CHECK(JerAiPathAimPoint(wx, wz, 2, 0, 2000, 0, -4096, arc, 3000, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
+	CHECK(AlleycatPathAimPoint(wx, wz, 2, 0, 2000, 0, -4096, arc, 3000, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
 	CHECK(ax == 0 && az == 10000);
 	CHECK(sdx == 0 && sdz == 0);
 
 	/* a look-ahead past the end falls back to the goal too */
-	CHECK(JerAiPathAimPoint(wx, wz, 2, 0, 2000, 0, 4096, arc, 50000, AIM_BEHIND_COS, &ax, &az, NULL, NULL) == 1);
+	CHECK(AlleycatPathAimPoint(wx, wz, 2, 0, 2000, 0, 4096, arc, 50000, AIM_BEHIND_COS, &ax, &az, NULL, NULL) == 1);
 	CHECK(ax == 0 && az == 10000);
 
 	/* the aim never lands BEHIND the car's own projection on a long leg (the
 	 * Windows symptom: aim behind or beside the car -> full lock) */
 	{
 		int lx[3] = { 0, 0, 8000 }, lz[3] = { 0, 9000, 9000 };
-		long long a2 = JerAiPathProjectArc(lx, lz, 3, 150, 6000, NULL);
+		long long a2 = AlleycatPathProjectArc(lx, lz, 3, 150, 6000, NULL);
 
 		CHECK(a2 == 6000);
-		CHECK(JerAiPathAimPoint(lx, lz, 3, 150, 6000, 0, 4096, a2, 1400, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
+		CHECK(AlleycatPathAimPoint(lx, lz, 3, 150, 6000, 0, 4096, a2, 1400, AIM_BEHIND_COS, &ax, &az, &sdx, &sdz) == 1);
 		CHECK(az > 6000 && ax == 0);
 		CHECK(az - 6000 >= 1400 && az - 6000 < 1400 + 512);
 	}
 
-	CHECK(JerAiPathAimPoint(wx, wz, 0, 0, 0, 0, 4096, 0, 0, AIM_BEHIND_COS, &ax, &az, NULL, NULL) == 0);
+	CHECK(AlleycatPathAimPoint(wx, wz, 0, 0, 0, 0, 4096, 0, 0, AIM_BEHIND_COS, &ax, &az, NULL, NULL) == 0);
 }
 
 static void test_dist2_no_wrap(void)
 {
 	/* the phantom-traffic bug: 50,000 units away read as -1.79e9 (i.e. close) */
-	CHECK(JerAiDist2(0, 0, 0, 50000) == 2500000000LL);
-	CHECK(JerAiDist2(0, 0, 0, 46341) > 1200LL * 1200LL);
-	CHECK(JerAiDist2(10, 70000, 0, 0) == 100LL + 4900000000LL);
-	CHECK(JerAiDist2(-150000, 0, 150000, 0) == 90000000000LL);
+	CHECK(AlleycatDist2(0, 0, 0, 50000) == 2500000000LL);
+	CHECK(AlleycatDist2(0, 0, 0, 46341) > 1200LL * 1200LL);
+	CHECK(AlleycatDist2(10, 70000, 0, 0) == 100LL + 4900000000LL);
+	CHECK(AlleycatDist2(-150000, 0, 150000, 0) == 90000000000LL);
 }
 
 int main(void)

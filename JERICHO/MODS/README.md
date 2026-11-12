@@ -14,7 +14,7 @@ out. The superproject records a commit ("pin") for each one in the index, and
 
 `gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 and is not a submodule of this tree.
 
-The rest (`cainescrossfire`, `d2pl`, `JerAI`, `sandbox`, …) are
+The rest (`cainescrossfire`, `d2pl`, `Alleycat`, `sandbox`, …) are
 ordinary folders tracked by this repository.
 
 ## Fetching them

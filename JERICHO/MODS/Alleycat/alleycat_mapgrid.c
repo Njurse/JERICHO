@@ -1,5 +1,5 @@
 /*
- * jerai_mapgrid.c -- the PURE half of the world model: everything that reads an
+ * alleycat_mapgrid.c -- the PURE half of the world model: everything that reads an
  * already-built grid and nothing that touches the engine.
  *
  * Lifted from mp/ai/aimapgrid.c and namespaced. The split is deliberate: the
@@ -11,54 +11,54 @@
  * is in the wrong file.
  */
 
-#include "jerai_map.h"
+#include "alleycat_map.h"
 
 #include <math.h>
 
-int JerAiMapValid(const JERAI_MAP* map)
+int AlleycatMapValid(const ALLEYCAT_MAP* map)
 {
 	return (map != NULL) && map->valid;
 }
 
-int JerAiMapBlocked(const JERAI_MAP* map, int ix, int iz)
+int AlleycatMapBlocked(const ALLEYCAT_MAP* map, int ix, int iz)
 {
-	if (map == NULL || ix < 0 || iz < 0 || ix >= JERAI_MAP_SIZE || iz >= JERAI_MAP_SIZE)
+	if (map == NULL || ix < 0 || iz < 0 || ix >= ALLEYCAT_MAP_SIZE || iz >= ALLEYCAT_MAP_SIZE)
 		return 1;	/* outside the window is not somewhere we drive */
 
-	return (map->cell[iz][ix] & JERAI_MAP_BLOCKED) ? 1 : 0;
+	return (map->cell[iz][ix] & ALLEYCAT_MAP_BLOCKED) ? 1 : 0;
 }
 
-int JerAiMapRoad(const JERAI_MAP* map, int ix, int iz)
+int AlleycatMapRoad(const ALLEYCAT_MAP* map, int ix, int iz)
 {
-	if (map == NULL || ix < 0 || iz < 0 || ix >= JERAI_MAP_SIZE || iz >= JERAI_MAP_SIZE)
+	if (map == NULL || ix < 0 || iz < 0 || ix >= ALLEYCAT_MAP_SIZE || iz >= ALLEYCAT_MAP_SIZE)
 		return 0;
 
-	return (map->cell[iz][ix] & JERAI_MAP_ROAD) ? 1 : 0;
+	return (map->cell[iz][ix] & ALLEYCAT_MAP_ROAD) ? 1 : 0;
 }
 
-int JerAiMapClearance(const JERAI_MAP* map, int ix, int iz)
+int AlleycatMapClearance(const ALLEYCAT_MAP* map, int ix, int iz)
 {
-	if (map == NULL || ix < 0 || iz < 0 || ix >= JERAI_MAP_SIZE || iz >= JERAI_MAP_SIZE)
+	if (map == NULL || ix < 0 || iz < 0 || ix >= ALLEYCAT_MAP_SIZE || iz >= ALLEYCAT_MAP_SIZE)
 		return 0;
 
 	return map->clear[iz][ix];
 }
 
-int JerAiMapCost(const JERAI_MAP* map, int ix, int iz)
+int AlleycatMapCost(const ALLEYCAT_MAP* map, int ix, int iz)
 {
 	int cost;
 
-	if (!JerAiMapValid(map) || JerAiMapBlocked(map, ix, iz))
-		return JERAI_MAP_COST_BLOCKED;
+	if (!AlleycatMapValid(map) || AlleycatMapBlocked(map, ix, iz))
+		return ALLEYCAT_MAP_COST_BLOCKED;
 
-	cost = 100;	/* must stay JERAI_STAR_COST_MIN in jerai_star.h */
+	cost = 100;	/* must stay ALLEYCAT_STAR_COST_MIN in alleycat_star.h */
 
 	/* Off the road is allowed and discouraged: the whole point of a road preference
 	 * is that it must not make anywhere unreachable. How much it costs to be off it
-	 * is the map's `offroadCost` (JERICHO/CONFIG/JerAI.ini `offroad_cost`), so the
+	 * is the map's `offroadCost` (JERICHO/CONFIG/Alleycat.ini `offroad_cost`), so the
 	 * planner takes the road network WHEN THE ROAD GOES THE SAME WAY while still
 	 * being able to leave it to reach a goal that is not on it. */
-	if (!JerAiMapRoad(map, ix, iz))
+	if (!AlleycatMapRoad(map, ix, iz))
 		cost += map->offroadCost;
 
 	/* Hug the middle HARD. The clearance term has to be able to outweigh extra
@@ -67,7 +67,7 @@ int JerAiMapCost(const JERAI_MAP* map, int ix, int iz)
 	 * right against a wall costs several times an open one:
 	 *   clearance 0 -> +144, 1 -> +100, 2 -> +64, 3 -> +36, 6 -> +0 (base 100). */
 	{
-		int tight = JERAI_MAP_CLEAR_MAX - JerAiMapClearance(map, ix, iz);
+		int tight = ALLEYCAT_MAP_CLEAR_MAX - AlleycatMapClearance(map, ix, iz);
 
 		cost += tight * tight * 4;
 	}
@@ -78,7 +78,7 @@ int JerAiMapCost(const JERAI_MAP* map, int ix, int iz)
 /* Nearest sample, FLOORING for negative offsets. C integer division truncates toward
  * zero, so the obvious (v + step/2) / step pulls a point a whole step BELOW the window
  * back onto its edge and reports it as inside. */
-static int JerAiMapSampleRound(int v, int step)
+static int AlleycatMapSampleRound(int v, int step)
 {
 	if (v >= 0)
 		return (v + step / 2) / step;
@@ -86,17 +86,17 @@ static int JerAiMapSampleRound(int v, int step)
 	return -(((-v) + step / 2) / step);
 }
 
-int JerAiMapSampleIndex(const JERAI_MAP* map, int x, int z, int* ix, int* iz)
+int AlleycatMapSampleIndex(const ALLEYCAT_MAP* map, int x, int z, int* ix, int* iz)
 {
 	int sx, sz;
 
 	if (map == NULL)
 		return 0;
 
-	sx = JerAiMapSampleRound(x - map->originX, JERAI_MAP_STEP);
-	sz = JerAiMapSampleRound(z - map->originZ, JERAI_MAP_STEP);
+	sx = AlleycatMapSampleRound(x - map->originX, ALLEYCAT_MAP_STEP);
+	sz = AlleycatMapSampleRound(z - map->originZ, ALLEYCAT_MAP_STEP);
 
-	if (sx < 0 || sz < 0 || sx >= JERAI_MAP_SIZE || sz >= JERAI_MAP_SIZE)
+	if (sx < 0 || sz < 0 || sx >= ALLEYCAT_MAP_SIZE || sz >= ALLEYCAT_MAP_SIZE)
 		return 0;
 
 	if (ix != NULL) *ix = sx;
@@ -105,7 +105,7 @@ int JerAiMapSampleIndex(const JERAI_MAP* map, int x, int z, int* ix, int* iz)
 	return 1;
 }
 
-void JerAiMapWorld(const JERAI_MAP* map, int ix, int iz, int* x, int* z)
+void AlleycatMapWorld(const ALLEYCAT_MAP* map, int ix, int iz, int* x, int* z)
 {
 	if (map == NULL)
 	{
@@ -114,25 +114,25 @@ void JerAiMapWorld(const JERAI_MAP* map, int ix, int iz, int* x, int* z)
 		return;
 	}
 
-	if (x != NULL) *x = map->originX + ix * JERAI_MAP_STEP;
-	if (z != NULL) *z = map->originZ + iz * JERAI_MAP_STEP;
+	if (x != NULL) *x = map->originX + ix * ALLEYCAT_MAP_STEP;
+	if (z != NULL) *z = map->originZ + iz * ALLEYCAT_MAP_STEP;
 }
 
 /* Ring by ring, so the first hit is the nearest one. Shared rather than duplicated: the
  * pathfinder and the local road search both need it, and two copies would eventually
  * disagree about what "nearest" means. */
-int JerAiMapNearestOpen(const JERAI_MAP* map, int ix, int iz, int* ox, int* oz)
+int AlleycatMapNearestOpen(const ALLEYCAT_MAP* map, int ix, int iz, int* ox, int* oz)
 {
 	int r, dx, dz;
 
-	if (!JerAiMapBlocked(map, ix, iz))
+	if (!AlleycatMapBlocked(map, ix, iz))
 	{
 		if (ox != NULL) *ox = ix;
 		if (oz != NULL) *oz = iz;
 		return 1;
 	}
 
-	for (r = 1; r <= JERAI_MAP_OPEN_SNAP; r++)
+	for (r = 1; r <= ALLEYCAT_MAP_OPEN_SNAP; r++)
 	{
 		for (dz = -r; dz <= r; dz++)
 		{
@@ -141,7 +141,7 @@ int JerAiMapNearestOpen(const JERAI_MAP* map, int ix, int iz, int* ox, int* oz)
 				if ((dx < 0 ? -dx : dx) != r && (dz < 0 ? -dz : dz) != r)
 					continue;	/* the ring, not the disc */
 
-				if (!JerAiMapBlocked(map, ix + dx, iz + dz))
+				if (!AlleycatMapBlocked(map, ix + dx, iz + dz))
 				{
 					if (ox != NULL) *ox = ix + dx;
 					if (oz != NULL) *oz = iz + dz;
@@ -155,10 +155,10 @@ int JerAiMapNearestOpen(const JERAI_MAP* map, int ix, int iz, int* ox, int* oz)
 }
 
 /* ------------------------------------------------------------------ */
-/* polyline geometry (see jerai_map.h): 64-bit throughout               */
+/* polyline geometry (see alleycat_map.h): 64-bit throughout               */
 /* ------------------------------------------------------------------ */
 
-long long JerAiDist2(int ax, int az, int bx, int bz)
+long long AlleycatDist2(int ax, int az, int bx, int bz)
 {
 	long long dx = (long long)ax - (long long)bx;
 	long long dz = (long long)az - (long long)bz;
@@ -166,7 +166,7 @@ long long JerAiDist2(int ax, int az, int bx, int bz)
 	return dx * dx + dz * dz;
 }
 
-static long long JerAiSegLen(long long ax, long long az, long long bx, long long bz)
+static long long AlleycatSegLen(long long ax, long long az, long long bx, long long bz)
 {
 	double dx = (double)(bx - ax);
 	double dz = (double)(bz - az);
@@ -174,7 +174,7 @@ static long long JerAiSegLen(long long ax, long long az, long long bx, long long
 	return (long long)sqrt(dx * dx + dz * dz);
 }
 
-long long JerAiPathProjectArc(const int* wx, const int* wz, int n, int cx, int cz, long long* crossD2)
+long long AlleycatPathProjectArc(const int* wx, const int* wz, int n, int cx, int cz, long long* crossD2)
 {
 	long long bestD2 = -1, bestArc = 0, arc = 0;
 	int k;
@@ -191,7 +191,7 @@ long long JerAiPathProjectArc(const int* wx, const int* wz, int n, int cx, int c
 		long long bx = wx[k], bz = wz[k];
 		long long dx = bx - ax, dz = bz - az;
 		long long len2 = dx * dx + dz * dz;
-		long long segLen = JerAiSegLen(ax, az, bx, bz);
+		long long segLen = AlleycatSegLen(ax, az, bx, bz);
 		long long t = 0, px, pz, ex, ez, d2;
 
 		if (len2 > 0)
@@ -223,7 +223,7 @@ long long JerAiPathProjectArc(const int* wx, const int* wz, int n, int cx, int c
 	return bestArc;
 }
 
-int JerAiPathAimPoint(const int* wx, const int* wz, int n, int cx, int cz,
+int AlleycatPathAimPoint(const int* wx, const int* wz, int n, int cx, int cz,
 	int fwdX, int fwdZ, long long fromArc, long long lookAhead, int behindCos,
 	int* aimX, int* aimZ, int* segDx, int* segDz)
 {
@@ -242,7 +242,7 @@ int JerAiPathAimPoint(const int* wx, const int* wz, int n, int cx, int cz,
 		long long ax = wx[k - 1], az = wz[k - 1];
 		long long bx = wx[k], bz = wz[k];
 		long long dx = bx - ax, dz = bz - az;
-		long long segLen = JerAiSegLen(ax, az, bx, bz);
+		long long segLen = AlleycatSegLen(ax, az, bx, bz);
 		long long steps, s;
 		int done = 0;
 

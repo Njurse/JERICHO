@@ -1,11 +1,11 @@
-#ifndef JERAI_DRIVE_H
-#define JERAI_DRIVE_H
+#ifndef ALLEYCAT_DRIVE_H
+#define ALLEYCAT_DRIVE_H
 
 /* ------------------------------------------------------------------
- * jerai_drive.h -- the driving primitives: plan, aim, and turn a plan
+ * alleycat_drive.h -- the driving primitives: plan, aim, and turn a plan
  * into a pad.
  *
- * Driving is done the way the mp bot drives (mp_bot.c): JerAI produces a
+ * Driving is done the way the mp bot drives (mp_bot.c): Alleycat produces a
  * CAR_PAD_* bitmask and the module hands it to the engine through
  * JER_EVENT_CAR_PAD, so the car stays the PLAYER's own car
  * (CONTROL_TYPE_PLAYER) and the engine's normal input path applies it. No
@@ -22,80 +22,80 @@
  * current plan is reused while it is younger than replan_ms and the goal has
  * not drifted more than replan_move; `force` always re-plans. Returns 1 when a
  * usable plan exists (complete or not). */
-int JerAiDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force);
+int AlleycatDrivePlanTo(CAR_DATA* car, int toX, int toZ, int force);
 
 /* Build the occupancy window around the car, at most once per frame (a second
  * call on the same tick reuses the first build). Returns 1 when it is valid. */
-int JerAiDriveBuildMap(CAR_DATA* car);
+int AlleycatDriveBuildMap(CAR_DATA* car);
 
 /* Forget the per-level driving state (plan, stuck/feeler/slew state, last
  * heading). Called on JER_EVENT_GAME_START. */
-void JerAiDriveResetRun(void);
+void AlleycatDriveResetRun(void);
 
 /* The road's own speed limit under the car (civ_ai.c speedLimits[]), or
  * `fallback` on a junction / off the road. Engine speed units (hd.speed). */
-int JerAiDriveRoadLimit(CAR_DATA* car, int fallback);
+int AlleycatDriveRoadLimit(CAR_DATA* car, int fallback);
 
 /* 1 when the next junction straight ahead (within `range` world units) has
  * traffic lights that are red - or amber and still far enough off to stop for -
  * on the exit the car is entering by; writes the distance to it. */
-int JerAiDriveStopLightAhead(CAR_DATA* car, int range, int* distOut);
+int AlleycatDriveStopLightAhead(CAR_DATA* car, int range, int* distOut);
 
 /* The point to steer at this frame: the furthest waypoint within the
  * look-ahead. Returns 1 and writes it, or 0 when there is no plan. */
-int JerAiDriveAim(int* aimX, int* aimZ);
+int AlleycatDriveAim(int* aimX, int* aimZ);
 
 /* A steering/throttle pad toward (aimX, aimZ), with wall and traffic
  * avoidance. */
-unsigned int JerAiDriveSteerPad(CAR_DATA* car, int aimX, int aimZ);
+unsigned int AlleycatDriveSteerPad(CAR_DATA* car, int aimX, int aimZ);
 
 /* A STOPPING pad: brake while still rolling, then nothing. Used by the
  * multiplayer follow behavior when it is holding at its clearance from the
- * host - deliberately NOT JerAiDriveSteerPad, so the stuck detector (which
+ * host - deliberately NOT AlleycatDriveSteerPad, so the stuck detector (which
  * lives in there) can never mistake a parked-on-purpose car for a wedged one
  * and fire a reverse burst at the car it is supposed to be keeping clear of. */
-unsigned int JerAiDriveHoldPad(CAR_DATA* car);
+unsigned int AlleycatDriveHoldPad(CAR_DATA* car);
 
 /* A seeded RNG. The engine's Random2 is frame-deterministic (it replays the
  * same sequence every run), so a wander that used it would drive the same route
  * every time; this is seeded per run instead (JER_EVENT_GAME_START). */
-unsigned int JerAiRand(void);
-void JerAiRandSeed(unsigned int s);
+unsigned int AlleycatRand(void);
+void AlleycatRandSeed(unsigned int s);
 
 /* The player's own car (whatever its controlType), or NULL. Unlike
- * JerAiPlayerCar (which is the old AI-hand-off helper), this is the car pad
+ * AlleycatPlayerCar (which is the old AI-hand-off helper), this is the car pad
  * injection drives. */
-CAR_DATA* JerAiOwnCar(void);
+CAR_DATA* AlleycatOwnCar(void);
 
 /* What the car is actually DOING, as opposed to where the plan says to go.
  * `speed` and `slip` are the difference between walking a line and driving a
  * car: a car carries momentum, and its velocity can point somewhere other than
  * its nose - that angle IS the slide, and it is what makes the car understeer
  * into a corner it entered too fast. */
-typedef struct JERAI_CARSTATE
+typedef struct ALLEYCAT_CARSTATE
 {
 	int	speed;		/* forward speed, engine units (hd.wheel_speed) */
 	int	dir;		/* heading */
 	int	yawRate;	/* body rotation, engine units/frame (raw angular velocity) */
 	int	yaw;		/* heading change since last frame, in GAME UNITS/frame */
 	int	slip;		/* signed angle velocity-vs-heading, game units (-2048..2048) */
-} JERAI_CARSTATE;
+} ALLEYCAT_CARSTATE;
 
-JERAI_CARSTATE JerAiReadCar(CAR_DATA* car);
+ALLEYCAT_CARSTATE AlleycatReadCar(CAR_DATA* car);
 
 /* The corner the plan leads into: a car cannot turn or brake instantly, so the
  * driver has to know what the line does BEFORE it arrives. `sharp` is the
  * heading change at the sharpest waypoint ahead within the horizon (game units,
  * signed: + right, - left), `dist` is how far along the plan it sits. */
-typedef struct JERAI_CURVE
+typedef struct ALLEYCAT_CURVE
 {
 	int	sharp;		/* sharpest heading change ahead, game units (-2048..2048) */
 	int	dist;		/* world units from the car to that corner */
 	int	sign;		/* +1 / -1: which way the sharpest turn goes */
 	int	current;	/* heading change at the very next waypoint ahead */
 	int	span;		/* arc length the sharp turn happens over (its in+out legs) */
-} JERAI_CURVE;
+} ALLEYCAT_CURVE;
 
-JERAI_CURVE JerAiScanCurve(int cx, int cz, int horizon);
+ALLEYCAT_CURVE AlleycatScanCurve(int cx, int cz, int horizon);
 
-#endif /* JERAI_DRIVE_H */
+#endif /* ALLEYCAT_DRIVE_H */

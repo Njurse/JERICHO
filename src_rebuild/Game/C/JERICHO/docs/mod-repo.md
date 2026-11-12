@@ -28,8 +28,8 @@ JERICHO's built-in feed is
 It lists `mp`, `carhacks`, `crumple`, `bake` and the content packs, with the
 packages in `packages/`. The sources live in their own repositories
 (`Njurse/JERICHO-Mod-MP`, `Njurse/JERICHO-Mod-carhacks`,
-`Njurse/Jericho-Mod-CRUMPLE`, `Njurse/JERICHO-D1`). `JerAI` is not in the feed: it
-is a compiled-in module of the dev build (`JERICHO/MODS/JerAI` in the main tree).
+`Njurse/Jericho-Mod-CRUMPLE`, `Njurse/JERICHO-D1`). `Alleycat` is not in the feed: it
+is a compiled-in module of the dev build (`JERICHO/MODS/Alleycat` in the main tree).
 See that repository's README for the publish steps.
 
 ## 1. The index: `mods.json`

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""jerai_steer_stats.py -- read a JERICHO.log and report how the JerAI steering
+"""alleycat_steer_stats.py -- read a JERICHO.log and report how the Alleycat steering
 loop actually behaved.
 
-Why this exists: the once-a-second "[JerAI] drive" line cannot show a saw - it
+Why this exists: the once-a-second "[Alleycat] drive" line cannot show a saw - it
 samples 30 frames apart while the wheel is turned on and off in ones and twos.
-Setting `steer_trace = N` in JERICHO/CONFIG/JerAI.ini makes the module log a
-compact "[JerAI] steer" line every N frames instead, and this summarises them.
+Setting `steer_trace = N` in JERICHO/CONFIG/Alleycat.ini makes the module log a
+compact "[Alleycat] steer" line every N frames instead, and this summarises them.
 
-    python JERICHO/MODS/JerAI/tools/jerai_steer_stats.py [logfile]
+    python JERICHO/MODS/Alleycat/tools/alleycat_steer_stats.py [logfile]
 
 The numbers that matter:
 
@@ -47,7 +47,7 @@ def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "JERICHO.log"
     rows = []
     for line in open(path, encoding="utf-8", errors="replace"):
-        if "[JerAI] steer " not in line:
+        if "[Alleycat] steer " not in line:
             continue
         m = STEER.search(line)
         if not m:
@@ -62,8 +62,8 @@ def main():
         rows.append(r)
 
     if not rows:
-        print(f"no '[JerAI] steer' lines in {path}")
-        print("set steer_trace = 3 in JERICHO/CONFIG/JerAI.ini and run the game")
+        print(f"no '[Alleycat] steer' lines in {path}")
+        print("set steer_trace = 3 in JERICHO/CONFIG/Alleycat.ini and run the game")
         return 2
 
     n = len(rows)

@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """follow_host.py -- bring in ONE extra game that joins YOUR localhost match and,
-with JerAI, tails the host around the map.
+with Alleycat, tails the host around the map.
 
 The workflow it exists for: you host a multiplayer match as usual (the game's own
 Host menu, or mp_host.bat / mp_localpair's host seat), then run this. It starts a
-single joining instance on 127.0.0.1:<port> with JerAI enabled in "follow" mode,
+single joining instance on 127.0.0.1:<port> with Alleycat enabled in Pursuit mode,
 so it drives its own car to YOUR car, holds a clearance and idles - a moving
-partner to test multiplayer against.
+partner to test multiplayer against. `--ram` drops the clearance and drives into
+your car instead.
 
 It does NOT host, and it does not start a second host: the match must already be
 up. It also does not touch your instance -- the follower gets its OWN run
 directory (directory junctions share the game's big trees; only JERICHO/CONFIG is
 a private copy), so its JERICHO.log and mp.ini cannot collide with yours.
 
-    python JERICHO/MODS/JerAI/tools/follow_host.py                 # port 1400
-    python JERICHO/MODS/JerAI/tools/follow_host.py --port 1400 --client-car slot4
-    python JERICHO/MODS/JerAI/tools/follow_host.py --clearance 2500 --range 0
-    python JERICHO/MODS/JerAI/tools/follow_host.py --dry            # print, do not launch
+    python JERICHO/MODS/Alleycat/tools/follow_host.py                 # port 1400
+    python JERICHO/MODS/Alleycat/tools/follow_host.py --port 1400 --client-car slot4
+    python JERICHO/MODS/Alleycat/tools/follow_host.py --clearance 2500 --range 0
+    python JERICHO/MODS/Alleycat/tools/follow_host.py --dry            # print, do not launch
 
 Ctrl+C stops the follower (the PID here is real -- it is launched directly, not
 through `start`, which would detach it beyond our reach).
@@ -39,7 +40,7 @@ if os.path.isdir(MP_TOOLS):
 
 DEFAULT_GAME_DIR = os.path.join("src_rebuild", "bin", "Release_dev")
 
-DRIVE_RE = re.compile(r"\[JerAI\] drive .*?speed=(-?\d+).*?follow=(-?\d+) fdist=(\d+)")
+DRIVE_RE = re.compile(r"\[Alleycat\] drive .*?speed=(-?\d+).*?follow=(-?\d+) fdist=(\d+)")
 
 
 def log(msg):
@@ -76,7 +77,7 @@ def set_ini_key(path, key, value):
 def enable_module(modlist, module, value=1):
     """Turn a module on in JERICHO/CONFIG/modlist.ini without disturbing the rest
     of the list. An id the file has never heard of is appended (the loader falls
-    back to mod.toml's default-enabled when an id is absent, and JerAI's is
+    back to mod.toml's default-enabled when an id is absent, and Alleycat's is
     false)."""
     lines = []
     if os.path.isfile(modlist):
@@ -119,11 +120,13 @@ def main():
                     help="the follower's car: a model number, slotN, 'random', or 'default' "
                          "(= pass no -mpcar and let the level choose)")
     ap.add_argument("--clearance", type=int, default=None,
-                    help="override JerAI's follow_clearance (world units)")
+                    help="override Alleycat's follow_clearance (world units)")
     ap.add_argument("--range", type=int, default=None,
-                    help="override JerAI's follow_range; 0 = unlimited (the default)")
+                    help="override Alleycat's follow_range; 0 = unlimited (the default)")
     ap.add_argument("--yaw-lead", type=int, default=None,
-                    help="override JerAI's yaw_lead (steering damper; lower steers harder)")
+                    help="override Alleycat's yaw_lead (steering damper; lower steers harder)")
+    ap.add_argument("--ram", action="store_true",
+                    help="Pursuit ram mode: no clearance hold, drive into the host")
     ap.add_argument("--seconds", type=int, default=0,
                     help="stop after this long (0 = run until Ctrl+C)")
     ap.add_argument("--dry", action="store_true",
@@ -156,15 +159,16 @@ def main():
     os.makedirs(cfg, exist_ok=True)
 
     # The follower must be an mp client (mp is on by default; make it explicit) and
-    # must run JerAI in Joyride. In a session JerAI's own gate does the rest: it is
-    # NOT the host, so Joyride targets the host's car.
+    # must run Alleycat in Pursuit. In a session Alleycat's own gate does the rest:
+    # it is NOT the host, so Pursuit targets the host's car.
     enable_module(os.path.join(cfg, "modlist.ini"), "mp", 1)
-    enable_module(os.path.join(cfg, "modlist.ini"), "JerAI", 1)
+    enable_module(os.path.join(cfg, "modlist.ini"), "Alleycat", 1)
 
-    jer = os.path.join(cfg, "JerAI.ini")
+    jer = os.path.join(cfg, "Alleycat.ini")
     set_ini_key(jer, "enabled", 1)
-    set_ini_key(jer, "mode", 1)          # 1 = Joyride
+    set_ini_key(jer, "mode", 3)          # 3 = Pursuit
     set_ini_key(jer, "follow", 1)
+    set_ini_key(jer, "pursuit_ram", 1 if args.ram else 0)
     set_ini_key(jer, "follow_car", -1)   # the MP host, not a single-player lever
     set_ini_key(jer, "follow_clearance", args.clearance if args.clearance is not None else 1500)
     set_ini_key(jer, "follow_range", args.range if args.range is not None else 0)
@@ -184,7 +188,8 @@ def main():
         log("--dry: not launching")
         return 0
 
-    log(f"joining {args.join_host}:{args.port} as '{args.name}' - JerAI (Joyride) will follow the host")
+    log(f"joining {args.join_host}:{args.port} as '{args.name}' - Alleycat (Pursuit) will "
+        f"{'ram' if args.ram else 'follow'} the host")
     proc = subprocess.Popen(cmd, cwd=run_dir, env=env)
 
     logfile = os.path.join(run_dir, "JERICHO.log")

@@ -94,7 +94,7 @@ int jer_hud_active(void);
  *   3     cainescrossfire: arena editor readout (top left)
  *   4     free
  *   5     mp: round clock (top centre)
- *   6-9   JerAI: its HUD lines (top left) */
+ *   6-9   Alleycat: its HUD lines (top left) */
 
 #define JER_HUD_ANCHOR_TOP_LEFT		0
 #define JER_HUD_ANCHOR_TOP_CENTRE	1

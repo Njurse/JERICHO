@@ -1,5 +1,5 @@
 /*
- * jerai_viz.c -- the in-game debug drawing. See jerai_internal.h.
+ * alleycat_viz.c -- the in-game debug drawing. See alleycat_internal.h.
  *
  * Everything is drawn with the engine's depth-sorted world line
  * (Debug_AddLineDepth, DebugOverlay.cpp): buildings occlude the lines, so the
@@ -19,9 +19,9 @@
  * its overlay line buffer.
  */
 
-#include "jerai_internal.h"
-#include "jerai_drive.h"
-#include "jerai_behavior.h"
+#include "alleycat_internal.h"
+#include "alleycat_drive.h"
+#include "alleycat_behavior.h"
 
 #include "jer_events.h"
 
@@ -31,7 +31,7 @@ extern void Debug_AddLineDepth(VECTOR& pointA, VECTOR& pointB, CVECTOR& color);
 /* how many lines this module issued this frame, for the readout */
 static int sLines;
 
-static void JerAiSeg(int x0, int y0, int z0, int x1, int y1, int z1, CVECTOR& col)
+static void AlleycatSeg(int x0, int y0, int z0, int x1, int y1, int z1, CVECTOR& col)
 {
 	VECTOR a, b;
 
@@ -42,19 +42,19 @@ static void JerAiSeg(int x0, int y0, int z0, int x1, int y1, int z1, CVECTOR& co
 	sLines++;
 }
 
-static void JerAiCross(int x, int y, int z, int r, CVECTOR& col)
+static void AlleycatCross(int x, int y, int z, int r, CVECTOR& col)
 {
-	JerAiSeg(x - r, y, z, x + r, y, z, col);
-	JerAiSeg(x, y, z - r, x, y, z + r, col);
+	AlleycatSeg(x - r, y, z, x + r, y, z, col);
+	AlleycatSeg(x, y, z - r, x, y, z + r, col);
 }
 
-/* distances are JerAiDist2 (jerai_mapgrid.c): 64-bit, because a 32-bit `long`
+/* distances are AlleycatDist2 (alleycat_mapgrid.c): 64-bit, because a 32-bit `long`
  * (Windows) wrapped on a big map and let far edges past the gates below, where
  * they ate the engine's 512-line cap */
 
 /* ---- the engine road graph ---------------------------------------- */
 
-static void JerAiDrawRoad(CAR_DATA* car)
+static void AlleycatDrawRoad(CAR_DATA* car)
 {
 	CVECTOR cEdge = { 40, 160, 255 };
 	CVECTOR cKind[3] = { { 255, 200, 40 }, { 255, 120, 40 }, { 140, 255, 140 } };
@@ -64,65 +64,65 @@ static void JerAiDrawRoad(CAR_DATA* car)
 	const long long edgeR2 = 13000LL * 13000LL;
 	const long long nodeR2 = 7000LL * 7000LL;
 
-	for (i = 0; i < gJerAi.road.edgeCount; i++)
+	for (i = 0; i < gAlleycat.road.edgeCount; i++)
 	{
-		const JERAI_ROAD_NODE* a = &gJerAi.road.nodes[gJerAi.road.edges[i].a];
-		const JERAI_ROAD_NODE* b = &gJerAi.road.nodes[gJerAi.road.edges[i].b];
+		const ALLEYCAT_ROAD_NODE* a = &gAlleycat.road.nodes[gAlleycat.road.edges[i].a];
+		const ALLEYCAT_ROAD_NODE* b = &gAlleycat.road.nodes[gAlleycat.road.edges[i].b];
 
-		if (JerAiDist2((a->x + b->x) / 2, (a->z + b->z) / 2, cx, cz) > edgeR2)
+		if (AlleycatDist2((a->x + b->x) / 2, (a->z + b->z) / 2, cx, cz) > edgeR2)
 			continue;
 
-		JerAiSeg(a->x, a->y + 60, a->z, b->x, b->y + 60, b->z, cEdge);
+		AlleycatSeg(a->x, a->y + 60, a->z, b->x, b->y + 60, b->z, cEdge);
 	}
 
-	for (i = 0; i < gJerAi.road.nodeCount; i++)
+	for (i = 0; i < gAlleycat.road.nodeCount; i++)
 	{
-		const JERAI_ROAD_NODE* n = &gJerAi.road.nodes[i];
+		const ALLEYCAT_ROAD_NODE* n = &gAlleycat.road.nodes[i];
 		int k = (n->kind < 0) ? 0 : (n->kind > 2 ? 2 : n->kind);
 
-		if (JerAiDist2(n->x, n->z, cx, cz) > nodeR2)
+		if (AlleycatDist2(n->x, n->z, cx, cz) > nodeR2)
 			continue;
 
-		JerAiCross(n->x, n->y + 60, n->z, 120, cKind[k]);
+		AlleycatCross(n->x, n->y + 60, n->z, 120, cKind[k]);
 	}
 }
 
 /* ---- the occupancy grid ------------------------------------------- */
 
-static void JerAiDrawGrid(CAR_DATA* car)
+static void AlleycatDrawGrid(CAR_DATA* car)
 {
 	CVECTOR cWall = { 255, 40, 40 };
 	CVECTOR cRoad = { 40, 200, 40 };
-	int y = gJerAi.map.centreY + 40;
+	int y = gAlleycat.map.centreY + 40;
 	int cx = car->hd.where.t[0];
 	int cz = car->hd.where.t[2];
 	const long long r2 = 6000LL * 6000LL;
 	int ix, iz;
 
 	/* stride 2: a sample every ~1024 units is plenty to read a wall line */
-	for (iz = 0; iz < JERAI_MAP_SIZE; iz += 2)
+	for (iz = 0; iz < ALLEYCAT_MAP_SIZE; iz += 2)
 	{
-		for (ix = 0; ix < JERAI_MAP_SIZE; ix += 2)
+		for (ix = 0; ix < ALLEYCAT_MAP_SIZE; ix += 2)
 		{
 			int wx, wz;
 
-			if (JerAiMapBlocked(&gJerAi.map, ix, iz))
+			if (AlleycatMapBlocked(&gAlleycat.map, ix, iz))
 			{
-				JerAiMapWorld(&gJerAi.map, ix, iz, &wx, &wz);
+				AlleycatMapWorld(&gAlleycat.map, ix, iz, &wx, &wz);
 
-				if (JerAiDist2(wx, wz, cx, cz) > r2)
+				if (AlleycatDist2(wx, wz, cx, cz) > r2)
 					continue;
 
-				JerAiCross(wx, y, wz, 90, cWall);
+				AlleycatCross(wx, y, wz, 90, cWall);
 			}
-			else if (JerAiMapRoad(&gJerAi.map, ix, iz))
+			else if (AlleycatMapRoad(&gAlleycat.map, ix, iz))
 			{
-				JerAiMapWorld(&gJerAi.map, ix, iz, &wx, &wz);
+				AlleycatMapWorld(&gAlleycat.map, ix, iz, &wx, &wz);
 
-				if (JerAiDist2(wx, wz, cx, cz) > r2)
+				if (AlleycatDist2(wx, wz, cx, cz) > r2)
 					continue;
 
-				JerAiCross(wx, y, wz, 40, cRoad);
+				AlleycatCross(wx, y, wz, 40, cRoad);
 			}
 		}
 	}
@@ -130,7 +130,7 @@ static void JerAiDrawGrid(CAR_DATA* car)
 
 /* ---- the current plan --------------------------------------------- */
 
-static void JerAiDrawPath(CAR_DATA* car)
+static void AlleycatDrawPath(CAR_DATA* car)
 {
 	CVECTOR cRoute = { 255, 60, 60 };
 	CVECTOR cGoal = { 255, 255, 60 };
@@ -138,22 +138,22 @@ static void JerAiDrawPath(CAR_DATA* car)
 	int y = car->hd.where.t[1] + 60;
 	int k;
 
-	for (k = 1; k < gJerAi.path.waypoints; k++)
+	for (k = 1; k < gAlleycat.path.waypoints; k++)
 	{
-		JerAiSeg(gJerAi.path.wx[k - 1], y, gJerAi.path.wz[k - 1],
-			 gJerAi.path.wx[k], y, gJerAi.path.wz[k], cRoute);
+		AlleycatSeg(gAlleycat.path.wx[k - 1], y, gAlleycat.path.wz[k - 1],
+			 gAlleycat.path.wx[k], y, gAlleycat.path.wz[k], cRoute);
 	}
 
 	/* the goal as a ground cross, and the line to where we are aiming */
-	JerAiCross(gJerAi.goalX, gJerAi.map.centreY + 60, gJerAi.goalZ, 500, cGoal);
+	AlleycatCross(gAlleycat.goalX, gAlleycat.map.centreY + 60, gAlleycat.goalZ, 500, cGoal);
 
-	JerAiSeg(car->hd.where.t[0], y, car->hd.where.t[2],
-		 gJerAi.aimX, y, gJerAi.aimZ, cAim);
+	AlleycatSeg(car->hd.where.t[0], y, car->hd.where.t[2],
+		 gAlleycat.aimX, y, gAlleycat.aimZ, cAim);
 }
 
 /* ---- the hook ------------------------------------------------------ */
 
-int JerAiOnDrawWorld(void* userdata, void* args)
+int AlleycatOnDrawWorld(void* userdata, void* args)
 {
 	CAR_DATA* car;
 
@@ -162,27 +162,27 @@ int JerAiOnDrawWorld(void* userdata, void* args)
 
 	sLines = 0;
 
-	if (!gJerAi.enabled)
+	if (!gAlleycat.enabled)
 		return JER_RESULT_CONTINUE;
 
-	car = JerAiOwnCar();
+	car = AlleycatOwnCar();
 
 	if (car == NULL)
 		return JER_RESULT_CONTINUE;
 
-	if (gJerAi.vizRoad && gJerAi.roadBuilt)
-		JerAiDrawRoad(car);
+	if (gAlleycat.vizRoad && gAlleycat.roadBuilt)
+		AlleycatDrawRoad(car);
 
-	if (gJerAi.vizGrid && JerAiMapValid(&gJerAi.map))
-		JerAiDrawGrid(car);
+	if (gAlleycat.vizGrid && AlleycatMapValid(&gAlleycat.map))
+		AlleycatDrawGrid(car);
 
-	if (gJerAi.vizPath && gJerAi.havePlan)
-		JerAiDrawPath(car);
+	if (gAlleycat.vizPath && gAlleycat.havePlan)
+		AlleycatDrawPath(car);
 
 	return JER_RESULT_CONTINUE;
 }
 
-int JerAiVizLines(void)
+int AlleycatVizLines(void)
 {
 	return sLines;
 }

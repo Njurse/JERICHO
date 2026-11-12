@@ -103,7 +103,7 @@ jer_pause_menu_register(&myMenu);
   displaced (carhacks contributes its car actions to mp's car page this way).
 - **Opening your page from a key.** A compiled-in module can call
   `jer_pause_menu_open(target)` (id or title) to open the pause straight on its
-  page. Triangle or Start on that page closes the pause. JerAI binds it to L2.
+  page. Triangle or Start on that page closes the pause. Alleycat binds it to L2.
 - `crumple`, `d2pl` and `sandbox` are the worked examples — their old
   hardcoded shells were removed from `pause.c`.
 

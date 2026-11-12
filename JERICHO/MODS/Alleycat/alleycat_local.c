@@ -1,30 +1,30 @@
 /*
- * jerai_local.c -- one flood of the window, two rungs of the answer. See jerai_local.h.
+ * alleycat_local.c -- one flood of the window, two rungs of the answer. See alleycat_local.h.
  *
- * Lifted from mp/ai/ailocal.c and namespaced (JerAi*).
+ * Lifted from mp/ai/ailocal.c and namespaced (Alleycat*).
  *
  * Static scratch rather than stack: this runs from the game loop, the arrays are sized
- * to the grid, and the module is single-threaded (the same reasoning as jerai_star's node
+ * to the grid, and the module is single-threaded (the same reasoning as alleycat_star's node
  * pool). Nothing is allocated and nothing grows.
  */
 
 #include <string.h>
 
-#include "jerai_map.h"
-#include "jerai_local.h"
+#include "alleycat_map.h"
+#include "alleycat_local.h"
 
-#define JERAI_LOCAL_NODES	(JERAI_MAP_SIZE * JERAI_MAP_SIZE)
+#define ALLEYCAT_LOCAL_NODES	(ALLEYCAT_MAP_SIZE * ALLEYCAT_MAP_SIZE)
 
-static unsigned char sSeen[JERAI_LOCAL_NODES];
-static int sDist[JERAI_LOCAL_NODES];
-static int sQueue[JERAI_LOCAL_NODES];
+static unsigned char sSeen[ALLEYCAT_LOCAL_NODES];
+static int sDist[ALLEYCAT_LOCAL_NODES];
+static int sQueue[ALLEYCAT_LOCAL_NODES];
 
-static void JerAiLocalFail(JERAI_GOAL* out)
+static void AlleycatLocalFail(ALLEYCAT_GOAL* out)
 {
 	if (out == NULL)
 		return;
 
-	out->kind = JERAI_GOAL_NONE;
+	out->kind = ALLEYCAT_GOAL_NONE;
 	out->x = 0;
 	out->z = 0;
 	out->samples = 0;
@@ -41,17 +41,17 @@ static void JerAiLocalFail(JERAI_GOAL* out)
  * The corner-cut rule is not decoration: a diagonal step between two blocked samples is
  * a gap narrower than a car, and letting the flood leak through one would call a road
  * "reachable" that the car cannot drive to. */
-static int JerAiLocalFlood(const JERAI_MAP* map, int sx, int sz)
+static int AlleycatLocalFlood(const ALLEYCAT_MAP* map, int sx, int sz)
 {
 	int head = 0, tail = 0;
-	int start = sz * JERAI_MAP_SIZE + sx;
+	int start = sz * ALLEYCAT_MAP_SIZE + sx;
 	int dx, dz;
 
 	memset(sSeen, 0, sizeof(sSeen));
 
 	/* the start must be a real sample: an out-of-range start would index sSeen out of
 	 * bounds on the very first write. */
-	if (sx < 0 || sz < 0 || sx >= JERAI_MAP_SIZE || sz >= JERAI_MAP_SIZE)
+	if (sx < 0 || sz < 0 || sx >= ALLEYCAT_MAP_SIZE || sz >= ALLEYCAT_MAP_SIZE)
 		return 0;
 
 	sSeen[start] = 1;
@@ -61,8 +61,8 @@ static int JerAiLocalFlood(const JERAI_MAP* map, int sx, int sz)
 	while (head < tail)
 	{
 		int cur = sQueue[head++];
-		int cx = cur % JERAI_MAP_SIZE;
-		int cz = cur / JERAI_MAP_SIZE;
+		int cx = cur % ALLEYCAT_MAP_SIZE;
+		int cz = cur / ALLEYCAT_MAP_SIZE;
 		int d = sDist[cur];
 
 		for (dz = -1; dz <= 1; dz++)
@@ -77,19 +77,19 @@ static int JerAiLocalFlood(const JERAI_MAP* map, int sx, int sz)
 				nx = cx + dx;
 				nz = cz + dz;
 
-				if (nx < 0 || nz < 0 || nx >= JERAI_MAP_SIZE || nz >= JERAI_MAP_SIZE)
+				if (nx < 0 || nz < 0 || nx >= ALLEYCAT_MAP_SIZE || nz >= ALLEYCAT_MAP_SIZE)
 					continue;
 
-				n = nz * JERAI_MAP_SIZE + nx;
+				n = nz * ALLEYCAT_MAP_SIZE + nx;
 
 				if (sSeen[n])
 					continue;
 
-				if (JerAiMapBlocked(map, nx, nz))
+				if (AlleycatMapBlocked(map, nx, nz))
 					continue;
 
 				if (dx != 0 && dz != 0 &&
-					(JerAiMapBlocked(map, cx + dx, cz) || JerAiMapBlocked(map, cx, cz + dz)))
+					(AlleycatMapBlocked(map, cx + dx, cz) || AlleycatMapBlocked(map, cx, cz + dz)))
 					continue;
 
 				sSeen[n] = 1;
@@ -102,7 +102,7 @@ static int JerAiLocalFlood(const JERAI_MAP* map, int sx, int sz)
 	return tail;
 }
 
-int JerAiLocalGoal(const JERAI_MAP* map, int fromX, int fromZ, JERAI_GOAL* out)
+int AlleycatLocalGoal(const ALLEYCAT_MAP* map, int fromX, int fromZ, ALLEYCAT_GOAL* out)
 {
 	int six, siz, q, reached;
 	int bestClear = -1, bestIx = -1, bestIz = -1, bestRing = 0;
@@ -110,45 +110,45 @@ int JerAiLocalGoal(const JERAI_MAP* map, int fromX, int fromZ, JERAI_GOAL* out)
 	if (out == NULL)
 		return 0;
 
-	JerAiLocalFail(out);
+	AlleycatLocalFail(out);
 
-	if (!JerAiMapValid(map))
+	if (!AlleycatMapValid(map))
 		return 0;
 
-	if (!JerAiMapSampleIndex(map, fromX, fromZ, &six, &siz))
+	if (!AlleycatMapSampleIndex(map, fromX, fromZ, &six, &siz))
 		return 0;
 
 	/* the car is very often inside a "blocked" sample - that is what a probe radius the
 	 * width of a car does when the car is near a wall - so walk out before flooding */
-	if (!JerAiMapNearestOpen(map, six, siz, &six, &siz))
+	if (!AlleycatMapNearestOpen(map, six, siz, &six, &siz))
 		return 0;
 
-	reached = JerAiLocalFlood(map, six, siz);
+	reached = AlleycatLocalFlood(map, six, siz);
 
 	for (q = 0; q < reached; q++)
 	{
 		int cur = sQueue[q];
-		int cx = cur % JERAI_MAP_SIZE;
-		int cz = cur / JERAI_MAP_SIZE;
+		int cx = cur % ALLEYCAT_MAP_SIZE;
+		int cz = cur / ALLEYCAT_MAP_SIZE;
 		int d = sDist[cur];
 
 		/* RUNG 1. Breadth-first, so the first road sample reached is the nearest
 		 * reachable one - nearest along the ground the car can drive. */
-		if (JerAiMapRoad(map, cx, cz))
+		if (AlleycatMapRoad(map, cx, cz))
 		{
-			JerAiMapWorld(map, cx, cz, &out->x, &out->z);
-			out->kind = JERAI_GOAL_ROAD;
+			AlleycatMapWorld(map, cx, cz, &out->x, &out->z);
+			out->kind = ALLEYCAT_GOAL_ROAD;
 			out->samples = d;
-			out->clearance = JerAiMapClearance(map, cx, cz);
+			out->clearance = AlleycatMapClearance(map, cx, cz);
 
 			return 1;
 		}
 
 		/* RUNG 2, gathered as we go: the most open ground, and (because BFS) the
 		 * nearest of those when several are equally open. */
-		if (JerAiMapClearance(map, cx, cz) > bestClear)
+		if (AlleycatMapClearance(map, cx, cz) > bestClear)
 		{
-			bestClear = JerAiMapClearance(map, cx, cz);
+			bestClear = AlleycatMapClearance(map, cx, cz);
 			bestIx = cx;
 			bestIz = cz;
 			bestRing = d;
@@ -158,8 +158,8 @@ int JerAiLocalGoal(const JERAI_MAP* map, int fromX, int fromZ, JERAI_GOAL* out)
 	/* No road is reachable from here. Room to move still beats standing still. */
 	if (bestIx >= 0)
 	{
-		JerAiMapWorld(map, bestIx, bestIz, &out->x, &out->z);
-		out->kind = JERAI_GOAL_OPEN;
+		AlleycatMapWorld(map, bestIx, bestIz, &out->x, &out->z);
+		out->kind = ALLEYCAT_GOAL_OPEN;
 		out->samples = bestRing;
 		out->clearance = bestClear;
 
@@ -174,42 +174,42 @@ int JerAiLocalGoal(const JERAI_MAP* map, int fromX, int fromZ, JERAI_GOAL* out)
 /* ------------------------------------------------------------------ */
 
 /* How far out a flee goal is looked for, in samples. */
-#define JERAI_LOCAL_FLEE_RING	16
+#define ALLEYCAT_LOCAL_FLEE_RING	16
 
 /* The road bonus has to stay COMPARABLE TO THE DISTANCE RANGE: too small and the flee
  * drifts off the road, too big and it drives straight AT the threat to reach a road. */
-#define JERAI_LOCAL_ROAD_BONUS	120
+#define ALLEYCAT_LOCAL_ROAD_BONUS	120
 
-int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, int threatZ, JERAI_GOAL* out)
+int AlleycatLocalFleeGoal(const ALLEYCAT_MAP* map, int fromX, int fromZ, int threatX, int threatZ, ALLEYCAT_GOAL* out)
 {
 	int cix, ciz, tix, tiz, ix, iz, q, reached, best = -1, bestScore = 0, bestClear = 0;
 
 	if (out == NULL)
 		return 0;
 
-	JerAiLocalFail(out);
+	AlleycatLocalFail(out);
 
-	if (!JerAiMapValid(map))
+	if (!AlleycatMapValid(map))
 		return 0;
 
-	if (!JerAiMapSampleIndex(map, fromX, fromZ, &cix, &ciz))
+	if (!AlleycatMapSampleIndex(map, fromX, fromZ, &cix, &ciz))
 		return 0;
 
-	if (!JerAiMapNearestOpen(map, cix, ciz, &cix, &ciz))
+	if (!AlleycatMapNearestOpen(map, cix, ciz, &cix, &ciz))
 		return 0;
 
 	/* the threat may be off the window: then treat it as here, which makes "away" mean
 	 * "the far side of the window" and still gives the flee a direction */
-	if (!JerAiMapSampleIndex(map, threatX, threatZ, &tix, &tiz))
+	if (!AlleycatMapSampleIndex(map, threatX, threatZ, &tix, &tiz))
 	{
 		tix = cix;
 		tiz = ciz;
 	}
 
 	/* REACHABILITY, not line of sight: the flood answers "can the car actually drive
-	 * there" for every candidate at once, and it is the SAME flood JerAiLocalGoal uses,
+	 * there" for every candidate at once, and it is the SAME flood AlleycatLocalGoal uses,
 	 * so the road rung and the flee rung agree about the map. */
-	reached = JerAiLocalFlood(map, cix, ciz);
+	reached = AlleycatLocalFlood(map, cix, ciz);
 
 	for (q = 0; q < reached; q++)
 	{
@@ -217,8 +217,8 @@ int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, 
 		int cur = sQueue[q];
 		long away;
 
-		ix = cur % JERAI_MAP_SIZE;
-		iz = cur / JERAI_MAP_SIZE;
+		ix = cur % ALLEYCAT_MAP_SIZE;
+		iz = cur / ALLEYCAT_MAP_SIZE;
 
 		dx = ix - cix;
 		dz = iz - ciz;
@@ -226,10 +226,10 @@ int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, 
 		if (dx < 0) dx = -dx;
 		if (dz < 0) dz = -dz;
 
-		if (dx < JERAI_LOCAL_FLEE_RING / 2 && dz < JERAI_LOCAL_FLEE_RING / 2)
+		if (dx < ALLEYCAT_LOCAL_FLEE_RING / 2 && dz < ALLEYCAT_LOCAL_FLEE_RING / 2)
 			continue;	/* it has to be somewhere worth going: near-here is not a flee */
 
-		if (dx > JERAI_LOCAL_FLEE_RING || dz > JERAI_LOCAL_FLEE_RING)
+		if (dx > ALLEYCAT_LOCAL_FLEE_RING || dz > ALLEYCAT_LOCAL_FLEE_RING)
 			continue;	/* too far to be one plan's worth of driving */
 
 		/* how far from the threat, in samples */
@@ -242,16 +242,16 @@ int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, 
 
 		score = (int)(away / 4);
 
-		if (JerAiMapRoad(map, ix, iz))
-			score += JERAI_LOCAL_ROAD_BONUS;
+		if (AlleycatMapRoad(map, ix, iz))
+			score += ALLEYCAT_LOCAL_ROAD_BONUS;
 
-		score += JerAiMapClearance(map, ix, iz) * 2;
+		score += AlleycatMapClearance(map, ix, iz) * 2;
 
 		if (best < 0 || score > bestScore)
 		{
 			bestScore = score;
 			best = cur;
-			bestClear = JerAiMapClearance(map, ix, iz);
+			bestClear = AlleycatMapClearance(map, ix, iz);
 		}
 	}
 
@@ -259,11 +259,11 @@ int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, 
 		return 0;
 
 	{
-		int bx = best % JERAI_MAP_SIZE;
-		int bz = best / JERAI_MAP_SIZE;
+		int bx = best % ALLEYCAT_MAP_SIZE;
+		int bz = best / ALLEYCAT_MAP_SIZE;
 
-		JerAiMapWorld(map, bx, bz, &out->x, &out->z);
-		out->kind = JerAiMapRoad(map, bx, bz) ? JERAI_GOAL_ROAD : JERAI_GOAL_OPEN;
+		AlleycatMapWorld(map, bx, bz, &out->x, &out->z);
+		out->kind = AlleycatMapRoad(map, bx, bz) ? ALLEYCAT_GOAL_ROAD : ALLEYCAT_GOAL_OPEN;
 		out->clearance = bestClear;
 		out->samples = ((bx - cix) < 0 ? (cix - bx) : (bx - cix));
 		{
@@ -283,7 +283,7 @@ int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, 
 /* ------------------------------------------------------------------ */
 
 /* How far out a tangential escape is looked for, in samples. */
-#define JERAI_LOCAL_TAN_RING	16
+#define ALLEYCAT_LOCAL_TAN_RING	16
 
 /* Where to go to get AROUND whatever is between the car and its target. Scores
  * every reachable sample in a ring and takes the one most SIDEWAYS to the
@@ -291,7 +291,7 @@ int JerAiLocalFleeGoal(const JERAI_MAP* map, int fromX, int fromZ, int threatX, 
  * that un-wedges it is a spot perpendicular to that line, not another point on
  * it (which just rejoins the same obstacle). Returns 1 and fills `out`, or 0
  * when nothing in the ring is both reachable and worth going to. */
-int JerAiLocalTangentialGoal(const JERAI_MAP* map, int fromX, int fromZ, int targetX, int targetZ, JERAI_GOAL* out)
+int AlleycatLocalTangentialGoal(const ALLEYCAT_MAP* map, int fromX, int fromZ, int targetX, int targetZ, ALLEYCAT_GOAL* out)
 {
 	int cix, ciz, ix, iz, q, reached, best = -1, bestScore = -1000000000, bestClear = 0;
 	long tdx, tdz;
@@ -299,23 +299,23 @@ int JerAiLocalTangentialGoal(const JERAI_MAP* map, int fromX, int fromZ, int tar
 	if (out == NULL)
 		return 0;
 
-	JerAiLocalFail(out);
+	AlleycatLocalFail(out);
 
-	if (!JerAiMapValid(map))
+	if (!AlleycatMapValid(map))
 		return 0;
 
-	if (!JerAiMapSampleIndex(map, fromX, fromZ, &cix, &ciz))
+	if (!AlleycatMapSampleIndex(map, fromX, fromZ, &cix, &ciz))
 		return 0;
 
-	if (!JerAiMapNearestOpen(map, cix, ciz, &cix, &ciz))
+	if (!AlleycatMapNearestOpen(map, cix, ciz, &cix, &ciz))
 		return 0;
 
 	/* the target direction, in SAMPLES so it is comparable with a candidate's
 	 * sample offset. The target may be off the window; only the ratio matters. */
-	tdx = ((long)targetX - (long)fromX) / JERAI_MAP_STEP;
-	tdz = ((long)targetZ - (long)fromZ) / JERAI_MAP_STEP;
+	tdx = ((long)targetX - (long)fromX) / ALLEYCAT_MAP_STEP;
+	tdz = ((long)targetZ - (long)fromZ) / ALLEYCAT_MAP_STEP;
 
-	reached = JerAiLocalFlood(map, cix, ciz);
+	reached = AlleycatLocalFlood(map, cix, ciz);
 
 	for (q = 0; q < reached; q++)
 	{
@@ -324,8 +324,8 @@ int JerAiLocalTangentialGoal(const JERAI_MAP* map, int fromX, int fromZ, int tar
 		int score;
 		long cross, dot, dotAbs;
 
-		ix = cur % JERAI_MAP_SIZE;
-		iz = cur / JERAI_MAP_SIZE;
+		ix = cur % ALLEYCAT_MAP_SIZE;
+		iz = cur / ALLEYCAT_MAP_SIZE;
 
 		dx = ix - cix;
 		dz = iz - ciz;
@@ -335,10 +335,10 @@ int JerAiLocalTangentialGoal(const JERAI_MAP* map, int fromX, int fromZ, int tar
 			int adx = dx < 0 ? -dx : dx;
 			int adz = dz < 0 ? -dz : dz;
 
-			if (adx < JERAI_LOCAL_TAN_RING / 3 && adz < JERAI_LOCAL_TAN_RING / 3)
+			if (adx < ALLEYCAT_LOCAL_TAN_RING / 3 && adz < ALLEYCAT_LOCAL_TAN_RING / 3)
 				continue;
 
-			if (adx > JERAI_LOCAL_TAN_RING || adz > JERAI_LOCAL_TAN_RING)
+			if (adx > ALLEYCAT_LOCAL_TAN_RING || adz > ALLEYCAT_LOCAL_TAN_RING)
 				continue;
 		}
 
@@ -358,16 +358,16 @@ int JerAiLocalTangentialGoal(const JERAI_MAP* map, int fromX, int fromZ, int tar
 		/* sideways is good, along-the-line is not (it rejoins the wedge) */
 		score = (int)cross - (int)dotAbs;
 
-		if (JerAiMapRoad(map, ix, iz))
-			score += JERAI_LOCAL_ROAD_BONUS;
+		if (AlleycatMapRoad(map, ix, iz))
+			score += ALLEYCAT_LOCAL_ROAD_BONUS;
 
-		score += JerAiMapClearance(map, ix, iz) * 2;
+		score += AlleycatMapClearance(map, ix, iz) * 2;
 
 		if (best < 0 || score > bestScore)
 		{
 			bestScore = score;
 			best = cur;
-			bestClear = JerAiMapClearance(map, ix, iz);
+			bestClear = AlleycatMapClearance(map, ix, iz);
 		}
 	}
 
@@ -375,11 +375,11 @@ int JerAiLocalTangentialGoal(const JERAI_MAP* map, int fromX, int fromZ, int tar
 		return 0;
 
 	{
-		int bx = best % JERAI_MAP_SIZE;
-		int bz = best / JERAI_MAP_SIZE;
+		int bx = best % ALLEYCAT_MAP_SIZE;
+		int bz = best / ALLEYCAT_MAP_SIZE;
 
-		JerAiMapWorld(map, bx, bz, &out->x, &out->z);
-		out->kind = JerAiMapRoad(map, bx, bz) ? JERAI_GOAL_ROAD : JERAI_GOAL_OPEN;
+		AlleycatMapWorld(map, bx, bz, &out->x, &out->z);
+		out->kind = AlleycatMapRoad(map, bx, bz) ? ALLEYCAT_GOAL_ROAD : ALLEYCAT_GOAL_OPEN;
 		out->clearance = bestClear;
 		out->samples = ((bx - cix) < 0 ? (cix - bx) : (bx - cix));
 		{

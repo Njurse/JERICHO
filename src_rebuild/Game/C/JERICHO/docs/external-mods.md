@@ -95,7 +95,7 @@ tooling/data and its direct-engine surface is empty today.
 | `antfarm` | later | car spawn/damage, scene streaming, camera and sound. |
 | `d2pl` | later | render model, camera position/base angle, pedestrian state. |
 | `cainescrossfire` | later, largest | render/FX/sound, car damage, model rebuild, player/camera state. |
-| `JerAI` | later | road/cell/cop graph, model pointers, matrix table, car/player state. |
+| `Alleycat` | later | road/cell/cop graph, model pointers, matrix table, car/player state. |
 | `crumple` | later, contract-based | job/car damage path and body geometry; its `jer_crumple` contract already exists. |
 | `sandbox`, `testmode`, `levelhacks` | keep compiled-in for now | dev/private harnesses; no external need demonstrated. `gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 and is not in this tree. |
 
@@ -124,7 +124,7 @@ module, not once per use.
 
 | Module | Missing direct engine symbols |
 |---|---|
-| `JerAI` | F: `CellEmpty`, `CopsCanSeePlayer`, `GetFirstPackedCop`, `MapHeight`, `QuickUnpackCellObject`, `RCOS`, `RSIN`, `copsAreInPursuit`, `ratan2`; G: `NumDriver2Curves`, `NumDriver2Junctions`, `NumDriver2Straights`, `car_data`, `matrixtable`, `modelpointers`, `player` |
+| `Alleycat` | F: `CellEmpty`, `CopsCanSeePlayer`, `GetFirstPackedCop`, `MapHeight`, `QuickUnpackCellObject`, `RCOS`, `RSIN`, `copsAreInPursuit`, `ratan2`; G: `NumDriver2Curves`, `NumDriver2Junctions`, `NumDriver2Straights`, `car_data`, `matrixtable`, `modelpointers`, `player` |
 | `antfarm` | F: `GetPlayerFelony`, `GetSurfaceIndex`, `InitCar`, `MapHeight`, `RCOS`, `RSIN`; G: `MainPlayer`, `NumDriver2Straights`, `NumPlayers`, `camera_position`, `car_data` |
 | `cainescrossfire` | F: `AddExplosion`, `ApplyDamage`, `DrawPlayerDot`, `DrawTargetBlip`, `GetFreeChannel`, `GetSurfaceIndex`, `InitCar`, `MapHeight`, `RCOS`, `RSIN`, `RebuildCarMatrix`, `RenderModel`, `Setup_Sparks`, `Start3DSoundVolPitch`, `ratan2`; G: `GameType`, `MainPlayer`, `MaxPlayerDamage`, `NumDriver2Curves`, `NumDriver2Junctions`, `NumDriver2Straights`, `NumPlayers`, `camera_position`, `car_data`, `gCameraDefaultScrZ`, `gCarCleanModelPtr`, `pPed`, `player`, `residentCarModels` |
 | `carhacks` | F: `InitCar`; G: `GameType`, `NumPlayers`, `car_data`, `gCarCleanModelPtr`, `player`, `residentCarModels` |

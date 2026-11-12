@@ -1,11 +1,11 @@
 @echo off
 rem ============================================================
 rem  follow_host.bat -- bring in ONE extra game that joins YOUR
-rem  localhost match and, with JerAI, follows you around the map.
+rem  localhost match and, with Alleycat, follows you around the map.
 rem
 rem  You host a match as usual (the game's Host menu, or
 rem  mp_host.bat), THEN run this. It starts a joining instance on
-rem  127.0.0.1 (port 1400 by default) with JerAI in follow mode, so
+rem  127.0.0.1 (port 1400 by default) with Alleycat in Pursuit mode, so
 rem  that car drives to YOUR car, holds a clearance and idles.
 rem
 rem  The follower gets its OWN run directory, so its log and mp.ini

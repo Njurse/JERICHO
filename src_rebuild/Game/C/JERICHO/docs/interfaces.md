@@ -49,7 +49,7 @@ of the space is unclaimed for exactly that):
 | +40 .. +49 | **core contracts** | `+40..+46` — the live car query, the per-car crush multiplier |
 | +50 .. +59 | `mp` | — |
 | +60 .. +69 | `bake` | — |
-| +70 .. +79 | `JerAI` | — |
+| +70 .. +79 | `Alleycat` | — |
 | +80 .. +89 | `antfarm` | — |
 | +90 .. +99 | unclaimed — ask before using | — |
 

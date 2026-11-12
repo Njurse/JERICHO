@@ -1,16 +1,16 @@
-# JerAI — general-purpose AI driver for the player's car.
+# Alleycat — general-purpose AI driver for the player's car.
 #
 # A COMPILED-IN (deep) module: no `runtime = "dll"`. It needs the engine's
 # compiled-in road graph (JerRoadInfoAt) and 3D debug lines (Debug_AddLineDepth),
 # neither of which is importable into a DLL, and it reads/writes the car and
 # player data globals directly — exactly like the mp module it borrows the
 # A* / occupancy-grid code from.
-id = "JerAI"
-name = "JerAI"
-version = "0.3.0"
+id = "Alleycat"
+name = "Alleycat"
+version = "0.4.0"
 # the JERICHO interface (SDK) this mod is built against
 interface = 3
 author = "Jaret Ludvik"
-description = "General-purpose AI driver for the player's car: A* pathfinding over an engine occupancy grid, road-graph extraction, joyride/random-wander and cop-evade behaviors, in-game debug visualization, a top-left HUD readout and a pause-menu settings page (L2)."
+description = "General-purpose AI driver for the player's car: A* pathfinding over an engine occupancy grid, road-graph extraction, joyride, pursuit (follow or ram another player) and cop-evade behaviors, in-game debug visualization, a top-left HUD readout and a pause-menu settings page (L2)."
 dependencies = []
 default-enabled = false

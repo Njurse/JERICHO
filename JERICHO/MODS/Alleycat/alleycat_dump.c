@@ -1,11 +1,11 @@
 /*
- * jerai_dump.c -- write the road graph to files for offline inspection.
+ * alleycat_dump.c -- write the road graph to files for offline inspection.
  *
  * Two outputs, written into the game's working directory:
  *
- *   JerAI_roadgraph.json   the graph as data: nodes (surfId, kind, world x/y/z,
+ *   Alleycat_roadgraph.json   the graph as data: nodes (surfId, kind, world x/y/z,
  *                          lanes, speed limit) and edges (node index pairs);
- *   JerAI_roadgraph.obj    the same graph as geometry: one vertex per node and
+ *   Alleycat_roadgraph.obj    the same graph as geometry: one vertex per node and
  *                          one `l` (line) per edge, for the level tool.
  *
  * The OBJ uses the convention the DriverLevelTool's own export uses - world
@@ -19,23 +19,23 @@
 
 #include <stdio.h>
 
-#include "jerai_road.h"
+#include "alleycat_road.h"
 
-#define JERAI_DUMP_JSON	"JerAI_roadgraph.json"
-#define JERAI_DUMP_OBJ	"JerAI_roadgraph.obj"
+#define ALLEYCAT_DUMP_JSON	"Alleycat_roadgraph.json"
+#define ALLEYCAT_DUMP_OBJ	"Alleycat_roadgraph.obj"
 
-static const char* JerAiRoadKindName(int kind)
+static const char* AlleycatRoadKindName(int kind)
 {
 	switch (kind)
 	{
-	case JERAI_ROAD_STRAIGHT:	return "straight";
-	case JERAI_ROAD_CURVE:		return "curve";
-	case JERAI_ROAD_JUNCTION:	return "junction";
+	case ALLEYCAT_ROAD_STRAIGHT:	return "straight";
+	case ALLEYCAT_ROAD_CURVE:		return "curve";
+	case ALLEYCAT_ROAD_JUNCTION:	return "junction";
 	default:			return "unknown";
 	}
 }
 
-int JerAiDumpRoadGraph(const JERAI_ROAD_GRAPH* g)
+int AlleycatDumpRoadGraph(const ALLEYCAT_ROAD_GRAPH* g)
 {
 	FILE* f;
 	int i;
@@ -43,7 +43,7 @@ int JerAiDumpRoadGraph(const JERAI_ROAD_GRAPH* g)
 	if (g == NULL || !g->valid)
 		return 0;
 
-	f = fopen(JERAI_DUMP_JSON, "w");
+	f = fopen(ALLEYCAT_DUMP_JSON, "w");
 
 	if (f != NULL)
 	{
@@ -55,10 +55,10 @@ int JerAiDumpRoadGraph(const JERAI_ROAD_GRAPH* g)
 
 		for (i = 0; i < g->nodeCount; i++)
 		{
-			const JERAI_ROAD_NODE* n = &g->nodes[i];
+			const ALLEYCAT_ROAD_NODE* n = &g->nodes[i];
 
 			fprintf(f, "    {\"id\":%d,\"surf\":%d,\"kind\":\"%s\",\"x\":%d,\"y\":%d,\"z\":%d,\"lanes\":%d,\"speed\":%d}%s\n",
-				i, n->surfId, JerAiRoadKindName(n->kind),
+				i, n->surfId, AlleycatRoadKindName(n->kind),
 				n->x, n->y, n->z, n->numLanes, n->speedLimit,
 				(i + 1 < g->nodeCount) ? "," : "");
 		}
@@ -76,18 +76,18 @@ int JerAiDumpRoadGraph(const JERAI_ROAD_GRAPH* g)
 		fclose(f);
 	}
 
-	f = fopen(JERAI_DUMP_OBJ, "w");
+	f = fopen(ALLEYCAT_DUMP_OBJ, "w");
 
 	if (f != NULL)
 	{
-		fprintf(f, "# JerAI road graph: nodes as vertices, edges as lines.\n");
+		fprintf(f, "# Alleycat road graph: nodes as vertices, edges as lines.\n");
 		fprintf(f, "# Coordinates are world/4096 with X mirrored (the DriverLevelTool convention).\n");
 		fprintf(f, "# %d nodes, %d edges (straights=%d curves=%d junctions=%d)\n",
 			g->nodeCount, g->edgeCount, g->straights, g->curves, g->junctions);
 
 		for (i = 0; i < g->nodeCount; i++)
 		{
-			const JERAI_ROAD_NODE* n = &g->nodes[i];
+			const ALLEYCAT_ROAD_NODE* n = &g->nodes[i];
 
 			fprintf(f, "v %d %d %d\n", -n->x / 4096, n->y / 4096, n->z / 4096);
 		}

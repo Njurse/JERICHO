@@ -1,5 +1,5 @@
 /*
- * jerai_map.c -- build the AI's occupancy grid. See jerai_map.h.
+ * alleycat_map.c -- build the AI's occupancy grid. See alleycat_map.h.
  *
  * The engine side of the world model (lifted from mp/ai/aimap.c and namespaced).
  * Everything here is a THIN wrapper over the engine's own queries:
@@ -24,26 +24,26 @@
 #include "draw.h"	/* matrixtable */
 #include "dr2math.h"	/* RCOS / RSIN, for the object's rotated collision boxes */
 
-#include "jerai_map.h"
+#include "alleycat_map.h"
 
 /* ------------------------------------------------------------------ */
 /* The world                                                           */
 /* ------------------------------------------------------------------ */
 
-int JerAiMapWorldLoaded(void)
+int AlleycatMapWorldLoaded(void)
 {
 	/* cells_across is filled in from the level header when a level loads, and is 0
 	 * before that - no level, no world to sample. */
 	return cells_across > 0;
 }
 
-static void JerAiMapFill(JERAI_MAP* map, unsigned char flags)
+static void AlleycatMapFill(ALLEYCAT_MAP* map, unsigned char flags)
 {
 	int ix, iz;
 
-	for (iz = 0; iz < JERAI_MAP_SIZE; iz++)
+	for (iz = 0; iz < ALLEYCAT_MAP_SIZE; iz++)
 	{
-		for (ix = 0; ix < JERAI_MAP_SIZE; ix++)
+		for (ix = 0; ix < ALLEYCAT_MAP_SIZE; ix++)
 		{
 			map->cell[iz][ix] = flags;
 			map->clear[iz][ix] = 0;
@@ -51,36 +51,36 @@ static void JerAiMapFill(JERAI_MAP* map, unsigned char flags)
 	}
 }
 
-/* How many samples from the nearest blocked one, up to JERAI_MAP_CLEAR_MAX. A
+/* How many samples from the nearest blocked one, up to ALLEYCAT_MAP_CLEAR_MAX. A
  * bounded neighbourhood scan, done once per build rather than per query. */
-static void JerAiMapMeasureClearance(JERAI_MAP* map)
+static void AlleycatMapMeasureClearance(ALLEYCAT_MAP* map)
 {
 	int ix, iz, dx, dz;
 
-	for (iz = 0; iz < JERAI_MAP_SIZE; iz++)
+	for (iz = 0; iz < ALLEYCAT_MAP_SIZE; iz++)
 	{
-		for (ix = 0; ix < JERAI_MAP_SIZE; ix++)
+		for (ix = 0; ix < ALLEYCAT_MAP_SIZE; ix++)
 		{
-			int best = JERAI_MAP_CLEAR_MAX + 1;
+			int best = ALLEYCAT_MAP_CLEAR_MAX + 1;
 
-			if (map->cell[iz][ix] & JERAI_MAP_BLOCKED)
+			if (map->cell[iz][ix] & ALLEYCAT_MAP_BLOCKED)
 			{
 				map->clear[iz][ix] = 0;
 				continue;
 			}
 
-			for (dz = -JERAI_MAP_CLEAR_MAX; dz <= JERAI_MAP_CLEAR_MAX && best > 1; dz++)
+			for (dz = -ALLEYCAT_MAP_CLEAR_MAX; dz <= ALLEYCAT_MAP_CLEAR_MAX && best > 1; dz++)
 			{
-				for (dx = -JERAI_MAP_CLEAR_MAX; dx <= JERAI_MAP_CLEAR_MAX; dx++)
+				for (dx = -ALLEYCAT_MAP_CLEAR_MAX; dx <= ALLEYCAT_MAP_CLEAR_MAX; dx++)
 				{
 					int sx = ix + dx;
 					int sz = iz + dz;
 					int d;
 
-					if (sx < 0 || sz < 0 || sx >= JERAI_MAP_SIZE || sz >= JERAI_MAP_SIZE)
+					if (sx < 0 || sz < 0 || sx >= ALLEYCAT_MAP_SIZE || sz >= ALLEYCAT_MAP_SIZE)
 						continue;	/* outside the window: unknown, not blocked */
 
-					if ((map->cell[sz][sx] & JERAI_MAP_BLOCKED) == 0)
+					if ((map->cell[sz][sx] & ALLEYCAT_MAP_BLOCKED) == 0)
 						continue;
 
 					d = (dx < 0 ? -dx : dx);
@@ -92,7 +92,7 @@ static void JerAiMapMeasureClearance(JERAI_MAP* map)
 				}
 			}
 
-			map->clear[iz][ix] = (best > JERAI_MAP_CLEAR_MAX) ? JERAI_MAP_CLEAR_MAX : best;
+			map->clear[iz][ix] = (best > ALLEYCAT_MAP_CLEAR_MAX) ? ALLEYCAT_MAP_CLEAR_MAX : best;
 		}
 	}
 }
@@ -105,7 +105,7 @@ static void JerAiMapMeasureClearance(JERAI_MAP* map)
  * to route the A* straight through them, which is what the car then grinds into.
  * This only ADDS the objects CellEmpty skips, so it can never report something
  * safe as blocked. */
-int JerAiMapCellHasSmashable(VECTOR* p, int radius)
+int AlleycatMapCellHasSmashable(VECTOR* p, int radius)
 {
 	int cell_x = (p->vx + units_across_halved) / MAP_CELL_SIZE;
 	int cell_z = (p->vz + units_down_halved) / MAP_CELL_SIZE;
@@ -176,7 +176,7 @@ int JerAiMapCellHasSmashable(VECTOR* p, int radius)
 	return 0;
 }
 
-int JerAiMapBuild(JERAI_MAP* map, int x, int y, int z)
+int AlleycatMapBuild(ALLEYCAT_MAP* map, int x, int y, int z)
 {
 	int ix, iz;
 
@@ -188,28 +188,28 @@ int JerAiMapBuild(JERAI_MAP* map, int x, int y, int z)
 	map->roadSamples = 0;
 	/* the road preference is the default until a caller overrides it (the driver
 	 * sets it from `offroad_cost` before planning) */
-	map->offroadCost = JERAI_MAP_OFFROAD_DEFAULT;
+	map->offroadCost = ALLEYCAT_MAP_OFFROAD_DEFAULT;
 	map->centreX = x;
 	map->centreY = y;
 	map->centreZ = z;
 
-	/* an odd grid, so sample JERAI_MAP_SIZE/2 IS the centre we were given */
-	map->originX = x - (JERAI_MAP_SIZE / 2) * JERAI_MAP_STEP;
-	map->originZ = z - (JERAI_MAP_SIZE / 2) * JERAI_MAP_STEP;
+	/* an odd grid, so sample ALLEYCAT_MAP_SIZE/2 IS the centre we were given */
+	map->originX = x - (ALLEYCAT_MAP_SIZE / 2) * ALLEYCAT_MAP_STEP;
+	map->originZ = z - (ALLEYCAT_MAP_SIZE / 2) * ALLEYCAT_MAP_STEP;
 
-	if (!JerAiMapWorldLoaded())
+	if (!AlleycatMapWorldLoaded())
 	{
 		/* No level: say so, and leave a grid that reports "blocked" everywhere. */
-		JerAiMapFill(map, JERAI_MAP_BLOCKED);
+		AlleycatMapFill(map, ALLEYCAT_MAP_BLOCKED);
 		return 0;
 	}
 
-	for (iz = 0; iz < JERAI_MAP_SIZE; iz++)
+	for (iz = 0; iz < ALLEYCAT_MAP_SIZE; iz++)
 	{
-		for (ix = 0; ix < JERAI_MAP_SIZE; ix++)
+		for (ix = 0; ix < ALLEYCAT_MAP_SIZE; ix++)
 		{
-			int wx = map->originX + ix * JERAI_MAP_STEP;
-			int wz = map->originZ + iz * JERAI_MAP_STEP;
+			int wx = map->originX + ix * ALLEYCAT_MAP_STEP;
+			int wz = map->originZ + iz * ALLEYCAT_MAP_STEP;
 			unsigned char f = 0;
 			VECTOR v;
 
@@ -225,7 +225,7 @@ int JerAiMapBuild(JERAI_MAP* map, int x, int y, int z)
 			if (wx + units_across_halved < 0 || wx - units_across_halved >= 0 ||
 			    wz + units_down_halved < 0 || wz - units_down_halved >= 0)
 			{
-				f |= JERAI_MAP_BLOCKED;
+				f |= ALLEYCAT_MAP_BLOCKED;
 			}
 			else
 			{
@@ -235,31 +235,31 @@ int JerAiMapBuild(JERAI_MAP* map, int x, int y, int z)
 				 * smashables it skips (posts, fencing, chairs) put back. A car has to
 				 * drive around those, so the planner must know they are there - that
 				 * is the "never path through world geometry" half of the grid. */
-				if (!CellEmpty(&v, JERAI_MAP_RADIUS) || JerAiMapCellHasSmashable(&v, JERAI_MAP_RADIUS))
-					f |= JERAI_MAP_BLOCKED;
+				if (!CellEmpty(&v, ALLEYCAT_MAP_RADIUS) || AlleycatMapCellHasSmashable(&v, ALLEYCAT_MAP_RADIUS))
+					f |= ALLEYCAT_MAP_BLOCKED;
 
-				if (!(f & JERAI_MAP_BLOCKED) && JerRoadAt(wx, v.vy, wz))
-					f |= JERAI_MAP_ROAD;
+				if (!(f & ALLEYCAT_MAP_BLOCKED) && JerRoadAt(wx, v.vy, wz))
+					f |= ALLEYCAT_MAP_ROAD;
 			}
 
 			map->cell[iz][ix] = f;
 			map->clear[iz][ix] = 0;
 
-			if (f & JERAI_MAP_ROAD)
+			if (f & ALLEYCAT_MAP_ROAD)
 				map->roadSamples++;
 
 			map->sampled++;
 		}
 	}
 
-	JerAiMapMeasureClearance(map);
+	AlleycatMapMeasureClearance(map);
 
 	map->valid = 1;
 
 	return 1;
 }
 
-/* The queries and the cost model live in jerai_mapgrid.c: they are PURE, so a host test
+/* The queries and the cost model live in alleycat_mapgrid.c: they are PURE, so a host test
  * can exercise them (and the pathfinder) against a hand-built grid with no engine
  * present. Only the filling of the grid - which is nothing but engine probes - is
  * in this file. */

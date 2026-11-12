@@ -429,12 +429,12 @@ README in the d2pl repo (optional out-of-tree mod)
 A high-energy arcade handling overhaul that derives every value from existing chassis
 stats. [README](JERICHO/MODS/collisiondevil/README.md)
 
-### JerAI (`JerAI`) — an A\* AI driver for the player's car *(compiled-in)*
+### Alleycat (`Alleycat`) — an A\* AI driver for the player's car *(compiled-in)*
 
 A general-purpose AI driver for the player's car: A\* pathfinding over an
-engine occupancy grid, road-graph extraction, joyride/random-wander behaviors,
-debug visualization and a control menu.
-[README](JERICHO/MODS/JerAI/README.md)
+engine occupancy grid, road-graph extraction, joyride, pursuit (follow or ram
+another player) and cop-evade behaviors, debug visualization and a control menu.
+[README](JERICHO/MODS/Alleycat/README.md)
 
 ### Ant Farm (`antfarm`) — a screensaver / idle mode *(compiled-in)*
 

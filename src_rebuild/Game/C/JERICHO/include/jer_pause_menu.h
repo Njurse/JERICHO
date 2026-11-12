@@ -115,7 +115,7 @@ int jer_pause_menu_add_items(const char* target, const JER_PAUSE_MENU_ITEM* item
  * `target` is the page's id (jer_pause_menu.id) or its title, as for
  * jer_pause_menu_add_items. The pause opens with that page showing, as though the
  * player had walked Continue -> JERICHO Addons -> page, so a module can bind its
- * own key to its own settings (JerAI opens its page on L2).
+ * own key to its own settings (Alleycat opens its page on L2).
  *
  * A page opened this way IS the pause: Triangle or Start on it closes the pause
  * instead of backing up into menus the player never opened. Its submenus nest and

@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-void jer_module_JerAI_entry(JERICHO_CONTEXT* ctx);
+void jer_module_Alleycat_entry(JERICHO_CONTEXT* ctx);
 void jer_module_antfarm_entry(JERICHO_CONTEXT* ctx);
 void jer_module_cainescrossfire_entry(JERICHO_CONTEXT* ctx);
 void jer_module_carhacks_entry(JERICHO_CONTEXT* ctx);
@@ -30,7 +30,7 @@ extern const JER_REGISTRY_ENTRY jer_registry_modules[] = {
 	{ "pedhacks", jer_module_pedhacks_entry, 1 },
 	{ "mp", jer_module_mp_entry, 1 },
 	{ "crumple", jer_module_crumple_entry, 0 },
-	{ "JerAI", jer_module_JerAI_entry, 0 },
+	{ "Alleycat", jer_module_Alleycat_entry, 0 },
 	{ "antfarm", jer_module_antfarm_entry, 0 },
 	{ "cainescrossfire", jer_module_cainescrossfire_entry, 0 },
 	{ "collisiondevil", jer_module_collisiondevil_entry, 0 },

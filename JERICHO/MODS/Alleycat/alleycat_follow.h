@@ -1,13 +1,13 @@
-#ifndef JERAI_FOLLOW_H
-#define JERAI_FOLLOW_H
+#ifndef ALLEYCAT_FOLLOW_H
+#define ALLEYCAT_FOLLOW_H
 
 /* ------------------------------------------------------------------
- * jerai_follow.h -- "who should the AI car chase, and how far is it".
+ * alleycat_follow.h -- "who should the AI car chase, and how far is it".
  *
  * The joyride behavior normally picks a random road sample as its
- * destination. IN A MULTIPLAYER SESSION it targets the HOST's car instead,
- * so the AI car tails the host around the map while multiplayer is being
- * tested - and holds a clearance so it never drives into them.
+ * destination. The PURSUIT behavior targets the HOST's car instead, so the
+ * AI car tails the host around the map while multiplayer is being tested -
+ * and holds a clearance so it never drives into them.
  *
  * This file answers only the question "where is the thing to follow and how
  * far away is it". The behavior owns what to do with that answer (drive to
@@ -42,7 +42,7 @@ extern "C" {
  * (falls back to the normal wander), the host has no car / is on foot, or the
  * target would be our own car. Never fails on a missing module: with no
  * session the SDK calls are safe no-ops. */
-int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2);
+int AlleycatFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2);
 
 /* Resolve the car to RUN FROM - the host-side counterpart of the follow, so that
  * a joining AI car has something to chase. Returns 1 and writes its world
@@ -52,13 +52,13 @@ int JerAiFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2);
  * client chases the host, so a client has nothing to run from and answers 0.
  * The `flee_car` lever names a car_data index to run from with no session at
  * all, so the escape can be exercised in single player. */
-int JerAiThreatTarget(CAR_DATA* car, int* x, int* z);
+int AlleycatThreatTarget(CAR_DATA* car, int* x, int* z);
 
 /* The CLIENT's half of the multiplayer flee (config flee_host): 1 and the host's
  * position when this machine is a CLIENT in a live session and flee_host is on, 0
  * otherwise. Off by default - a joining AI car chases the host, it does not run from
  * it - and it loses to nothing but being switched off. */
-int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z);
+int AlleycatHostThreatTarget(CAR_DATA* car, int* x, int* z);
 
 /* Resolve the nearest POLICE car when the cops are actually after this car.
  * Returns 1 and writes its position when there is one.
@@ -68,19 +68,19 @@ int JerAiHostThreatTarget(CAR_DATA* car, int* x, int* z);
  * car parked down the road is scenery, not a threat. The car to run from is a
  * `CONTROL_TYPE_PURSUER_AI` slot.
  *
- * NOTE: JerAI's `immune` option zeroes the wanted state every frame, so with
+ * NOTE: Alleycat's `immune` option zeroes the wanted state every frame, so with
  * immunity on the police never pursue and this never answers 1. It is OFF by
  * default for exactly that reason. */
-int JerAiPoliceThreat(CAR_DATA* car, int* x, int* z);
+int AlleycatPoliceThreat(CAR_DATA* car, int* x, int* z);
 
 /* EVADE: the nearest police car (a pursuer, or any CONTROL_FLAG_COP car - a
  * patrolling cop or a multiplayer cop player) whether or not it is chasing.
  * Returns 1 when it is inside `radius` and writes its position; *dist2 gets the
  * squared distance to the nearest one either way (-1 when there is none). */
-int JerAiCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2);
+int AlleycatCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* JERAI_FOLLOW_H */
+#endif /* ALLEYCAT_FOLLOW_H */
