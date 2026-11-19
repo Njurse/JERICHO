@@ -9,12 +9,11 @@
 # tree. It does NOT stage or commit anything: review the diff it prints, then
 # stage the gitlinks and commit them.
 #
-# NOTE: releases no longer depend on those pins. CI and
-# tools/publish_release.ps1 both run `git submodule update --remote` before
-# building, so a build carries the LATEST commit of each branch (the `branch =`
-# entries in .gitmodules: bake tracks betamiami, the others main). This script
-# is for keeping the committed pins in step with what a release actually builds,
-# and for reviewing the change.
+# NOTE: CI builds the commit the superproject pins, while
+# tools/publish_release.ps1 advances each submodule to the latest commit of its
+# tracking branch before it builds. This script makes the same advance in the
+# working tree so the pins you commit match what a local release build carries
+# (the `branch =` entries in .gitmodules: bake tracks betamiami, the others main).
 # ---------------------------------------------------------------------------
 set -eu
 
@@ -57,5 +56,5 @@ echo
 echo "Review the diff above. To keep the new pins:"
 echo "  git add $PATHS .gitmodules"
 echo "  git commit -m \"mods: advance the mod source pins\""
-echo "Then rebuild and test. A release always builds the latest branch tip even"
-echo "if these pins are not committed, so this step is about what the tree records."
+echo "Then rebuild and test. CI builds the commits you pin here; a local"
+echo "publish_release.ps1 run advances the branches first, so commit these pins."

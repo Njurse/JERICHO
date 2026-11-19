@@ -4,6 +4,117 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.14.0
+
+*Released 2026-11-18.*
+
+### Fast-forward
+
+- **Holding BACKSPACE fast-forwards again.** The wall-clock step gate stopped the
+  old frame-skip path from speeding the sim up, and the engine's 7x flag was
+  cleared every frame, so a press only bought a single frame. The flag is now
+  re-asserted for as long as the key is held, and released on key-up, on focus
+  loss, or in an online session, where fast-forward stays disabled.
+
+### Alleycat
+
+- **The player-car AI is now Alleycat.** The module formerly called JerAI is
+  renamed, and its settings have their own pause-menu page, opened with L2. It
+  can follow or pursue another player, drive a route, flee the police and evade
+  them, and on a dedicated server it follows the nearest connected player. A
+  four-line readout sits top-left; the log reports a state change unless steer
+  trace is on.
+
+### Multiplayer
+
+- **mp 0.24 gives a round a lifecycle.** A round ends with a reason (clock,
+  bust, escape, leave or void); late joiners and players with no respawn are
+  benched until the next countdown; and the round holds the cars through the
+  countdown and the result screen, then repairs them after the role-car swap.
+  Cops n Robbers scores the getaway's own damage, the police radio rotates among
+  the cops near the getaway, and Fox N Hounds draws its clocks in the
+  mission-timer digits.
+- **The round countdown is the game's own 3-2-1 and GO.** `Print321Go` draws
+  Driver 2's race-start digits and a big "GO!" for any caller.
+- **Role cars are picked per connection.** A new round or a server city change
+  keeps the picks; a disconnect forgets them.
+- **A Cops n Robbers round change no longer crashes.** On PC the special-car
+  catch-up loop started two blocks per pass, walked past the level heap and
+  overwrote the level's spool data. It now starts one block per pass, stops
+  after a bounded number of passes and leaves special cars off for the level
+  instead. A spool request outside the level's data is skipped.
+- **Join and leave play the frontend menu samples** (a local option, on by
+  default).
+- **`-mp` accepts arena 0..3.** The stock game still ships two multiplayer maps
+  per city.
+
+### Cars
+
+- **A car import can give each car its own wheel art.** A bank baked with the
+  per-model wheel segment gives each model its clean, damaged and fast wheel
+  sprites from its own page set, instead of every car wearing the importing
+  city's set. The wheel palette is cached per page set, so a second
+  clean/damaged/fast tri-set gets its own colours. A single-set bank draws
+  exactly as before.
+- **Baked Driver 1 cars are found where they already are.** An install that
+  strips `JERICHO/MODS/carhacks/D1CARS` now finds the bake in the legacy
+  `DRIVER/D1CARS`, in the optional `d1cars_path` from `CONFIG/jericho.ini`, or
+  in a sibling install, instead of saying "no Driver 1 cars" next to a good
+  bake. The first-launch question and the stale-bake check judge the same files.
+- **One police-car rule.** Model 0 in a Driver 2 city, a car with a siren, or a
+  bank's `sounds.cop` mask; imported cop cars can also mark their sight cones on
+  the overhead map.
+
+### Pedestrians
+
+- **The first-launch ped bake produces the 0.14 archive.** Custom characters
+  (Tanner, Jericho) draw their own hips and toes like stock Tanner and keep
+  their own texture page sets. The archive is still baked from your own copy of
+  the game; no pedestrian art is downloaded.
+- **Pedestrian Hacks is a built-in module.** `pedhacks` sits in the join suite
+  with carhacks and mp and owns the JMPPED archive lifecycle, so the pedestrian
+  pipeline no longer depends on mp.
+
+### HUD and frontend
+
+- **Every JERICHO clock uses the mission timer's look.** `PrintTimer` draws
+  MM:SS plus frames at any scale, aligned by its left edge, right edge or
+  centre; smaller side clocks use `PrintDigitScaled`.
+- **The main menu waits for the startup questions.** It no longer flashes up
+  before the mod-update and bake prompts are settled, and both prompts offer
+  "Don't ask again" (written to `modstore.ini` / `rebake.ini`).
+- **Widescreen edges and tall-car arrows.** `jer_screen_edges` reports the
+  visible framebuffer, and the stock target arrow lifts by the car's
+  half-height so a tall car no longer swallows it.
+
+### Sound
+
+- **An imported cop car's radio speaks its own city.** A cop car from another
+  city gets that city's police radio lines in the voices bank, the way its siren
+  already worked: a Driver 2 city loads its two stock phrase lumps, any other
+  city uses its baked `LUMP_POLICE_VOICES`, then Miami's, then the host's.
+  Baked lines always take the heading clip, and the PC SPU room is bounded by
+  PsyX's 1 MiB.
+
+### Mods
+
+- **Release ships five built-in modules.** carhacks, crumple, mp, bake and
+  Pedestrian Hacks; `Release_dev` still compiles every installed module.
+- **Director Box is a dev-build camera addon.** A cinematic camera director
+  toggled from the pause menu; its DLL is not in the Release package.
+- **Alleycat is a dev-build module.** It is not compiled into the Release exe.
+
+### Fixes
+
+- **The "world textures wrong" console line is gone.** The JERICHO-VRAM line
+  still goes to the log, and the pause menu's reload is unchanged.
+- **The bake writes the per-model wheel segment** a bank needs for per-car
+  wheels.
+
+### Version
+
+- **The game reports 0.14.0.**
+
 ## v0.13.11
 
 *Released 2026-11-05.*
@@ -51,16 +162,6 @@ is in [changelog.txt](changelog.txt).
 ### Version
 
 - **The game reports 0.13.10.**
-
-## Unreleased
-
-### Fast-forward
-
-- **Holding BACKSPACE fast-forwards again.** The wall-clock step gate stopped the
-  old frame-skip path from speeding the sim up, and the engine's 7x flag was
-  cleared every frame, so a press only bought a single frame. The flag is now
-  re-asserted for as long as the key is held, and released on key-up, on focus
-  loss, or in an online session, where fast-forward stays disabled.
 
 ## v0.13.9
 

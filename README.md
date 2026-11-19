@@ -39,7 +39,7 @@ More detail: [Prebuilt downloads](#prebuilt-downloads) and the [REDRIVER2 instal
 
 **Multiplayer:** everybody needs the **same version**. If a server won't let you join, update first (see above) and try again.
 
-**Mods:** turn them on or off under *Options → JERICHO*. The four built-in ones (mp, carhacks, crumple, bake) come with the Release download.
+**Mods:** turn them on or off under *Options → JERICHO*. The five built-in ones (mp, carhacks, crumple, bake, Pedestrian Hacks) come with the Release download.
 
 ## Stock means behavioral, not byte-for-byte
 
@@ -82,8 +82,8 @@ git submodule update --init JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/c
 ```
 
 `tools/update_mod_submodules.sh` advances those pins to the latest commits (review
-the printed diff, then commit the gitlinks). `d1cars` is fetched for release builds
-but its data is excluded from the mirror. `gaildrv2` is hibernated at
+the printed diff, then commit the gitlinks). `bake` is fetched for release builds
+but its Driver 1 data is excluded from the mirror. `gaildrv2` is hibernated at
 [JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2) and is not
 a submodule of this tree.
 

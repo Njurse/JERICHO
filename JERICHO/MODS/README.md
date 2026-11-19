@@ -23,11 +23,11 @@ ordinary folders tracked by this repository.
 git submodule update --init --recursive
 ```
 
-A release does not depend on the pins being current: CI and
-`tools/publish_release.ps1` both run `git submodule update --remote` before
-building, so a release carries the latest commit of each tracked branch.
-`tools/update_mod_submodules.sh` advances the pins in the working tree so they
-match what a release actually built (it prints the diff and stages nothing).
+CI builds the commit the superproject pins, so a release carries the gitlinks in
+the tagged tree. `tools/publish_release.ps1` advances each submodule to the latest
+commit of its tracking branch before it builds; `tools/update_mod_submodules.sh`
+makes the same advance in the working tree and prints the pins to commit (it
+stages nothing). Commit the gitlinks to change what CI ships.
 
 ## A mod that is not there must not build a smaller game
 

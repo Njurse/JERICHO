@@ -155,20 +155,20 @@ unfetchable one fails the whole checkout before any build step runs. That is
 how both platforms used to fail at step 2, with
 `fatal: repository 'https://github.com/Njurse/gailredriver2.git/' not found`.
 `gaildrv2` is no longer a submodule; it is hibernated at
-https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2. `JERICHO/MODS/d1cars` is fetched as a release mod;
+https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2. `JERICHO/MODS/bake` is fetched as a release mod;
 its folder is still dropped from the mirror by `JER_MIRROR_EXCLUDE` (so its Driver 1
 data never ships) and the packaging step pulls its bake tools. The rule to keep:
 adding a submodule to `.gitmodules` must not be able to break the build by itself.
 Add a path to that loop only when a build genuinely needs it.
 
 The four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
-`d1cars`) are release mods and are fetched by every build. Every build and release
-advances each to the latest commit of its tracking branch (`.gitmodules`
-`branch =`; d1cars tracks `betamiami`, the rest `main`), so a mod fix pushed after
-the last gitlink bump still reaches the next download without a JERICHO commit.
-`tools/update_mod_submodules.sh` makes the same advance in the working tree and
-prints the pins for review/commit; pushing a mod repo alone does not change the
-recorded pin, but it DOES change what the next release builds.
+`bake`) are release mods and are fetched by every build. The build jobs check out
+the commit the superproject pins; `tools/publish_release.ps1` advances each to the
+latest commit of its tracking branch (`.gitmodules` `branch =`; bake tracks
+`betamiami`, the rest `main`) before it builds. `tools/update_mod_submodules.sh`
+makes the same advance in the working tree and prints the pins for review/commit;
+pushing a mod repo alone does not change the recorded pin, so commit the gitlinks
+to change what CI ships.
 
 ### Each configuration links twice
 
@@ -222,12 +222,12 @@ and the Release configuration applies it in three places so they cannot drift:
   `bin/Release`, and a Release-only post-build DELETES the mirrored
   `CONFIG/modlist.ini`, so a release cannot replace a player's own module toggles;
   with no modlist each module runs from its `mod.toml` `default-enabled`, which the
-  generated registry bakes in (carhacks and mp on, crumple off).
+  generated registry bakes in (carhacks, pedhacks and mp on, crumple off).
 
-`gaildrv2` and `d1cars` are additionally dropped from every mirror
+`gaildrv2` and `bake` are additionally dropped from every mirror
 (`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`). `gaildrv2` is not a
 submodule of this tree; the exclude key stays so a local checkout at that path
-is not mirrored. `d1cars` is fetched as a release mod but its folder is
+is not mirrored. `bake` is fetched as a release mod but its folder is
 dropped and only `mod.toml` is restored, so a released tree reports the module
 without carrying its Driver 1 data. The baked Driver 1 car data lives in
 `JERICHO/MODS/carhacks/D1CARS` (carhacks owns it); a generated folder is stripped
@@ -271,8 +271,8 @@ stamped into the generated project. Re-run premake after a commit or tag — a
 rebuild alone keeps the previous string.
 
 An exact `v*` tag on HEAD wins: premake strips the leading `v`, so the binary
-and the boot log say `0.13.11`, not `v0.13.11`. Off the tag, the build reports
-`JERICHO_BASE_VERSION` in `premake5.lua` (`0.13.11`) — this line — not `0.13.10`
+and the boot log say `0.14.0`, not `v0.14.0`. Off the tag, the build reports
+`JERICHO_BASE_VERSION` in `premake5.lua` (`0.14.0`) — this line — not `0.13.11`
 from the previous release. Release tags are spelled `v0.9.0` because the
 workflow triggers on `v*` — the repo's older REDRIVER2 tags carry no prefix
 at all.

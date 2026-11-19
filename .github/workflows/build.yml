@@ -954,7 +954,7 @@ jobs:
 
             **Multiplayer:** everybody needs the **same version**. If a server won't let you join, update first (see above) and try again.
 
-            **Mods:** turn them on or off under *Options → JERICHO*. The four built-in ones (mp, carhacks, crumple, bake) come with the Release download.
+            **Mods:** turn them on or off under *Options → JERICHO*. The five built-in ones (mp, carhacks, crumple, bake, Pedestrian Hacks) come with the Release download.
 
             ---
 
@@ -989,7 +989,7 @@ jobs:
               `CONFIG/` and any module you added. Pass `dev` for the `Release_dev`
               build instead.
 
-            `Release` ships the four modules above. `Release_dev` compiles every
+            `Release` ships the five modules above. `Release_dev` compiles every
             module plus the debug console and dev tooling; it exists for testing the
             mods under development.
 

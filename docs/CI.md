@@ -98,7 +98,7 @@ installed module plus the debug options / console (`DEBUG_OPTIONS`,
 
 CI fetches only the submodules a job actually needs, by name: `src_rebuild/PsyCross`
 plus the four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
-`bake`). Those four are the core release mods. `antfarm` remains a submodule
+`bake`). Those four plus the in-tree `pedhacks` are the five core release mods. `antfarm` remains a submodule
 for local screensaver builds and is not fetched. `gaildrv2` is not a submodule
 of this tree — it is hibernated at
 https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 — so a `Release_dev` build here
@@ -112,12 +112,13 @@ has a `mod.toml`, so a release cannot silently ship without one.
 The sources for `mp`, `carhacks`, `crumple` and `bake` live in their own repositories
 (`Njurse/JERICHO-Mod-MP`, `Njurse/JERICHO-Mod-carhacks`,
 `Njurse/Jericho-Mod-CRUMPLE`, `Njurse/JERICHO-D1`) and are mounted at
-`JERICHO/MODS/<id>`. Every build advances each to the latest commit of its tracking
-branch (`branch =` in `.gitmodules`: bake tracks `betamiami`, the others `main`), so
-a release carries the current core mods even when the committed gitlinks are older,
-and the updater replaces them on download (only `CONFIG/` and the player's own files
-are preserved). `tools/update_mod_submodules.sh` makes the same advance and prints the
-pins to commit; it is a review/record step, not a build gate.
+`JERICHO/MODS/<id>`. CI builds the commit the superproject pins, so a release carries
+the gitlinks in the tagged tree; `tools/publish_release.ps1` first advances each
+submodule to the latest commit of its tracking branch (`branch =` in `.gitmodules`:
+bake tracks `betamiami`, the others `main`) and then builds that working tree. The
+updater replaces the mods on download (only `CONFIG/` and the player's own files are
+preserved). `tools/update_mod_submodules.sh` makes the same advance in the working
+tree and prints the pins to commit; it is a review/record step, not a build gate.
 
 The official store feed is `Njurse/JERICHO-Repo-Official`: `mods.json` plus the
 `packages/` zips. It is generated from these sources and published separately
