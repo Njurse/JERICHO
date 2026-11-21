@@ -57,8 +57,9 @@ static void cd2MissileFire(void* vcp)
 	// SOUND_BANK_SFX, not MISSION: sample 29 in the mission bank is not
 	// resident, so the launch was silent. The engine's SFX bank is always
 	// loaded; 6 is its heavy-impact sample, distinct from the MG's 5.
-	Start3DSoundVolPitch(gMissileChannel, SOUND_BANK_SFX, gCd2Cfg.missileSound,
-		muzzle.vx, muzzle.vy, muzzle.vz, -1600, 4096 + 1024);
+	cd2WpnSndFire(&cd2WdefMissile, &gMissileChannel,
+		muzzle.vx, muzzle.vy, muzzle.vz,
+		gCd2Cfg.missileSound, -1600, 4096 + 1024);
 }
 
 static CD2_WEAPON_DEF cd2MakeMissileDef(void)
@@ -91,6 +92,7 @@ static CD2_WEAPON_DEF cd2MakeMissileDef(void)
 	// which at combat speed reads as nothing at all. This is the visible one.
 	d.explosionEffect = BIG_BANG;
 	d.impactFx = CD2_FX_MISSILE;	// heavy orange warhead blast (fx library)
+	d.impactSound = CD2_SND_EXPLOSION1;	// weapon-bank impact accent
 
 	d.homing = 0;		// RESERVED (no logic this turn)
 	d.collideScenery = 1;	// missiles detonate on walls/buildings

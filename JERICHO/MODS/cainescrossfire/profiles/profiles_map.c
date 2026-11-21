@@ -1,14 +1,19 @@
 // profiles/profiles_map.c — resolve the roster into the engine, and apply it.
 //
 // The engine knows cars only as "resident slot N" (a row in residentCarModels[]
-// / car_cosmetics[]). This unit is the bridge from a profile's (city, model) to
-// that slot, and from the slot to the two things a profile dictates:
+// / car_cosmetics[]). This unit is the bridge from a profile's vehicle source
+// to that slot, and from the slot to the two things a profile dictates:
 //
 //   * the car's native physics — the CD2_VEH_PHYS overrides are written into
 //     car_cosmetics[slot] at level start, before any car is built, so the whole
 //     sim (and cd2GetStats, which derives from these fields) sees them; and
 //   * the car's paint — cp->ap.palette is set from the profile the first time a
 //     car of that slot is stepped.
+//
+// Identity and mapping are separate: homeCity decides which contestants the
+// "no profiles list" rule fields, while the vehicle's source city (stock or a
+// carhacks bank) decides where its geometry is imported from. A profile can
+// therefore be a Chicago contestant in a CROSSFIRE body.
 //
 // Timing (verified in main.c): SetupResidentModels fires
 // JER_EVENT_CAR_DATA_SOURCE, then LoadGameLevel->LoadCosmetics fills
@@ -22,10 +27,9 @@
 #include "driver2.h"
 #include "profile.h"
 #include "cainescrossfire_internal.h"	/* cd2OwnsCar */
-#include "rows/rows.h"
 #include "cars.h"
 #include "cosmetic.h"
-#include "system.h"		/* LevelNames[] */
+#include "system.h"		/* JerCityName */
 #include "mission.h"		/* GameLevel */
 #include "jericho.h"
 #include "jer_events.h"
@@ -36,12 +40,21 @@
 // ---------------------------------------------------------------------------
 // State (reset each level from CAR_DATA_SOURCE)
 // ---------------------------------------------------------------------------
-static int gCd2VehSlot[CD2_VEH_COUNT];			// profile -> resident slot (-1)
+static int gCd2VehSlot[CD2_VEH_MAX_PROFILES];		// profile -> resident slot (-1)
 static int gCd2SlotProfile[MAX_CAR_RESIDENT_MODELS];	// resident slot -> profile (-1)
-static int gCd2VehFielded[CD2_VEH_COUNT];		// in this match's field?
+static int gCd2VehFielded[CD2_VEH_MAX_PROFILES];	// in this match's field?
 static int gCd2VehPalDone[MAX_CARS];			// paint set for this car already
 static int gCd2CarProfile[MAX_CARS];			// car -> profile (CD2_VEH_NONE)
 static int gCd2VehPlayer = CD2_VEH_NONE;		// the player's chosen profile
+
+// A display label for a place a profile's car comes from. JerCityName covers
+// both the four stock cities and any registered bank.
+static const char* cd2VehCityLabel(int city)
+{
+	const char* name = (city >= 0) ? JerCityName(city) : "";
+
+	return (name != NULL && name[0] != 0) ? name : "?";
+}
 
 // ---------------------------------------------------------------------------
 // Fielded set
@@ -94,17 +107,17 @@ static int cd2VehListHas(const char* list, const char* name)
 }
 
 // Which profiles this match fields: the config list, or — when empty — the
-// profiles whose home city is the level's own. CC_PROFILES (a run-only env
+// profiles whose HOME city is the level's own. CC_PROFILES (a run-only env
 // override, never persisted) wins, so a harness can field any set.
 static void cd2VehBuildFielded(int level)
 {
 	const char* list = getenv("CC_PROFILES");
-	int i;
+	int i, count = cd2VehCount();
 
 	if (list == NULL || *list == 0)
 		list = jer_config_get_str("cainescrossfire", "profiles", "");
 
-	for (i = 0; i < CD2_VEH_COUNT; i++)
+	for (i = 0; i < count; i++)
 	{
 		const CD2_VEH_PROFILE* p = cd2VehDef(i);
 
@@ -117,18 +130,18 @@ static void cd2VehBuildFielded(int level)
 		if (list != NULL && *list != 0)
 			gCd2VehFielded[i] = cd2VehListHas(list, p->internalName);
 		else
-			gCd2VehFielded[i] = (p->originCity == level);
+			gCd2VehFielded[i] = (cd2VehHomeCityOf(i) == level);
 	}
 
 	// The player must always have a car: if the field is empty (a level with no
-	// home profile and no list), fall back to a run of the roster.
+	// home profile and no list), fall back to the first roster entry.
 	{
 		int any = 0;
 
-		for (i = 0; i < CD2_VEH_COUNT; i++)
+		for (i = 0; i < count; i++)
 			any |= gCd2VehFielded[i];
 
-		if (!any && CD2_VEH_COUNT > 0)
+		if (!any && count > 0)
 			gCd2VehFielded[0] = 1;
 	}
 
@@ -139,7 +152,7 @@ static void cd2VehBuildFielded(int level)
 
 int cd2VehIsFielded(int profileId)
 {
-	if (profileId < 0 || profileId >= CD2_VEH_COUNT)
+	if (profileId < 0 || profileId >= cd2VehCount())
 		return 0;
 
 	return gCd2VehFielded[profileId];
@@ -152,14 +165,14 @@ int cd2VehPlayerProfile(void)
 
 void cd2VehSetPlayerProfile(int profileId)
 {
-	gCd2VehPlayer = (profileId >= 0 && profileId < CD2_VEH_COUNT) ? profileId : CD2_VEH_NONE;
+	gCd2VehPlayer = (profileId >= 0 && profileId < cd2VehCount()) ? profileId : CD2_VEH_NONE;
 }
 
 int cd2VehFieldedCount(void)
 {
 	int i, n = 0;
 
-	for (i = 0; i < CD2_VEH_COUNT; i++)
+	for (i = 0; i < cd2VehCount(); i++)
 		n += gCd2VehFielded[i] ? 1 : 0;
 
 	return n;
@@ -167,7 +180,7 @@ int cd2VehFieldedCount(void)
 
 int cd2VehSlotOf(int profileId)
 {
-	if (profileId < 0 || profileId >= CD2_VEH_COUNT)
+	if (profileId < 0 || profileId >= cd2VehCount())
 		return -1;
 
 	return gCd2VehSlot[profileId];
@@ -208,7 +221,7 @@ void cd2VehSetCarProfile(int carId, int profileId)
 	if (carId < 0 || carId >= MAX_CARS)
 		return;
 
-	if (profileId < 0 || profileId >= CD2_VEH_COUNT)
+	if (profileId < 0 || profileId >= cd2VehCount())
 		profileId = CD2_VEH_NONE;
 
 	gCd2CarProfile[carId] = profileId;
@@ -231,24 +244,27 @@ void cd2VehForgetCar(int carId)
 // ---------------------------------------------------------------------------
 static void cd2VehClaimSlot(int profileId, int slot)
 {
+	if (profileId < 0 || profileId >= CD2_VEH_MAX_PROFILES)
+		return;
+
 	gCd2VehSlot[profileId] = slot;
 
 	if (slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS)
 		gCd2SlotProfile[slot] = profileId;
 }
 
-// Find a resident slot for a fielded profile's model.
+// Find a resident slot for a fielded profile's vehicle.
 //
 // The set carries a source city PER resident slot (carhacks; models.c keeps
 // gCarModelSource[] and a CAR_IMPORT per city), and a native model needs no
 // import at all - the level's own lump carries every model 0..12. So:
 //
-//   * a NATIVE profile (originCity == the level) reuses a resident slot that
-//     already holds its model; failing that it takes an empty spare slot, the
-//     level's own lump supplying the geometry (modelSource stays -1);
+//   * a NATIVE profile (vehicle source == the level) reuses a resident slot
+//     that already holds its model; failing that it takes an empty spare slot,
+//     the level's own lump supplying the geometry (modelSource stays -1);
 //   * a FOREIGN profile takes an empty spare slot with modelSource set to its
-//     OWN city, so the geometry comes from there. Any number of foreign cities
-//     can be fielded at once: there is no one-guest-city limit.
+//     OWN source city, so the geometry comes from there. Any number of foreign
+//     cities can be fielded at once: there is no one-guest-city limit.
 //
 // Civilian slots (0..4) are never repurposed: they carry the level's own models
 // and the ambient traffic, and stealing one is what made the level's cars look
@@ -256,11 +272,21 @@ static void cd2VehClaimSlot(int profileId, int slot)
 static void cd2VehPlaceProfile(int profileId, JER_ARGS_CAR_DATA_SOURCE* a)
 {
 	const CD2_VEH_PROFILE* p = cd2VehDef(profileId);
-	int native = (p != NULL) && (p->originCity == a->level);
-	int slot;
+	int source, native, slot;
 
 	if (p == NULL || p->modelSlot < 0 || a->models == NULL)
 		return;
+
+	source = cd2VehVehicleCityOf(profileId);
+
+	if (source < 0)
+	{
+		printInfo("[cainescrossfire] profile %s: vehicle source %s unresolved, not fielded\n",
+			p->internalName, p->vehicleCityName);
+		return;
+	}
+
+	native = (source == a->level);
 
 	// a native model that is already resident: reuse its slot untouched
 	if (native)
@@ -272,7 +298,7 @@ static void cd2VehPlaceProfile(int profileId, JER_ARGS_CAR_DATA_SOURCE* a)
 				cd2VehClaimSlot(profileId, slot);
 
 				printInfo("[cainescrossfire] profile %s -> resident slot %d (%s's own model %d)\n",
-					p->internalName, slot, LevelNames[p->originCity], p->modelSlot);
+					p->internalName, slot, cd2VehCityLabel(source), p->modelSlot);
 				return;
 			}
 		}
@@ -300,24 +326,25 @@ static void cd2VehPlaceProfile(int profileId, JER_ARGS_CAR_DATA_SOURCE* a)
 		a->models[slot] = p->modelSlot;
 
 		if (a->modelSource != NULL)
-			a->modelSource[slot] = native ? -1 : p->originCity;
+			a->modelSource[slot] = native ? -1 : source;
 
 		cd2VehClaimSlot(profileId, slot);
 
 		printInfo("[cainescrossfire] profile %s -> resident slot %d (%s %s model %d)\n",
-			p->internalName, slot, native ? "own" : "imported", LevelNames[p->originCity], p->modelSlot);
+			p->internalName, slot, native ? "own" : "imported",
+			cd2VehCityLabel(source), p->modelSlot);
 		return;
 	}
 
 	printInfo("[cainescrossfire] profile %s: no free spare slot for %s model %d, not fielded\n",
-		p->internalName, LevelNames[p->originCity], p->modelSlot);
+		p->internalName, cd2VehCityLabel(source), p->modelSlot);
 }
 
 static void cd2VehResetState(void)
 {
 	int i;
 
-	for (i = 0; i < CD2_VEH_COUNT; i++)
+	for (i = 0; i < CD2_VEH_MAX_PROFILES; i++)
 	{
 		gCd2VehSlot[i] = -1;
 		gCd2VehFielded[i] = 0;
@@ -336,17 +363,23 @@ static void cd2VehResetState(void)
 static int cd2VehOnCarDataSource(void* ud, void* args)
 {
 	JER_ARGS_CAR_DATA_SOURCE* a = (JER_ARGS_CAR_DATA_SOURCE*)args;
-	int i;
+	int i, count;
 
 	(void)ud;
 
 	cd2VehResetState();
 
+	// Re-resolve names each level: a carhacks pack can be installed/removed, and
+	// a bank's city index is only fixed while it is registered.
+	cd2VehLoad();
+
+	count = cd2VehCount();
+
 	printInfo("[cainescrossfire] vehdata: event level=%d slots=%d\n", a->level, a->count);
 
 	cd2VehBuildFielded(a->level);
 
-	for (i = 0; i < CD2_VEH_COUNT; i++)
+	for (i = 0; i < count; i++)
 	{
 		if (gCd2VehFielded[i])
 			cd2VehPlaceProfile(i, a);
@@ -362,7 +395,7 @@ static void cd2VehApplyCosmetics(void)
 {
 	int i;
 
-	for (i = 0; i < CD2_VEH_COUNT; i++)
+	for (i = 0; i < cd2VehCount(); i++)
 	{
 		const CD2_VEH_PROFILE* p = cd2VehDef(i);
 		const CD2_VEH_PHYS* ph;
@@ -423,20 +456,21 @@ static int cd2VehOnCarStep(void* ud, void* args)
 		if (profileId != CD2_VEH_NONE)
 		{
 			const CD2_VEH_PROFILE* p = cd2VehDef(profileId);
+			int special = cd2VehSpecialOf(profileId);
 
 			cd2VehSetCarProfile(cp->id, profileId);
 
 			// hand the car its special weapon. The profile only NAMES the
 			// weapon; the weapon's own def carries the ammo (maxAmmo) and the
 			// recharge. The player also STARTS on it.
-			if (p != NULL && p->specialWeapon != CD2_WID_NONE)
+			if (p != NULL && special != CD2_WID_NONE)
 			{
-				const CD2_WEAPON_DEF* wd = cd2WpnDef(p->specialWeapon);
+				const CD2_WEAPON_DEF* wd = cd2WpnDef(special);
 
 				if (wd != NULL)
 				{
-					cd2WpnCarGrant(cp, p->specialWeapon, wd->maxAmmo);
-					cd2WpnCarSelect(cp, p->specialWeapon);
+					cd2WpnCarGrant(cp, special, wd->maxAmmo);
+					cd2WpnCarSelect(cp, special);
 				}
 			}
 		}
@@ -522,7 +556,7 @@ void cd2VehDumpResolution(void)
 
 	printInfo("[cainescrossfire] profile field: %d fielded this level\n", cd2VehFieldedCount());
 
-	for (i = 0; i < CD2_VEH_COUNT; i++)
+	for (i = 0; i < cd2VehCount(); i++)
 	{
 		if (!gCd2VehFielded[i])
 			continue;
@@ -533,6 +567,7 @@ void cd2VehDumpResolution(void)
 
 void cd2VehRegister(JERICHO_CONTEXT* ctx)
 {
+	cd2VehLoad();
 	cd2VehResetState();
 
 	ctx->jer_register_hook(ctx, JER_EVENT_CAR_DATA_SOURCE, cd2VehOnCarDataSource, NULL, 0);

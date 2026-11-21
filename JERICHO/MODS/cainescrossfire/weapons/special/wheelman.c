@@ -84,8 +84,9 @@ static void cd2WheelmanFire(void* vcp)
 	}
 
 	if (gShockChannel >= 0)
-		Start3DSoundVolPitch(gShockChannel, SOUND_BANK_SFX, 6,
-			at.vx, at.vy, at.vz, -1200, 4096 - CD2_WHEELMAN_CHANNEL_LOW);
+		cd2WpnSndFire(&cd2WdefSpecialWheelman, &gShockChannel,
+			at.vx, at.vy, at.vz, 6, -1200,
+			4096 - CD2_WHEELMAN_CHANNEL_LOW);
 }
 
 void cd2SpecialWheelmanRegister(JERICHO_CONTEXT* ctx)

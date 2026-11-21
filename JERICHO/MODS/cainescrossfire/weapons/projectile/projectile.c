@@ -59,6 +59,7 @@ typedef struct CD2_PROJECTILE
 			// engaged). Seeded per shot from def->homingDelay +
 			// def->homingDelayVary (see weapon.h).
 	int armLen;	// that window's length as seeded, for the engage log only
+	int sndChan;	// voice carrying def->travelSound (-1 = none)
 } CD2_PROJECTILE;
 
 static CD2_PROJECTILE gProj[CD2_MAX_PROJECTILES];
@@ -196,7 +197,16 @@ void cd2ProjectileReset(void)
 	int i;
 
 	for (i = 0; i < CD2_MAX_PROJECTILES; i++)
+	{
+		// A live shot owns its travel voice; release it before the slot is
+		// cleared. static gProj starts zeroed, so only a LIVE slot's -1/valid
+		// channel means anything (0 is the engine's, never a module voice).
+		if (gProj[i].active && gProj[i].sndChan >= 0)
+			cd2WpnSndTravelStop(&gProj[i].sndChan);
+
+		gProj[i].sndChan = -1;
 		gProj[i].active = 0;
+	}
 
 	for (i = 0; i < CD2_MAX_BURSTS; i++)
 		gBurst[i].active = 0;
@@ -234,6 +244,7 @@ static void cd2ProjectileSpawnEx(const CD2_WEAPON_DEF* def, const CAR_DATA* shoo
 			continue;
 
 		p->active = 1;
+		p->sndChan = -1;
 		p->def = def;
 		p->owner = shooter;
 		p->pos = *from;
@@ -261,6 +272,10 @@ static void cd2ProjectileSpawnEx(const CD2_WEAPON_DEF* def, const CAR_DATA* shoo
 			p->arm = 0;
 
 		p->armLen = p->arm;	// what the engage line reports
+
+		// a configured travel loop follows the shot from launch to impact;
+		// the helper owns the voice cap and returns -1 when it is at budget
+		cd2WpnSndTravelStart(def, &p->sndChan, &p->pos, &p->vel);
 
 		return;
 	}
@@ -293,6 +308,12 @@ static void cd2ProjectileImpact(CD2_PROJECTILE* p, const CAR_DATA* carHit, const
 			p->def->barrageFx, p->def->barrageCount, p->def->barrageInterval,
 			p->def->barrageJitter, p->def->barrageRadius,
 			p->def->barrageDamage, p->owner, p->owner);
+
+	// the travel loop ends with the shot; the configured impact accent then
+	// LAYERS over the engine's own explosion sound (never replaces it)
+	cd2WpnSndTravelStop(&p->sndChan);
+	cd2WpnSndImpact(p->def, p->pos.vx, p->pos.vy, p->pos.vz,
+		-1, -1800, 4096);
 
 	p->active = 0;
 }

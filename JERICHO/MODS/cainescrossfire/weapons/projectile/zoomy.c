@@ -48,9 +48,9 @@ static void cd2ZoomyFire(void* vcp)
 	}
 
 	// a high, rattly launch (samples 5 is the MG/SFX default; pitch it up)
-	Start3DSoundVolPitch(gZoomyChannel, SOUND_BANK_SFX, 5,
+	cd2WpnSndFire(&cd2WdefZoomy, &gZoomyChannel,
 		cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2],
-		-2400, 4096 + 2048);
+		5, -2400, 4096 + 2048);
 }
 
 static CD2_WEAPON_DEF cd2MakeZoomyDef(void)
@@ -81,6 +81,7 @@ static CD2_WEAPON_DEF cd2MakeZoomyDef(void)
 	d.splashDamage = 50;
 	d.explosionEffect = LITTLE_BANG;
 	d.impactFx = CD2_FX_ZOOMY;	// small, cool-blue
+	d.impactSound = CD2_SND_EXPLOSION2;	// weapon-bank impact accent
 
 	d.homing = 1;		// it DOES steer... barely
 	d.homingRate = 40;	// extremely weak (the seeker uses 340)

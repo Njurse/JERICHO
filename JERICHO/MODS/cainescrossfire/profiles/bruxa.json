@@ -1,0 +1,16 @@
+{
+  "order": 3,
+  "internal": "bruxa",
+  "display": "Bruxa",
+  "homeCity": "RIO",
+  "vehicle": { "city": "RIO", "model": 2 },
+  "stats": { "armor": 4, "speed": 2, "handling": 3, "specialPower": 4 },
+  "special": "special_bruxa",
+  "physics": {
+    "mass": 4800,
+    "powerRatio": 4800,
+    "traction": 4600
+  },
+  "palette": 2,
+  "crew": { "lat": [0, 0], "fwd": [0, 0], "up": [0, 0], "yaw": [0, 0], "sillRaise": 0, "armScale": 0 }
+}

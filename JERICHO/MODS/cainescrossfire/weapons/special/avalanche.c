@@ -56,8 +56,9 @@ static void cd2AvalancheFire(void* vcp)
 	}
 
 	if (gAvalancheChannel >= 0)
-		Start3DSoundVolPitch(gAvalancheChannel, SOUND_BANK_SFX, 6,
-			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -2000, 4096 - 900);
+		cd2WpnSndFire(&cd2WdefSpecialAvalanche, &gAvalancheChannel,
+			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2],
+			6, -2000, 4096 - 900);
 }
 
 // Higher grip and thrust while the surge runs.

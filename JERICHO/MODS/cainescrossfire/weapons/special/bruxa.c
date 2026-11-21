@@ -76,8 +76,8 @@ static void cd2BruxaFire(void* vcp)
 
 	// a real loud BOOM: the same low sample, pitched down and boosted
 	if (gBruxaChannel >= 0)
-		Start3DSoundVolPitch(gBruxaChannel, SOUND_BANK_SFX, 6,
-			muzzle.vx, muzzle.vy, muzzle.vz, -1200, 4096 - 2200);
+		cd2WpnSndFire(&cd2WdefSpecialBruxa, &gBruxaChannel,
+			muzzle.vx, muzzle.vy, muzzle.vz, 6, -1200, 4096 - 2200);
 }
 
 static CD2_WEAPON_DEF cd2MakeBruxaDef(void)

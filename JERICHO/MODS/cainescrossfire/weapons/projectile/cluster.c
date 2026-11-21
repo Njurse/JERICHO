@@ -56,8 +56,8 @@ static void cd2ClusterFire(void* vcp)
 	}
 
 	// a low, thumpy launch, distinct from the missile's and the seeker's
-	Start3DSoundVolPitch(gClusterChannel, SOUND_BANK_SFX, 6,
-		muzzle.vx, muzzle.vy, muzzle.vz, -2200, 4096 - 512);
+	cd2WpnSndFire(&cd2WdefCluster, &gClusterChannel,
+		muzzle.vx, muzzle.vy, muzzle.vz, 6, -2200, 4096 - 512);
 }
 
 static CD2_WEAPON_DEF cd2MakeClusterDef(void)
@@ -88,6 +88,7 @@ static CD2_WEAPON_DEF cd2MakeClusterDef(void)
 	d.splashDamage = 400;
 	d.explosionEffect = BIG_BANG;
 	d.impactFx = CD2_FX_CLUSTER;	// deep orange parent burst
+	d.impactSound = CD2_SND_EXPLOSION3;	// weapon-bank impact accent
 
 	d.homing = 0;
 	d.collideScenery = 1;

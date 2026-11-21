@@ -296,6 +296,14 @@ static int cd2cOnCarStep(void* ud, void* args)
 			{
 				int killerId = cd2WpnTakeAttacker(cp->id);
 				int isPlayer = (cp->controlType == CONTROL_TYPE_PLAYER);
+
+				// a weapon kill gets a driver scream at the victim; nothing
+				// to blame (scenery/self) leaves it silent. The edge is
+				// already once-per-death, so this cannot retrigger.
+				if (killerId >= 0)
+					cd2WpnSndPlay(CD2_SND_SCREAM,
+						cp->hd.where.t[0], cp->hd.where.t[1] + 40,
+						cp->hd.where.t[2], -1500, 4096);
 				int isNpc = cd2AiIsOpponent(cp);
 
 				if (isPlayer || isNpc)

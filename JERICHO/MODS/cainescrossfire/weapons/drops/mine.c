@@ -57,8 +57,8 @@ static void cd2MineDrop(void* vcp)
 			printInfo("[cainescrossfire] mine sound: channel=%d locked\n", gMineChannel);
 	}
 
-	Start3DSoundVolPitch(gMineChannel, SOUND_BANK_SFX, 5,
-		p.vx, p.vy, p.vz, -2000, 4096 + 2048);
+	cd2WpnSndFire(&cd2WdefMine, &gMineChannel,
+		p.vx, p.vy, p.vz, 5, -2000, 4096 + 2048);
 }
 
 static CD2_WEAPON_DEF cd2MakeMineDef(void)
@@ -91,6 +91,7 @@ static CD2_WEAPON_DEF cd2MakeMineDef(void)
 	d.splashDamage = 1400;	// explosion damage at centre
 	d.explosionEffect = BIG_BANG;
 	d.impactFx = CD2_FX_MINE;	// red-orange blast (fx library)
+	d.impactSound = CD2_SND_EXPLOSION4;	// weapon-bank impact accent
 
 	d.homing = 0;		// RESERVED (no logic this turn)
 	d.collideScenery = 1;	// mine lands on walls/roofs instead of falling through

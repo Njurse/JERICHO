@@ -60,7 +60,8 @@ static void cd2HornetLaunch(CAR_DATA* cp)
 	}
 
 	if (gHornetChannel >= 0)
-		Start3DSoundVolPitch(gHornetChannel, SOUND_BANK_SFX, 6, from.vx, from.vy, from.vz, -2500, 4096 + 900);
+		cd2WpnSndFire(&cd2WdefSpecialHornet, &gHornetChannel,
+			from.vx, from.vy, from.vz, 6, -2500, 4096 + 900);
 }
 
 static void cd2HornetFire(void* vcp)

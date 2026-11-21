@@ -278,8 +278,8 @@ static void cd2FreezeFire(void* vcp)
 	}
 
 	// a cold, descending launch
-	Start3DSoundVolPitch(gFreezeChannel, SOUND_BANK_SFX, 5,
-		muzzle.vx, muzzle.vy, muzzle.vz, -2000, 4096 - 768);
+	cd2WpnSndFire(&cd2WdefFreeze, &gFreezeChannel,
+		muzzle.vx, muzzle.vy, muzzle.vz, 5, -2000, 4096 - 768);
 }
 
 static CD2_WEAPON_DEF cd2MakeFreezeDef(void)
@@ -310,6 +310,12 @@ static CD2_WEAPON_DEF cd2MakeFreezeDef(void)
 	d.splashDamage = 0;
 	d.explosionEffect = LITTLE_BANG;
 	d.impactFx = CD2_FX_FREEZE;	// cold pale-blue puff
+	d.fireSound = CD2_SND_FREEZE_FIRE;
+	d.firePitch = 4096;
+	d.travelSound = CD2_SND_FREEZE_TRAVEL;
+	d.travelPitch = 4096;
+	d.impactSound = CD2_SND_FREEZE_IMPACT;
+	d.impactPitch = 4096;
 
 	d.homing = 1;
 	d.homingRate = 170;	// MODERATE seek: between zoomy (40) and seeker (340)

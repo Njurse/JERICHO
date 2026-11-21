@@ -49,9 +49,10 @@ static void cd2SmgFire(void* vcp)
 	}
 
 	// a short, dry chatter (MG sample, pitched up hard)
-	Start3DSoundVolPitch(gSmgChannel, SOUND_BANK_SFX, 5,
-		cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2],
-		-2600, 4096 + 3072);
+	if (!cd2WpnSndSmgBurst(cp))
+		cd2WpnSndFire(&cd2WdefSmg, &gSmgChannel,
+			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2],
+			5, -2600, 4096 + 3072);
 }
 
 static CD2_WEAPON_DEF cd2MakeSmgDef(void)
@@ -83,6 +84,8 @@ static CD2_WEAPON_DEF cd2MakeSmgDef(void)
 	d.splashDamage = 24;
 	d.explosionEffect = LITTLE_BANG;
 	d.impactFx = CD2_FX_ZOOMY;	// small, cool-blue: a bullet strike
+	d.fireSound = CD2_SND_MG_SHOT;
+	d.firePitch = 4096 + 1024;	// slightly above the MG
 
 	// weak homing - the burst drifts onto a car rather than chasing it down
 	d.homing = 1;

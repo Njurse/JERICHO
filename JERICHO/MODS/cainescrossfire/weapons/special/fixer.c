@@ -22,9 +22,12 @@
 
 #include "driver2.h"
 #include "cars.h"
+#include "main.h"		/* FrameCnt - the full-charge reticle pulse */
+#include "players.h"		/* MainPlayer - the local player's reticle cues */
 #include "cosmetic.h"
 #include "sound.h"
 #include "gamesnd.h"
+#include "jer_sound.h"		/* jer_sound_ensure/unlock - the cached cue voice */
 #include "objcoll.h"		/* lineClear - the line-of-sight test */
 #include "jericho.h"
 #include "jer_events.h"
@@ -49,9 +52,25 @@ extern int ratan2(int y, int x);	/* the module's angle helper */
 #define CD2_FIXER_TWIST_MAX	1400	// ...and at full
 #define CD2_FIXER_SIDE		1	// the gunner's muzzle (right)
 
+// Player-facing reticle cues. `selected` fires when a lock is acquired,
+// `charge` loops while it builds with the pitch climbing from MIN to MAX, and
+// `full` is the one-shot "fire now" cue at CD2_FIXER_CHARGE. The cue channel is
+// 3D-tracked to the player's car (the same voice rules as every other module
+// sound); AI Fixers stay silent and keep only the beam.
+#define CD2_FIXER_CHARGE_PITCH_MIN	4096
+#define CD2_FIXER_CHARGE_PITCH_MAX	8192
+#define CD2_FIXER_CHARGE_VOLUME		-1400
+#define CD2_FIXER_RETICLE_SIZE		110
+#define CD2_FIXER_RETICLE_ARM		34
+#define CD2_FIXER_RETICLE_Y		46
+
 static int gTarget[MAX_CARS];		// the car being held (-1)
 static int gLock[MAX_CARS];		// frames of continuous lock on it
 static int gBeamChannel = -1;
+static int gReticleChan = -1;		// charge-loop channel (player only)
+static int gReticleOn;			// charge loop is playing
+static int gReticleFullSaid;		// full cue already played for this lock
+static int gReticleLockCar = -1;	// target the cues belong to
 
 static void cd2FixerColor(int lock, int* r, int* g, int* b)
 {
@@ -92,6 +111,127 @@ static int cd2FixerCharge(int carId)
 		t = CD2_FIXER_CHARGE;
 
 	return t;
+}
+
+static int cd2FixerIsLocal(const CAR_DATA* cp)
+{
+	return (cp != NULL && MainPlayer.playerCarId >= 0 &&
+		cp->id == MainPlayer.playerCarId);
+}
+
+static void cd2FixerReticleStop(void)
+{
+	if (gReticleOn && gReticleChan >= 0)
+		StopChannel(gReticleChan);
+
+	gReticleOn = 0;
+	gReticleFullSaid = 0;
+	gReticleLockCar = -1;
+}
+
+static void cd2FixerReticleSelect(const CAR_DATA* cp)
+{
+	cd2WpnSndPlay(CD2_SND_RETICLE_SELECTED,
+		cp->hd.where.t[0], cp->hd.where.t[1] + 40, cp->hd.where.t[2],
+		-1200, 4096);
+}
+
+static void cd2FixerReticleChargeStart(const CAR_DATA* cp)
+{
+	int sample = cd2WpnSndSample(CD2_SND_RETICLE_CHARGE);
+
+	if (sample < 0)
+		return;
+
+	if (jer_sound_ensure(&gReticleChan) < 0)
+		return;
+
+	if (Start3DTrackingSound(gReticleChan, SOUND_BANK_SFX, sample,
+			(VECTOR*)cp->hd.where.t,
+			(LONGVECTOR3*)cp->st.n.linearVelocity) < 0)
+	{
+		jer_sound_unlock(gReticleChan);
+		gReticleChan = -1;
+		return;
+	}
+
+	SetChannelVolume(gReticleChan, CD2_FIXER_CHARGE_VOLUME, 0);
+	SetChannelPitch(gReticleChan, CD2_FIXER_CHARGE_PITCH_MIN);
+	gReticleOn = 1;
+}
+
+static void cd2FixerReticleChargePitch(int lock)
+{
+	int pitch;
+
+	if (!gReticleOn || gReticleChan < 0)
+		return;
+
+	if (lock > CD2_FIXER_CHARGE)
+		lock = CD2_FIXER_CHARGE;
+
+	pitch = CD2_FIXER_CHARGE_PITCH_MIN +
+		((CD2_FIXER_CHARGE_PITCH_MAX - CD2_FIXER_CHARGE_PITCH_MIN) * lock) /
+		CD2_FIXER_CHARGE;
+
+	SetChannelPitch(gReticleChan, pitch);
+}
+
+static void cd2FixerReticleFull(const CAR_DATA* cp)
+{
+	if (gReticleFullSaid)
+		return;
+
+	gReticleFullSaid = 1;
+
+	if (gReticleOn && gReticleChan >= 0)
+		StopChannel(gReticleChan);
+
+	gReticleOn = 0;
+
+	cd2WpnSndPlay(CD2_SND_RETICLE_FULL,
+		cp->hd.where.t[0], cp->hd.where.t[1] + 40, cp->hd.where.t[2],
+		-1000, 4096);
+}
+
+// Four corner brackets in a plane at the target's roof, coloured by the same
+// white -> yellow -> red ramp as the beam. At full charge it breathes outward
+// so the reticle itself says "fire".
+static void cd2FixerReticleDraw(const VECTOR* at, int lock)
+{
+	int r, g, b;
+	int half = CD2_FIXER_RETICLE_SIZE;
+	VECTOR centre;
+	int i;
+
+	cd2FixerColor(lock, &r, &g, &b);
+
+	centre = *at;
+	centre.vy += CD2_FIXER_RETICLE_Y;
+
+	if (lock >= CD2_FIXER_CHARGE && (FrameCnt & 8))
+		half += 18;
+
+	for (i = 0; i < 4; i++)
+	{
+		int sx = (i & 1) ? 1 : -1;
+		int sz = (i & 2) ? 1 : -1;
+		VECTOR corner, ax, az;
+
+		corner.vx = centre.vx + sx * half;
+		corner.vy = centre.vy;
+		corner.vz = centre.vz + sz * half;
+
+		ax = corner;
+		ax.vx -= sx * CD2_FIXER_RETICLE_ARM;
+		az = corner;
+		az.vz -= sz * CD2_FIXER_RETICLE_ARM;
+
+		cd2WpnLine(&ax, &corner, r, g, b);
+		cd2WpnLine(&az, &corner, r, g, b);
+	}
+
+	cd2WpnLine(&centre, &centre, r, g, b);
 }
 
 // The head of the beam: the gunner's side of the car.
@@ -215,13 +355,16 @@ static void cd2FixerFire(void* vcp)
 			}
 
 			if (gBeamChannel >= 0)
-				Start3DSoundVolPitch(gBeamChannel, SOUND_BANK_SFX, 6,
-					at.vx, at.vy, at.vz, -1600, 4096 - 700);
+				cd2WpnSndFire(&cd2WdefSpecialFixer, &gBeamChannel,
+					at.vx, at.vy, at.vz, 6, -1600, 4096 - 700);
 		}
 
 		// spent: the lock starts again from nothing
 		gTarget[cp->id] = -1;
 		gLock[cp->id] = 0;
+
+		if (cd2FixerIsLocal(cp))
+			cd2FixerReticleStop();
 	}
 }
 
@@ -242,6 +385,10 @@ static int cd2FixerOnFrame(void* ud, void* args)
 		{
 			gTarget[i] = -1;
 			gLock[i] = 0;
+
+			if (cd2FixerIsLocal(cp))
+				cd2FixerReticleStop();
+
 			continue;
 		}
 
@@ -249,8 +396,15 @@ static int cd2FixerOnFrame(void* ud, void* args)
 		// "always on while selected" the Hornet ring uses
 		if (cd2WpnCarArmed(cp) != CD2_WID_SPECIAL_FIXER)
 		{
+			// weapon swap = the abort path: drop the lock, the charge and
+			// both reticle cues. The top-right readout is a separate lock and
+			// is not ours to clear here.
 			gTarget[i] = -1;
 			gLock[i] = 0;
+
+			if (cd2FixerIsLocal(cp))
+				cd2FixerReticleStop();
+
 			continue;
 		}
 
@@ -268,6 +422,10 @@ static int cd2FixerOnFrame(void* ud, void* args)
 
 			gTarget[i] = -1;
 			gLock[i] = 0;
+
+			if (cd2FixerIsLocal(cp))
+				cd2FixerReticleStop();
+
 			continue;
 		}
 
@@ -284,6 +442,24 @@ static int cd2FixerOnFrame(void* ud, void* args)
 			gLock[i]++;
 		}
 
+		if (cd2FixerIsLocal(cp))
+		{
+			// A new target restarts the three cues: "selected", then the
+			// charge loop builds, then the full cue says fire.
+			if (t != gReticleLockCar)
+			{
+				cd2FixerReticleStop();
+				gReticleLockCar = t;
+				cd2FixerReticleSelect(cp);
+				cd2FixerReticleChargeStart(cp);
+			}
+
+			cd2FixerReticleChargePitch(gLock[i]);
+
+			if (gLock[i] >= CD2_FIXER_CHARGE)
+				cd2FixerReticleFull(cp);
+		}
+
 		{
 			int r, g, b;
 
@@ -298,6 +474,11 @@ static int cd2FixerOnFrame(void* ud, void* args)
 
 			// the dot on the target, so the lock point is legible
 			cd2WpnLine(&him, &him, r, g, b);
+
+			// the player's world-space reticle: four brackets on the locked
+			// car, the same white -> yellow -> red ramp as the beam
+			if (cd2FixerIsLocal(cp))
+				cd2FixerReticleDraw(&him, gLock[i]);
 		}
 	}
 
@@ -310,6 +491,8 @@ static int cd2FixerOnGameStart(void* ud, void* args)
 
 	(void)ud;
 	(void)args;
+
+	cd2FixerReticleStop();
 
 	for (i = 0; i < MAX_CARS; i++)
 	{
@@ -353,6 +536,8 @@ static CD2_WEAPON_DEF cd2MakeFixerDef(void)
 
 	d.fireCone = CD2_FIXER_CONE;
 	d.explosionEffect = LITTLE_BANG;
+	d.fireSound = CD2_SND_SNIPER_SHOT;	// the laser's crack
+	d.firePitch = 4096;
 
 	d.colR = 255; d.colG = 235; d.colB = 255;	// white -> yellow -> red at the beam
 
