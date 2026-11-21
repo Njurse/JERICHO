@@ -29,17 +29,17 @@ require "premake_modules/jericho_mods"
 -- ---------------------------------------------------------------------------
 -- A mod that is not there must never turn into a smaller game.
 --
--- mp, carhacks and crumple are submodules. When one is not fetched, its folder
+-- mp, carhacks, crumple and bake are submodules. When one is not fetched, its folder
 -- is missing or empty, jericho_scan_mods() simply returns fewer ids, and the
 -- build succeeds -- with a registry, a mirror and an exe that quietly lack a
 -- chunk of the game. That is a hard error here instead, naming the command
 -- that fixes it. gaildrv2 is not on this list: it is no longer a submodule
--- (hibernated). d1cars is allowed to be missing and degrades the way it
--- always has.
+-- (hibernated). bake (formerly d1cars) is a release mod the core suite needs,
+-- so it is required.
 --
 -- jer_required_mods.h repeats the check at COMPILE time, so an IDE or msbuild
 -- run that skips premake still cannot produce a smaller game.
-local JERICHO_REQUIRED_MODS = { "mp", "carhacks", "crumple" }
+local JERICHO_REQUIRED_MODS = { "mp", "carhacks", "crumple", "bake" }
 
 for _, req in ipairs(JERICHO_REQUIRED_MODS) do
 	local path = string.format("../JERICHO/MODS/%s/mod.toml", req)
@@ -901,7 +901,7 @@ project "JERICHO"
             "copy /Y \"..\\..\\JERICHO\\build_game.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.sh\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.sh\"",
             -- the Driver 1 car/ped bake launchers at the build root, as CI packs them;
-            -- a stale copy here still pointed at the retired MODS\d1cars\tools.
+            -- a stale copy here still pointed at the retired d1cars module's tools folder.
             "copy /Y \"..\\..\\BAKE_D1_CARS.bat\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.bat\"",
             "copy /Y \"..\\..\\BAKE_D1_CARS.sh\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.sh\"",
             "copy /Y \"..\\..\\d1_portraits.py\" \"%{cfg.buildtarget.directory}d1_portraits.py\"",

@@ -1,0 +1,46 @@
+From 74bf380691884caa9ebf1de118b9ea307e1728bc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 08:25:25 +0000
+Subject: [PATCH] bake: README and comment paths name bake/tools/car (formerly
+ d1cars/tools)
+
+tools/car/README.md set T=JERICHO/MODS/d1cars/tools, so every command in it
+(python $T/cosmetics1.py ...) pointed at a folder that no longer exists. The
+car tools live in JERICHO/MODS/bake/tools/car.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015LjSznjzjHgGhjQaMfW1Mq
+---
+ tools/car/README.md         | 2 +-
+ tools/car/add_car_sounds.py | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/car/README.md b/tools/car/README.md
+index ff6a771..27fad24 100644
+--- a/tools/car/README.md
++++ b/tools/car/README.md
+@@ -39,7 +39,7 @@ Typical run (both level directories are gitignored local data):
+ ```sh
+ LEV=src_rebuild/bin/Release_dev/DRIVER/LEVELS     # Driver 1
+ D2=src_rebuild/bin/Release_dev/DRIVER2/LEVELS     # Driver 2
+-T=JERICHO/MODS/d1cars/tools
++T=JERICHO/MODS/bake/tools/car
+ 
+ python $T/lev1.py $LEV/*.LEV --verify
+ python $T/pages1.py $LEV/FRISCO.LEV --info
+diff --git a/tools/car/add_car_sounds.py b/tools/car/add_car_sounds.py
+index 2e01865..e1ef19d 100644
+--- a/tools/car/add_car_sounds.py
++++ b/tools/car/add_car_sounds.py
+@@ -18,7 +18,7 @@ LUMP_CAR_MODELS = 28
+ LUMP_CAR_SOUNDS = 201
+ MAX_CAR_MODELS = 13
+ 
+-# Measured mapping; see JERICHO/MODS/d1cars/tools/bake.py.
++# Measured mapping; see JERICHO/MODS/bake/tools/car/bake.py.
+ D1_ENGINE_SAMPLE = (1, 2, 3, 4, 5)
+ 
+ # The Euro-43 SOUND.SBK has its own bank order. The engine's composer takes the
+-- 
+2.43.0
+

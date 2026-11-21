@@ -25,8 +25,8 @@ release are reproducible. After a mod repo changes:
 sh tools/update_mod_submodules.sh
 ```
 
-Review the printed status and submodule log, then stage the three paths and
-commit. The helper never commits: a pin is a reviewed change. Pushing a mod repo
+Review the printed status and submodule log, then stage the four paths (mp,
+carhacks, crumple, bake) and commit. The helper never commits: a pin is a reviewed change. Pushing a mod repo
 on its own does not alter what JERICHO builds.
 
 ## Checking the documentation
@@ -112,7 +112,7 @@ name, which is what the rolling `alpha` needs on every refresh.
 ### What it cannot do
 
 Only the **Windows x64** half of a release. There is no Linux toolchain
-here, so `REDRIVER2_*_linux-x64.tar.gz` can only come from CI. The two paths
+here, so `JERICHO_Release_linux-x64.tar.gz` can only come from CI. The two paths
 are complementary — a release simply carries whatever it got, because the
 `publish` job runs when *either* platform built.
 
@@ -145,8 +145,12 @@ Three things about it are deliberate, and each is easy to undo by accident.
 each path the build actually needs:
 
 ```bash
-for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
+git submodule update --init --depth=1 src_rebuild/PsyCross
+for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake JERICHO/MODS/antfarm; do
   git submodule update --init --depth=1 "$path"
+  sha=$(git rev-parse "HEAD:$path")          # the pinned gitlink, never a branch tip
+  git -C "$path" fetch --quiet --depth=1 origin "$sha"
+  git -C "$path" checkout --quiet --detach "$sha"
 done
 ```
 
@@ -209,27 +213,31 @@ behind.
 
 ## The release profile
 
-A release **runs**, and **contains**, exactly three modules: `carhacks`,
-`crumple` and `mp`. That is a **build** property, not just an activation one —
+A release **contains** exactly five modules: `carhacks`, `crumple`, `mp` and
+`pedhacks` compiled in, and `bake` as a runtime addon (`bake.dll`/`bake.so`). That is
+a **build** property, not just an activation one —
 `JERICHO_RELEASE_MODS` (near the top of `src_rebuild/premake5.lua`) names the set,
 and the Release configuration applies it in three places so they cannot drift:
 
 - the generated registry (`JERICHO/gen/jer_registry.c`) carries a second table
-  under `#ifdef JERICHO_RELEASE_MODS`, so a release registers only the three;
+  under `#ifdef JERICHO_RELEASE_MODS`, so a release registers only the four
+  compiled-in ones (bake is a runtime addon, so it has no registry entry);
 - the link set is per configuration — Dev/`Release_dev` link every module,
-  `Release` links just the three;
+  `Release` links just those four;
 - a Release-only mirror pass drops the other `JERICHO/MODS/<id>` folders from
   `bin/Release`, and a Release-only post-build DELETES the mirrored
   `CONFIG/modlist.ini`, so a release cannot replace a player's own module toggles;
   with no modlist each module runs from its `mod.toml` `default-enabled`, which the
-  generated registry bakes in (carhacks, pedhacks and mp on, crumple off).
+  generated registry bakes in (carhacks, mp and pedhacks on, crumple off; bake's
+  manifest says off).
 
 `gaildrv2` and `bake` are additionally dropped from every mirror
 (`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`). `gaildrv2` is not a
 submodule of this tree; the exclude key stays so a local checkout at that path
-is not mirrored. `bake` is fetched as a release mod but its folder is
-dropped and only `mod.toml` is restored, so a released tree reports the module
-without carrying its Driver 1 data. The baked Driver 1 car data lives in
+is not mirrored. `bake` is fetched as a release mod, but its folder is dropped
+and the mirror restores only its `mod.toml`; the addon build and packaging then
+add `bake.dll`/`bake.so` and the bake tools, so a released tree carries the
+module without any Driver 1 data. The baked Driver 1 car data lives in
 `JERICHO/MODS/carhacks/D1CARS` (carhacks owns it); a generated folder is stripped
 from every mirror too (`JER_MIRROR_STRIP`), because it is derived from the player's
 own copyrighted Driver 1 files. `MIAMI.RAW` is written there by the bake from
@@ -237,11 +245,11 @@ the PNGs under `assets/portraits`, and it is stripped with the rest of the folde
 
 A **dev** build is unchanged: it compiles and mirrors every installed module, and
 the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module
-explicitly — the three shipped ones on, the rest off, so nothing runs
+explicitly — the shipped ones (and crumple) on, the rest off, so nothing runs
 unannounced (absence used to mean "silently on"). Local development is free to
 differ; the frontend's Options → JERICHO rewrites the file on toggle.
 
-So a locally built `Release` and a CI `Release` agree (three modules; `gaildrv2`
+So a locally built `Release` and a CI `Release` agree (five modules; `gaildrv2`
 is not in this tree); it is `Release_dev` that differs, carrying every module
 that is present.
 

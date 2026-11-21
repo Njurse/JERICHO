@@ -55,6 +55,12 @@ Each mod documents itself in its own folder.
 
 - [`CI.md`](CI.md) — GitHub Actions builds: what is produced, the `alpha` pre-release,
   and how to cut a tagged release.
+- [`FIX_PLAN.md`](FIX_PLAN.md) — the November 2026 audit: what was found, what is
+  fixed, and what is left.
+- [`FIX_PATCH_PLAN.md`](FIX_PATCH_PLAN.md) — the approved plan the fix branch carried
+  out (tiers, estimates, verification).
+- [`patches/README.md`](patches/README.md) — fixes waiting to be applied in the mod
+  repositories (mp, carhacks, bake).
 - [`src_rebuild/PsyCross/README.md`](../src_rebuild/PsyCross/README.md) — Psy-X /
   Psy-Cross, the PlayStation-to-host layer the engine is ported onto.
 - [`PSXToolchain/README.md`](../PSXToolchain/README.md) — the PSX build toolchain.
