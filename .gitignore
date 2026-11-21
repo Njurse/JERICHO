@@ -90,3 +90,14 @@ JERICHO/sdk/test/*.exe
 
 # d2pl lives in its own repo (not release-ready); optional, see premake5.lua
 /JERICHO/MODS/d2pl/
+
+# Mods that live in their own repositories (JERICHO/MODS/mods.json, fetched by
+# tools/fetch_mods.py). Core never tracks them; each folder is that mod's clone.
+/JERICHO/MODS/mp/
+/JERICHO/MODS/carhacks/
+/JERICHO/MODS/crumple/
+/JERICHO/MODS/bake/
+/JERICHO/MODS/antfarm/
+/JERICHO/MODS/cainescrossfire/
+/JERICHO/MODS/civviecops/
+/JERICHO/MODS/democars/

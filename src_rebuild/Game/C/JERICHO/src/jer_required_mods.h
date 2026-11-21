@@ -1,8 +1,8 @@
 /*
  * jer_required_mods.h -- the mods the game cannot build without.
  *
- * mp, carhacks and crumple are git submodules. A submodule that was never
- * fetched leaves an empty folder, jericho_scan_mods() (premake) then returns
+ * mp, carhacks and crumple are their own repositories (JERICHO/MODS/mods.json,
+ * fetched by tools/fetch_mods.py). A mod that was never fetched leaves no folder, jericho_scan_mods() (premake) then returns
  * fewer ids, and the build SUCCEEDS with a registry, a mirrored JERICHO tree
  * and an exe that quietly lack a chunk of the game. Nothing in the build
  * complains, and the first symptom is a missing feature at runtime.
@@ -23,15 +23,15 @@
 
 #if defined(__has_include)
 #	if !__has_include("../../../../../JERICHO/MODS/mp/mod.toml")
-#		error "mp is a submodule and was not fetched; run: git submodule update --init JERICHO/MODS/mp"
+#		error "mp is its own repository and was not fetched; run: python tools/fetch_mods.py mp"
 #	endif
 
 #	if !__has_include("../../../../../JERICHO/MODS/carhacks/mod.toml")
-#		error "carhacks is a submodule and was not fetched; run: git submodule update --init JERICHO/MODS/carhacks"
+#		error "carhacks is its own repository and was not fetched; run: python tools/fetch_mods.py carhacks"
 #	endif
 
 #	if !__has_include("../../../../../JERICHO/MODS/crumple/mod.toml")
-#		error "crumple is a submodule and was not fetched; run: git submodule update --init JERICHO/MODS/crumple"
+#		error "crumple is its own repository and was not fetched; run: python tools/fetch_mods.py crumple"
 #	endif
 #endif
 

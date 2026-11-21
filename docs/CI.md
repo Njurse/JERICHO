@@ -43,7 +43,7 @@ Each build is packaged with everything needed to run:
   PNGs ship under `assets/portraits/MIAMI/portraits/`. The bake encodes them into
   `D1CARS/MIAMI.RAW` (page at `model * 0x8000`). That RAW is bake output and is
   not in the package.
-  The tools live in the `bake` submodule, whose folder is excluded from the build
+  The tools live in the `bake` checkout, whose folder is excluded from the build
   mirror (`JER_MIRROR_EXCLUDE`), so the packaging step copies them from the
   checkout. A build with no baked data is simply one whose Driver 1 cities are not
   offered.
@@ -96,29 +96,31 @@ build, which pre-includes just the release mods (`JERICHO_RELEASE_MODS` in
 installed module plus the debug options / console (`DEBUG_OPTIONS`,
 `COLLISION_DEBUG`, `CUTSCENE_RECORDER`); it is the build the test rigs run.
 
-CI fetches only the submodules a job actually needs, by name: `src_rebuild/PsyCross`
-plus the four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
-`bake`). Those four plus the in-tree `pedhacks` are the five core release mods. `antfarm` remains a submodule
-for local screensaver builds and is not fetched. `gaildrv2` is not a submodule
-of this tree — it is hibernated at
-https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 — so a `Release_dev` build here
-compiles every module present in that checkout. The pack step removes
-`fulltwist`, `hallgarthcars` and `antfarm` from the zip and fails if any of
-those folders is still under `JERICHO/MODS`. `bake` is compiled in but its folder is excluded from the mirror by
-`JER_MIRROR_EXCLUDE`, so none of its Driver 1 data ships; its bake tools are pulled
-by the packaging step. The build jobs assert that each of the four mod submodules
-has a `mod.toml`, so a release cannot silently ship without one.
+CI fetches the engine's one submodule, `src_rebuild/PsyCross`, and then runs
+`python tools/fetch_mods.py --release --depth 1`: the four mods marked `release`
+in `JERICHO/MODS/mods.json` (`mp`, `carhacks`, `crumple`, `bake`), each at the
+commit the manifest pins. Those four plus the in-tree `pedhacks` are the five core
+release mods. No other mod is fetched, so a `Release_dev` build here compiles only
+what is in the tree plus those four. `gaildrv2` is hibernated at
+https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 and is not listed. The pack step
+removes `fulltwist`, `hallgarthcars` and `antfarm` from the zip and fails if any
+of those folders is still under `JERICHO/MODS`. `bake` is compiled in but its
+folder is excluded from the mirror by `JER_MIRROR_EXCLUDE`, so none of its Driver
+1 data ships; its bake tools are pulled by the packaging step. `fetch_mods.py`
+exits non-zero when a release mod has no `mod.toml`, so a release cannot silently
+ship without one. The doc, interface and release-mod checks skip a mod that is not
+fetched.
 
 The sources for `mp`, `carhacks`, `crumple` and `bake` live in their own repositories
 (`Njurse/JERICHO-Mod-MP`, `Njurse/JERICHO-Mod-carhacks`,
-`Njurse/Jericho-Mod-CRUMPLE`, `Njurse/JERICHO-D1`) and are mounted at
-`JERICHO/MODS/<id>`. CI builds the commit the superproject pins, so a release carries
-the gitlinks in the tagged tree; `tools/publish_release.ps1` first advances each
-submodule to the latest commit of its tracking branch (`branch =` in `.gitmodules`:
-bake tracks `betamiami`, the others `main`) and then builds that working tree. The
-updater replaces the mods on download (only `CONFIG/` and the player's own files are
-preserved). `tools/update_mod_submodules.sh` makes the same advance in the working
-tree and prints the pins to commit; it is a review/record step, not a build gate.
+`Njurse/Jericho-Mod-CRUMPLE`, `Njurse/JERICHO-D1`) and are cloned at
+`JERICHO/MODS/<id>`; core does not track those folders. CI builds the commits
+`mods.json` pins; `tools/publish_release.ps1` first runs `fetch_mods.py --advance`
+(each clean checkout to the tip of its manifest `branch`: bake tracks `betamiami`,
+the others `main`) and then builds that working tree. The updater replaces the mods
+on download (only `CONFIG/` and the player's own files are preserved).
+`fetch_mods.py --pin` records the checked-out commits in `mods.json` for review and
+commit; it is a record step, not a build gate.
 
 The official store feed is `Njurse/JERICHO-Repo-Official`: `mods.json` plus the
 `packages/` zips. It is generated from these sources and published separately

@@ -71,21 +71,25 @@ process.
 The `runtime = "dll"` key is the current marker; the words this README uses are
 **compiled-in** and **external**.
 
-`mp`, `carhacks` and `crumple` are git submodules whose sources live in their own
-repositories ([JERICHO-Mod-MP](https://github.com/Njurse/JERICHO-Mod-MP),
+Every mod lives in its own repository; core uses no submodules for them.
+[`JERICHO/MODS/mods.json`](JERICHO/MODS/mods.json) lists each one (repo, pinned
+commit, branch) and `tools/fetch_mods.py` clones the missing ones. `mp`,
+`carhacks` and `crumple` are required to build the game
+([JERICHO-Mod-MP](https://github.com/Njurse/JERICHO-Mod-MP),
 [JERICHO-Mod-carhacks](https://github.com/Njurse/JERICHO-Mod-carhacks),
 [Jericho-Mod-CRUMPLE](https://github.com/Njurse/Jericho-Mod-CRUMPLE)). A fresh
 clone needs them explicitly:
 
 ```sh
-git submodule update --init JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple
+git submodule update --init src_rebuild/PsyCross    # the engine's PSX layer
+python tools/fetch_mods.py                          # every mod, or --release
 ```
 
-`tools/update_mod_submodules.sh` advances those pins to the latest commits (review
-the printed diff, then commit the gitlinks). `bake` is fetched for release builds
-but its Driver 1 data is excluded from the mirror. `gaildrv2` is hibernated at
-[JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2) and is not
-a submodule of this tree.
+`--advance` moves clean checkouts to their branch tips and `--pin` records the
+new commits in `mods.json` (review, then commit). `bake` is fetched for release
+builds but its Driver 1 data is excluded from the mirror. `gaildrv2` is
+hibernated at [JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2)
+and is not listed.
 
 JERICHO is compiled into the game, so it can see the game's data. An external
 module cannot open `player[]` or `car_data[]` itself, because Windows will not

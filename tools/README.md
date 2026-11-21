@@ -12,22 +12,24 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and that every compiled-in release mod is in the generated Release registry; runtime DLL addons are manifest-only, so they must not be in the table. A release cannot silently omit a named mod |
 | `check_mod_api.py` | Keep runtime DLL addons on the host API: refuse engine headers/globals in `runtime = "dll"` modules; `--gap` prints the direct-engine use of compiled-in modules |
 | `check_host_api_abi.py` | Lock `jer_host_api.h` to append-only growth: a field or function may not be removed, renamed, reordered or retyped; new entries must be appended |
-| `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
+| `fetch_mods.py` | Clone the mods listed in `JERICHO/MODS/mods.json` (each its own repo; no submodules). `--release`, `--status`, `--update`, `--advance`, `--pin`; never touches a dirty checkout |
 | `ci/no_cursor_attribution.sh` | Fail if a commit's author, committer, trailers or message credit a banned coding agent. Used by `.github/workflows/no-cursor-attribution.yml` and `.githooks/` |
 
-## Updating the mod source pins
+## Fetching mods and updating their pins
 
-`JERICHO/MODS/mp`, `carhacks` and `crumple` are git submodules. Their sources
-change in their own repositories; JERICHO keeps a pinned commit so a build and a
-release are reproducible. After a mod repo changes:
+Every mod under `JERICHO/MODS` that has its own repository is listed in
+`JERICHO/MODS/mods.json` (repo, pinned `ref`, `branch`) and ignored by core's
+`.gitignore`. Core uses no submodules for mods.
 
 ```sh
-sh tools/update_mod_submodules.sh
+python tools/fetch_mods.py              # clone what is missing, at the pins
+python tools/fetch_mods.py --advance    # clean checkouts -> their branch tips
+python tools/fetch_mods.py --pin        # record each checkout's HEAD in mods.json
 ```
 
-Review the printed status and submodule log, then stage the three paths and
-commit. The helper never commits: a pin is a reviewed change. Pushing a mod repo
-on its own does not alter what JERICHO builds.
+Review the `mods.json` diff and commit it: a pin is a reviewed change. Pushing a
+mod repo on its own does not alter what JERICHO builds. A checkout with modified
+tracked files is skipped, never reset.
 
 ## Checking the documentation
 
@@ -139,36 +141,31 @@ permanent release for any `v*` tag.
 
 Three things about it are deliberate, and each is easy to undo by accident.
 
-### Submodules are an explicit allow-list, not `--recursive`
+### Mods come from a manifest, not submodules
 
-`actions/checkout` runs with `submodules: false`, and a following step clones
-each path the build actually needs:
+`actions/checkout` runs with `submodules: false`. A following step fetches the
+engine's one submodule and then the release mods from `JERICHO/MODS/mods.json`:
 
 ```bash
-for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
-  git submodule update --init --depth=1 "$path"
-done
+git submodule update --init --depth=1 src_rebuild/PsyCross
+python tools/fetch_mods.py --release --depth 1
 ```
 
-`submodules: recursive` walks *every* entry in `.gitmodules`, and a single
-unfetchable one fails the whole checkout before any build step runs. That is
-how both platforms used to fail at step 2, with
+`submodules: recursive` used to walk every `.gitmodules` entry, and a single
+unfetchable one failed the whole checkout before any build step ran. That is how
+both platforms once failed at step 2 with
 `fatal: repository 'https://github.com/Njurse/gailredriver2.git/' not found`.
-`gaildrv2` is no longer a submodule; it is hibernated at
-https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2. `JERICHO/MODS/bake` is fetched as a release mod;
-its folder is still dropped from the mirror by `JER_MIRROR_EXCLUDE` (so its Driver 1
-data never ships) and the packaging step pulls its bake tools. The rule to keep:
-adding a submodule to `.gitmodules` must not be able to break the build by itself.
-Add a path to that loop only when a build genuinely needs it.
+`gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2.
+`JERICHO/MODS/bake` is fetched as a release mod; its folder is still dropped from
+the mirror by `JER_MIRROR_EXCLUDE` (so its Driver 1 data never ships) and the
+packaging step pulls its bake tools. The rule to keep: listing a mod in
+`mods.json` must not be able to break the build by itself. Mark it `release` only
+when a release build genuinely needs it.
 
-The four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
-`bake`) are release mods and are fetched by every build. The build jobs check out
-the commit the superproject pins; `tools/publish_release.ps1` advances each to the
-latest commit of its tracking branch (`.gitmodules` `branch =`; bake tracks
-`betamiami`, the rest `main`) before it builds. `tools/update_mod_submodules.sh`
-makes the same advance in the working tree and prints the pins for review/commit;
-pushing a mod repo alone does not change the recorded pin, so commit the gitlinks
-to change what CI ships.
+The release mods are built at the commit `mods.json` pins;
+`tools/publish_release.ps1` advances each to the tip of its manifest `branch`
+(bake tracks `betamiami`, the rest `main`) before it builds. `fetch_mods.py --pin`
+records the new commits for review; commit `mods.json` to change what CI ships.
 
 ### Each configuration links twice
 

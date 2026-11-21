@@ -23,8 +23,10 @@ Only TRACKED files are examined for links and claims, and that is deliberate:
 bin/Release and bin/Release_dev carry untracked mirror copies of the docs from the
 last build, so a filesystem walk matches stale text and reports a corrected claim
 as uncorrected. `git ls-files` excludes them for free. The one exception is the
-index check for documented mod folders: two of them are submodules, which
-`git ls-files` does not descend into, so those folders are walked on disk.
+index check for documented mod folders: mods are their own repositories
+(JERICHO/MODS/mods.json), which `git ls-files` does not list, so those folders are
+walked on disk. A mod that is not fetched is skipped: core's checks pass with no
+mods present.
 """
 
 import glob
@@ -100,19 +102,24 @@ def find(path, pattern, group=1):
 # 1. relative links resolve
 # ---------------------------------------------------------------------------
 def submodule_paths():
-    """The submodules' paths, from .gitmodules.
+    """Paths that are other repositories: .gitmodules entries plus every mod in
+    JERICHO/MODS/mods.json.
 
-    A link INTO a submodule cannot be resolved from a clone that has not
-    initialised it. Links into those paths are skipped here. Failing them would
-    make the job red for a file that IS tracked one level down, and would push
-    the docs into not linking the submodules at all - which is worse than not
-    verifying them here. gaildrv2 is not a submodule, so a link to its old path
-    is checked like any other missing file."""
+    A link INTO one cannot be resolved from a clone that has not fetched it.
+    Links into those paths are skipped here. Failing them would make the job red
+    for a file that IS tracked in the mod's own repo, and would push the docs
+    into not linking the mods at all - which is worse than not verifying them
+    here. gaildrv2 is in neither, so a link to its old path is checked like any
+    other missing file."""
     paths = []
-    for line in read(".gitmodules").splitlines():
-        line = line.strip()
-        if line.startswith("path"):
-            paths.append(line.split("=", 1)[1].strip())
+    if os.path.isfile(os.path.join(ROOT, ".gitmodules")):
+        for line in read(".gitmodules").splitlines():
+            line = line.strip()
+            if line.startswith("path"):
+                paths.append(line.split("=", 1)[1].strip())
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    from fetch_mods import mod_paths
+    paths.extend(mod_paths())
     return paths
 
 
@@ -153,8 +160,9 @@ def check_index():
     linked = set(links_in(index))
     folders = set(os.path.dirname(p) for p in linked)
     for mod in ("cainescrossfire", "carhacks", "mp"):
-        # Walk the folder rather than git ls-files: carhacks and mp are
-        # submodules, whose files the parent index does not list.
+        # Walk the folder rather than git ls-files: these mods are their own
+        # repositories, whose files the core index does not list. An absent
+        # (unfetched) mod has no docs to index.
         for full in glob.glob(os.path.join(ROOT, "JERICHO", "MODS", mod, "*.md")):
             doc = os.path.relpath(full, ROOT).replace(os.sep, "/")
             if doc not in linked and os.path.dirname(doc) not in folders:
@@ -164,7 +172,14 @@ def check_index():
 # ---------------------------------------------------------------------------
 # 4. claims that have a source of truth in the code
 # ---------------------------------------------------------------------------
+CC = "JERICHO/MODS/cainescrossfire"
+
+
 def check_claims():
+    # cainescrossfire is its own repository (JERICHO/MODS/mods.json). Its claims
+    # are checked against the engine when it is fetched, and skipped when it is
+    # not: core's checks must pass with no mods present.
+    cc = os.path.isfile(os.path.join(ROOT, CC, "PROFILES.md"))
     # -- the resident slot pool: dr2limits.h (first define is the PC branch) vs
     #    the number PROFILES.md states, and AI.md must not state one of its own.
     limits = read("src_rebuild/Game/dr2limits.h")
@@ -173,6 +188,7 @@ def check_claims():
         fail("claims", "dr2limits.h no longer defines MAX_CAR_RESIDENT_MODELS")
     else:
         slots = int(m.group(1))
+    if m and cc:
         stated = find("JERICHO/MODS/cainescrossfire/PROFILES.md",
                       r"Resident car slots: `MAX_CAR_RESIDENT_MODELS` = (\d+)")
         if stated != str(slots):
@@ -182,6 +198,9 @@ def check_claims():
                      read("JERICHO/MODS/cainescrossfire/AI.md")):
             fail("claims", "AI.md states a slot count of its own instead of pointing at "
                            "PROFILES.md's capacity section")
+
+    if not cc:
+        return
 
     # -- the guest-city ceiling: cars.h + cars.c vs the number PROFILES.md states.
     rows = int(find("src_rebuild/Game/C/cars.h", r"#define CIV_CLUT_ROWS\s+(\d+)"))
