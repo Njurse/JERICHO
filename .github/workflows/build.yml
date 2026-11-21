@@ -99,6 +99,11 @@ jobs:
       - name: Docs are consistent (links, events, indexed, counted claims)
         run: python tools/doccheck.py
 
+      # The profile roster is authored as JSON and generated into C. Catch a
+      # stale table, a bad assignment or a broken pack scaffolder before a build.
+      - name: Vehicle profiles (JSON, generated C, pack scaffolder)
+        run: python3 tools/test_vehicle_profiles.py
+
       # The Release configuration compiles from the generated registry. A release
       # set that names a mod the registry does not would ship without it.
       - name: Release mods (set, manifests and generated registry agree)

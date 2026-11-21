@@ -62,6 +62,7 @@ enum
 	CD2_WID_SPECIAL_INVOCADA,
 	CD2_WID_SPECIAL_FIXER,
 	CD2_WID_SPECIAL_WHEELMAN,
+	CD2_WID_SPECIAL_DEATHCRUISER,
 	CD2_WID_COUNT,
 	CD2_WID_NONE = -1
 };
@@ -119,6 +120,30 @@ typedef struct CD2_WEAPON_DEF
 	int impactFx;		// CD2_FX_* explosion profile id for the impact FX
 				// (0 = use the stock explosionEffect above). See
 				// weapons/fx/fx.h. Themed so a hit reads as its weapon.
+
+	// -------------------------------------------------------------------
+	// Sound (the module's compiled bank; CD2_SND_* in cainescrossfire.h,
+	// bank order and per-weapon mapping in SOUNDS.md).
+	// All of these are 0 = none/stock, so a zero-initialised def keeps the
+	// behaviour it had before the bank existed. The helpers in
+	// weapons/core/weapons.c resolve the live bank base; when the bank is
+	// missing they fall back to the caller's existing stock sample.
+	//
+	//   fireSound   one-shot at the muzzle (or the loop for MG/SMG)
+	//   impactSound one-shot at the impact; it LAYERS over the stock
+	//               explosion rather than replacing the engine's sound
+	//   travelSound a LOOP the projectile pool starts on spawn and stops
+	//               on impact/expiry/reset (3D, tracked to the shot)
+	//   *Pitch      SPU pitch, 4096 = normal; 0 = the default 4096 or the
+	//               caller's existing stock pitch
+	// -------------------------------------------------------------------
+	int fireSound;		// CD2_SND_* or CD2_SND_NONE
+	int firePitch;
+	int impactSound;	// CD2_SND_* or CD2_SND_NONE
+	int impactPitch;
+	int travelSound;	// CD2_SND_* or CD2_SND_NONE
+	int travelPitch;
+
 	int homing;		// 1 = the shot steers itself toward a target
 	int homingRate;		// homing turn per frame (fraction of 1024 blended,
 				// same units as CD2_PROJ_HOME_TURN); 0 = use the
@@ -190,6 +215,45 @@ typedef struct CD2_WEAPON_DEF
 #define CD2_WPN_FX(d)	((d)->impactFx ? (d)->impactFx : (d)->explosionEffect)
 
 // ---------------------------------------------------------------------------
+// Sound helpers (implemented in core/weapons.c)
+// ---------------------------------------------------------------------------
+// Every helper resolves the module's compiled bank through its live level
+// base. When the bank is absent, unloaded or the requested slot was omitted,
+// the caller's stock sample is used; 0/-1 channels mean "take a voice".
+//
+// Fire and impact play a one-shot at the given world point. Impact accents
+// layer over the engine's own explosion sound; they do not replace it. Travel
+// sounds are LOOPING 3D samples owned by the projectile pool: start one on
+// spawn, stop it on impact/expiry/reset. Only CD2_WPN_TRAVEL_MAX travel loops
+// are allowed at once, so the 16-voice pool survives a volley.
+int cd2WpnSndSample(int id);		// absolute bank index for CD2_SND_*, or -1
+
+int cd2WpnSndPlay(int id, int x, int y, int z, int volume, int pitch);
+int cd2WpnSndPlay2D(int id, int volume, int pitch);
+
+int cd2WpnSndFire(const CD2_WEAPON_DEF* d, int* channel,
+		  int x, int y, int z,
+		  int fallbackSample, int fallbackVolume, int fallbackPitch);
+
+int cd2WpnSndImpact(const CD2_WEAPON_DEF* d, int x, int y, int z,
+		    int fallbackSample, int fallbackVolume, int fallbackPitch);
+
+int cd2WpnSndTravelStart(const CD2_WEAPON_DEF* d, int* channel,
+			 const VECTOR* pos, const VECTOR* vel);
+void cd2WpnSndTravelStop(int* channel);
+
+// MG/SMG held-fire loops. The player's machine gun and SMG burst are ONE
+// looping sample on a 3D-tracked channel; the drive call starts/stops the MG
+// loop from the trigger and times the SMG burst down. AI/fallback shots never
+// loop - they use the one-shot MG_SHOT. cd2WpnSndStopAll is the reset/teardown
+// path (weapon swap out of a live match, totaled/frozen/editor, frontend).
+int  cd2WpnSndIsLocal(const CAR_DATA* cp);
+int  cd2WpnSndMgActive(void);
+void cd2WpnSndDrive(void* car, int mgHeld);
+int  cd2WpnSndSmgBurst(const CAR_DATA* cp);
+void cd2WpnSndStopAll(void);
+
+// ---------------------------------------------------------------------------
 // Lock-on target preference (implemented in core/weapons.c)
 // ---------------------------------------------------------------------------
 // Which car a lock-on should aim at. The module's own cars - the player and the
@@ -214,6 +278,10 @@ long long cd2WpnTargetCost(long long d2, const CAR_DATA* cp);
 // Registry + inventory API (implemented in core/weapons.c)
 // ---------------------------------------------------------------------------
 const CD2_WEAPON_DEF* cd2WpnDef(int weaponId);
+
+// Resolve a weapon by its code name ("special_hornet") or on-screen display
+// name, case-insensitive. CD2_WID_NONE when there is no match.
+int  cd2WpnFindByName(const char* name);
 
 int  cd2WpnOwns(int weaponId);		// 1 when this weapon is carried
 int  cd2WpnAmmo(int weaponId);		// rounds left (0 for an infinite base weapon)

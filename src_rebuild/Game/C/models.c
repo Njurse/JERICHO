@@ -1173,12 +1173,30 @@ int JerPedImportBuild(int city)
 	return 1;
 }
 
+/* Prefer the mp-mod copy, then the historical DRIVER2/LEVELS path. */
+static FILE* JerPedOpenBakedLev(void)
+{
+	char path[512];
+	FILE* f;
+	const char* root = jer_root_dir();
+
+	if (root != NULL && root[0] != 0)
+	{
+		snprintf(path, sizeof(path), "%s/MODS/mp/JMPPED.LEV", root);
+		f = fopen(path, "rb");
+		if (f != NULL)
+			return f;
+	}
+
+	return fopen("DRIVER2\\LEVELS\\JMPPED.LEV", "rb");
+}
+
 int JerPedBakedAvailable(void)
 {
 	FILE* f;
 	char magic[8];
 
-	f = fopen("DRIVER2\\LEVELS\\JMPPED.LEV", "rb");
+	f = JerPedOpenBakedLev();
 
 	if (f == NULL)
 		return 0;
@@ -1518,7 +1536,7 @@ int JerPedImportBaked(int city)
 	if (sJerPedReady)
 		return 1;
 
-	f = fopen("DRIVER2\\LEVELS\\JMPPED.LEV", "rb");
+	f = JerPedOpenBakedLev();
 
 	if (f == NULL)
 	{

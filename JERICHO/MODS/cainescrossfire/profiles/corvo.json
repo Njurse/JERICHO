@@ -1,0 +1,14 @@
+{
+  "order": 2,
+  "internal": "corvo",
+  "display": "Corvo",
+  "homeCity": "RIO",
+  "vehicle": { "city": "RIO", "model": 0 },
+  "stats": { "armor": 3, "speed": 3, "handling": 3, "specialPower": 4 },
+  "special": "special_corvo",
+  "physics": {
+    "powerRatio": 4300
+  },
+  "palette": -1,
+  "crew": { "lat": [0, 0], "fwd": [0, 0], "up": [0, 0], "yaw": [0, 0], "sillRaise": 0, "armScale": 0 }
+}

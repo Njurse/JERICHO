@@ -52,8 +52,8 @@ static void cd2ShotgunFire(void* vcp)
 	cd2WpnShotMuzzle(&cd2WdefShotgun, cp, 0, &muzzle);	// driver's window, for the sound position
 
 	// a low boom
-	Start3DSoundVolPitch(gShotgunChannel, SOUND_BANK_SFX, 6,
-		muzzle.vx, muzzle.vy, muzzle.vz, -3000, 4096 - 1280);
+	cd2WpnSndFire(&cd2WdefShotgun, &gShotgunChannel,
+		muzzle.vx, muzzle.vy, muzzle.vz, 6, -3000, 4096 - 1280);
 }
 
 static CD2_WEAPON_DEF cd2MakeShotgunDef(void)
@@ -83,6 +83,8 @@ static CD2_WEAPON_DEF cd2MakeShotgunDef(void)
 	d.splashRadius = 0;
 	d.splashDamage = 0;
 	d.explosionEffect = LITTLE_BANG;
+	d.fireSound = CD2_SND_MG_SHOT;	// proposed: a shotgun is a hard gunshot
+	d.firePitch = 4096 - 1280;
 
 	d.homing = 0;
 	d.collideScenery = 1;

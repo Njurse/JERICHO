@@ -54,8 +54,8 @@ static void cd2HomingFire(void* vcp)
 	}
 
 	// a rising whine, distinct from the missile's launch
-	Start3DSoundVolPitch(gHomingChannel, SOUND_BANK_SFX, 5,
-		muzzle.vx, muzzle.vy, muzzle.vz, -1800, 4096 + 3072);
+	cd2WpnSndFire(&cd2WdefHoming, &gHomingChannel,
+		muzzle.vx, muzzle.vy, muzzle.vz, 5, -1800, 4096 + 3072);
 }
 
 static CD2_WEAPON_DEF cd2MakeHomingDef(void)
@@ -87,6 +87,7 @@ static CD2_WEAPON_DEF cd2MakeHomingDef(void)
 	d.splashDamage = 640;
 	d.explosionEffect = BIG_BANG;
 	d.impactFx = CD2_FX_SEEKER;	// purple, smaller blast (fx library)
+	d.impactSound = CD2_SND_EXPLOSION2;	// weapon-bank impact accent
 
 	d.homing = 1;		// the whole point of it
 	d.collideScenery = 1;

@@ -47,8 +47,9 @@ static void cd2MgFire(void* vcp)
 			printInfo("[cainescrossfire] MG sound: channel=%d locked\n", gMgChannel);
 	}
 
-	Start3DSoundVolPitch(gMgChannel, SOUND_BANK_SFX, 5,
-		muzzle.vx, muzzle.vy, muzzle.vz, -2000, 4096 + 2048);
+	if (!(cd2WpnSndIsLocal(cp) && cd2WpnSndMgActive()))
+		cd2WpnSndFire(&cd2WdefMG, &gMgChannel,
+			muzzle.vx, muzzle.vy, muzzle.vz, 5, -2000, 4096 + 2048);
 
 	gMgSide = -gMgSide;
 }
@@ -79,6 +80,8 @@ static CD2_WEAPON_DEF cd2MakeMGDef(void)
 	d.life = 4;
 
 	d.explosionEffect = LITTLE_BANG;
+	d.fireSound = CD2_SND_MG_SHOT;	// one-shot for AI/fallback; the player loops
+	d.firePitch = 4096;
 	d.collideScenery = 1;	// bullets stop on walls/buildings
 	d.colR = 255; d.colG = 235; d.colB = 110;
 

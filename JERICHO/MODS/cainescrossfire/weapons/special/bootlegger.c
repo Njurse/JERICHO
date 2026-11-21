@@ -114,8 +114,9 @@ static int cd2BootleggerOnFrame(void* ud, void* args)
 			}
 
 			if (gBootChannel >= 0)
-				Start3DSoundVolPitch(gBootChannel, SOUND_BANK_SFX, 5,
-					cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -2600, 4096 + 2600);
+				cd2WpnSndFire(&cd2WdefSpecialBootlegger, &gBootChannel,
+					cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2],
+					5, -2600, 4096 + 2600);
 		}
 
 		if (--gBootFrames[i] <= 0)

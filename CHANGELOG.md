@@ -62,6 +62,23 @@ is in [changelog.txt](changelog.txt).
   re-asserted for as long as the key is held, and released on key-up, on focus
   loss, or in an online session, where fast-forward stays disabled.
 
+### Caine's Crossfire
+
+- **The weapons sound like weapons.** The guns, Freeze, pickups and weapon
+  kills play the module's compiled `sounds/weapons.sbk` instead of the engine's
+  crash samples: the MG is a 3D-tracked loop while the trigger is held (the SMG
+  reuses it pitched up), Freeze has launch/travel/impact sounds, weapon impacts
+  layer a per-weapon accent over the stock explosion, pickups have
+  weapon/health cues, and a weapon kill screams. A missing bank falls back to
+  the previous stock sample.
+- **Fixer's Laser Lock tells you when to fire.** The lock plays a "selected"
+  cue, a charge loop that rises in pitch as the charge builds, and a "full"
+  cue at maximum damage, with a world-space reticle on the locked car. Swapping
+  weapons, firing or losing the lock aborts the charge and clears the reticle.
+- **Every weapon can name its fire, travel and impact sound** in its data row.
+  The bank is regenerated from `JERICHO/MODS/cainescrossfire/sounds/` with
+  `tools/build_sound_bank.py` (see `SOUNDS.md`).
+
 ## v0.13.9
 
 *Released 2026-11-05.*

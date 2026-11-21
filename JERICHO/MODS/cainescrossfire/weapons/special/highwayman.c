@@ -69,8 +69,9 @@ static void cd2HighwaymanFire(void* vcp)
 	}
 
 	if (gFlameChannel >= 0)
-		Start3DSoundVolPitch(gFlameChannel, SOUND_BANK_SFX, 5,
-			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -2000, 4096 - 1200);
+		cd2WpnSndFire(&cd2WdefSpecialHighwayman, &gFlameChannel,
+			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2],
+			5, -2000, 4096 - 1200);
 }
 
 static int cd2HighwaymanOnFrame(void* ud, void* args)

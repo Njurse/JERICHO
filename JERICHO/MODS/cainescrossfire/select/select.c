@@ -103,7 +103,7 @@ static JER_FE_MENU gCcVehMenu[CC_CITY_COUNT] =
 };
 
 // The per-city rosters + the carousel cursor.
-static int gCcVehList[CC_CITY_COUNT][CD2_VEH_COUNT];	// profile ids per city, registry order
+static int gCcVehList[CC_CITY_COUNT][CD2_VEH_MAX_PROFILES];	// profile ids per city, registry order
 static int gCcVehN[CC_CITY_COUNT];			// how many cars the city has
 static int gCcVehSel[CC_CITY_COUNT];			// the carousel cursor
 
@@ -129,7 +129,7 @@ static void cd2SelLaunch(int arenaId, int sel)
 	int city, profile;
 
 	// TEST/DEBUG override, for headless verification:
-	//   CC_FORCE_ARENA=<arena id> CC_FORCE_CAR=<0..CD2_VEH_COUNT-1>
+	//   CC_FORCE_ARENA=<arena id> CC_FORCE_CAR=<0..cd2VehCount()-1>
 	//   CC_FORCE_OPPONENTS=<0..CD2_AI_MAX>
 	if (getenv("CC_FORCE_ARENA") != NULL)
 		arenaId = atoi(getenv("CC_FORCE_ARENA"));
@@ -296,7 +296,7 @@ static void cd2SelVehPreview(void* ud, int* city, int* model)
 
 	if (p != NULL)
 	{
-		*city = p->originCity;
+		*city = cd2VehVehicleCityOf(gCcVehList[c][gCcVehSel[c]]);
 		*model = p->modelSlot;
 	}
 }
@@ -361,11 +361,13 @@ static void cd2SelBuildMenus(void)
 		gCcVehSel[city] = 0;
 
 		// the carousel shows EVERY car, whatever the arena: the arena only sets
-		// the LEVEL, and a picked car is placed from its own city.
-		for (i = 0; i < CD2_VEH_COUNT; i++)
+		// the LEVEL, and a picked car is placed from its own source city/bank.
+		for (i = 0; i < cd2VehCount() && i < CD2_VEH_MAX_PROFILES; i++)
 			gCcVehList[city][i] = i;
 
-		gCcVehN[city] = CD2_VEH_COUNT;
+		gCcVehN[city] = cd2VehCount();
+		if (gCcVehN[city] > CD2_VEH_MAX_PROFILES)
+			gCcVehN[city] = CD2_VEH_MAX_PROFILES;
 
 		// the carousel row: one row, left/right moves it
 		memset(&gCcVehItems[city][0], 0, sizeof(gCcVehItems[city][0]));

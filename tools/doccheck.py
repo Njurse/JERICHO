@@ -194,13 +194,14 @@ def check_claims():
         fail("claims", "CIV_CLUT affords %d guest cities ((%d-%d)/%d) but PROFILES.md "
                        "states %s" % (guests, rows, import_row, block, stated))
 
-    # -- the roster size: the row manifest vs the count the docs advertise.
-    registry = read("JERICHO/MODS/cainescrossfire/profiles/registry.c")
-    body = re.search(r"gVehRows\[[^\]]*\]\s*=\s*\{(.*?)\n\};", registry, re.S)
-    if not body:
-        fail("claims", "could not find the gVehRows[] manifest in profiles/registry.c")
+    # -- the roster size: the JSON authoring files vs the count the docs advertise.
+    profile_files = glob.glob(os.path.join(
+        ROOT, "JERICHO/MODS/cainescrossfire/profiles/*.json"))
+    count = len(profile_files)
+    if count == 0:
+        fail("claims", "no vehicle-profile JSON found under "
+                       "JERICHO/MODS/cainescrossfire/profiles")
     else:
-        count = len(re.findall(r"cd2VehRow", body.group(1)))
         word = WORDS.get(count, str(count))
         if ("## The %s" % word) not in read("JERICHO/MODS/cainescrossfire/SPECIALS.md"):
             fail("claims", "the roster has %d profiles but SPECIALS.md does not head its "

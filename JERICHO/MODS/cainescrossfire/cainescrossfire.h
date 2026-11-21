@@ -299,6 +299,40 @@ enum
 
 
 // ==============================================================
+// WEAPON SOUND BANK (sounds/weapons.sbk)
+// ==============================================================
+//
+// The module's weapon, pickup and reticle sounds live in ONE compiled PSX
+// bank. tools/build_sound_bank.py writes it and SOUNDS.md documents it; the
+// engine appends it to SOUND_BANK_SFX at level load (jer_sound_request_mod_bank).
+//
+// CD2_SND_NONE is 0 so a zero-initialised CD2_WEAPON_DEF keeps its stock
+// sample. The values are 1-based because the bank offset is (id - 1): the
+// order below MUST match SOUND_SPECS in tools/build_sound_bank.py.
+enum
+{
+	CD2_SND_NONE = 0,
+	CD2_SND_MG_LOOP = 1,	// machine gun / SMG held fire (looping)
+	CD2_SND_MG_SHOT,	// machine gun / SMG one-shot (AI + fallback)
+	CD2_SND_FREEZE_FIRE,	// freeze missile launch
+	CD2_SND_FREEZE_IMPACT,	// freeze missile impact
+	CD2_SND_FREEZE_TRAVEL,	// freeze missile travel (looping)
+	CD2_SND_EXPLOSION1,	// impact accent 1
+	CD2_SND_EXPLOSION2,	// impact accent 2
+	CD2_SND_EXPLOSION3,	// impact accent 3
+	CD2_SND_EXPLOSION4,	// impact accent 4
+	CD2_SND_PICKUP_WEAPON,	// weapon pickup
+	CD2_SND_PICKUP_HEALTH,	// health pickup
+	CD2_SND_RETICLE_SELECTED,	// Fixer lock acquired
+	CD2_SND_RETICLE_CHARGE,	// Fixer charge loop (pitch ramps)
+	CD2_SND_RETICLE_FULL,	// Fixer full charge / fire cue
+	CD2_SND_SCREAM,		// weapon kill
+	CD2_SND_SNIPER_SHOT,	// sniper shot (optional, last slot)
+	CD2_SND_COUNT
+};
+
+
+// ==============================================================
 // PER-VEHICLE SPREAD (weight/control)
 // ==============================================================
 

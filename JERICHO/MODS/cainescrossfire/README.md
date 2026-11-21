@@ -8,10 +8,11 @@ is *engineered, not simulated* — responsive and forgiving (TMB's north star) �
 on top of a point-mass rigid body that replaces the stock wheel/suspension sim
 (the suspension itself is kept, for visual roll/pitch only).
 
-- **The roster** — vehicles are **profiles** (identity + `(city, model)`
-  mapping, 1..5 stats, a special weapon, and native-physics overrides). See
-  [`PROFILES.md`](PROFILES.md); each profile's special is in
-  [`SPECIALS.md`](SPECIALS.md). A profile is one file under `profiles/rows/`.
+- **The roster** — vehicles are **profiles** (identity and home arena, a
+  stock-city or carhacks-bank vehicle source, 1..5 stats, a special weapon, and
+  native-physics overrides). See [`PROFILES.md`](PROFILES.md); each profile's
+  special is in [`SPECIALS.md`](SPECIALS.md). A profile is one JSON file under
+  `profiles/`.
 
 - **Direct velocity control** — throttle accelerates to `topSpeed`, brake
   decelerates (fast and proportional, then tapers) and reverses up to
@@ -40,7 +41,7 @@ on top of a point-mass rigid body that replaces the stock wheel/suspension sim
   **4096 = stock/normal**; PSX volume **0 = loudest**, **−10000 = silent**.
   See [`SOUNDS.md`](SOUNDS.md) for the sample/bank API.
 - **Car combat** — the direct-velocity handling plus a data-driven weapon layer
-  (a machine-gun sidearm and finite primaries), eleven **vehicle specials**, and
+  (a machine-gun sidearm and finite primaries), twelve **vehicle specials**, and
   totaled-car wreck effects. The CC select flow (`-ccmenu`) picks an arena and a
   vehicle before the match. The damage model is tuned so a car lasts: one global
   weapon-damage percentage, a scenery-impact threshold (scrapes cost nothing) and

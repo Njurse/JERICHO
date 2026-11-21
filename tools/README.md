@@ -49,8 +49,8 @@ the roster) parting company with it; and a doc that nothing links to. So it chec
   in the repo and mean nothing;
 - the counted claims agree with the code they describe: `MAX_CAR_RESIDENT_MODELS` in
   `dr2limits.h` vs the number `PROFILES.md` states (and that `AI.md` does not restate it),
-  the guest-city ceiling derived from `cars.h` vs `PROFILES.md`, and the length of the
-  profile manifest `gVehRows[]` vs the count the docs advertise.
+  the guest-city ceiling derived from `cars.h` vs `PROFILES.md`, and the number of
+  vehicle-profile JSON files vs the count the docs advertise.
 
 **Only tracked files are read.** That is deliberate: `bin/Release` and `bin/Release_dev`
 carry untracked mirror copies of the docs from the last build, so anything walking the

@@ -161,6 +161,8 @@ void cd2DropStep(void)
 				}
 				// no `spare` car here: a mine is your own problem, and the car it
 				// detonated on is already the `skip`
+				cd2WpnSndImpact(d->def, d->pos.vx, d->pos.vy, d->pos.vz,
+					-1, -1800, 4096);
 				cd2AoeBlast(&d->pos, d->def->splashRadius,
 					d->def->splashDamage, CD2_WPN_FX(d->def), cp, NULL, d->owner);
 				d->active = 0;

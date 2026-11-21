@@ -515,6 +515,10 @@ static void cd2ArenaPickupTake(CAR_DATA* cp, const CD2_ARENA_PICKUP* p)
 
 			snprintf(msg, sizeof(msg), "Picked up %s x%d", cd2WpnName(p->weapon), ammo);
 			jer_hud_message(msg, 120);
+
+			cd2WpnSndPlay(CD2_SND_PICKUP_WEAPON,
+				cp->hd.where.t[0], cp->hd.where.t[1] + 40,
+				cp->hd.where.t[2], -1500, 4096);
 		}
 	}
 	else
@@ -536,6 +540,10 @@ static void cd2ArenaPickupTake(CAR_DATA* cp, const CD2_ARENA_PICKUP* p)
 
 			snprintf(msg, sizeof(msg), "Repaired +%d", amount);
 			jer_hud_message(msg, 120);
+
+			cd2WpnSndPlay(CD2_SND_PICKUP_HEALTH,
+				cp->hd.where.t[0], cp->hd.where.t[1] + 40,
+				cp->hd.where.t[2], -1500, 4096);
 		}
 	}
 }

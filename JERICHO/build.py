@@ -113,16 +113,26 @@ def scan_mods(src_dir):
     return found
 
 
+def _mod_runtime(toml):
+    return (toml.get("runtime") or "").strip().lower()
+
+
 def deep_mods(src_dir):
-    """Compiled-in modules: mod.toml WITHOUT runtime = "dll"."""
+    """Compiled-in modules: mod.toml WITHOUT runtime = "dll" or "data"."""
     return [i for i, t in scan_mods(src_dir)
-            if (t.get("runtime") or "").lower() != "dll"]
+            if _mod_runtime(t) not in ("dll", "data")]
 
 
 def addon_mods(src_dir):
-    """Runtime addons: mod.toml WITH runtime = "dll"."""
+    """Runtime addons: mod.toml WITH runtime = "dll" (data packs excluded)."""
     return [i for i, t in scan_mods(src_dir)
-            if (t.get("runtime") or "").lower() == "dll"]
+            if _mod_runtime(t) == "dll"]
+
+
+def data_mods(src_dir):
+    """Installed-only packs: mod.toml WITH runtime = "data"."""
+    return [i for i, t in scan_mods(src_dir)
+            if _mod_runtime(t) == "data"]
 
 
 def find_src_dir(explicit):
@@ -560,15 +570,20 @@ def copy_addons(ctx):
 def copy_mod_assets(ctx):
     """Copy the compiled-in modules' runtime assets beside the exe.
 
-    JMPPED.LEV is the self-contained Jericho pedestrian bake. The engine looks
-    for it at DRIVER2/LEVELS/JMPPED.LEV, so a fresh build must place it there:
-    the module's tools/ folder is not the runtime layout. A missing bake is not a
-    build failure -- the engine falls back to Havana's streamed pages.
+    JMPPED.LEV is the self-contained Jericho pedestrian bake. The canonical
+    copy ships with the mp mod at JERICHO/MODS/mp/JMPPED.LEV. A fresh build
+    copies it to bin/<config>/JERICHO/MODS/mp/ and still places a copy at
+    DRIVER2/LEVELS/JMPPED.LEV so older fallback lookups keep working. A
+    missing bake is not a build failure -- the engine falls back to Havana's
+    streamed pages.
 
-    The archive now lives in BAKE's ped suite. Keep the old mp path as a
-    transition fallback for trees that have not updated the submodules yet.
+    Source order: the mp-mod copy, then BAKE's ped suite, then the old mp
+    tools path for trees that have not updated the submodules yet.
     """
-    src = os.path.join(mods_dir(ctx.src), "bake", "tools", "ped", "JMPPED.LEV")
+    src = os.path.join(mods_dir(ctx.src), "mp", "JMPPED.LEV")
+
+    if not os.path.isfile(src):
+        src = os.path.join(mods_dir(ctx.src), "bake", "tools", "ped", "JMPPED.LEV")
 
     if not os.path.isfile(src):
         src = os.path.join(mods_dir(ctx.src), "mp", "tools", "JMPPED.LEV")
@@ -576,15 +591,20 @@ def copy_mod_assets(ctx):
     if not os.path.isfile(src):
         return 0
 
-    targets = [os.path.join(ctx.src, "bin", ctx.config, "DRIVER2", "LEVELS")]
+    bin_root = os.path.join(ctx.src, "bin", ctx.config)
+    targets = [
+        os.path.join(bin_root, "JERICHO", "MODS", "mp"),
+        os.path.join(bin_root, "DRIVER2", "LEVELS"),
+    ]
 
     # A runtime JERICHO beside the exe: the game root is its parent. The repo's
     # own JERICHO is NOT a runtime layout -- copying there would create a stray
     # DRIVER2/ tree at the repository root.
     if (ctx.runtime and os.path.basename(ctx.runtime) == "JERICHO" and
             os.path.abspath(ctx.runtime) != jericho_dir(ctx.src)):
-        targets.append(os.path.join(os.path.dirname(ctx.runtime),
-                                    "DRIVER2", "LEVELS"))
+        game_root = os.path.dirname(ctx.runtime)
+        targets.append(os.path.join(ctx.runtime, "MODS", "mp"))
+        targets.append(os.path.join(game_root, "DRIVER2", "LEVELS"))
 
     for target in targets:
         if ctx.dry_run:
@@ -602,13 +622,41 @@ def copy_mod_assets(ctx):
 # commands
 # --------------------------------------------------------------------------
 
+def codegen_deep_mod(ctx, mod_id):
+    """Run a module's build-time data generator, if it ships one.
+
+    A deep module may keep authored data (JSON) and generate a C table from it.
+    The generator is a tool under <mod>/tools/gen_profiles.py; run it before
+    compiling so an edited JSON file cannot be compiled stale.
+    """
+    tool = os.path.join(mods_dir(ctx.src), mod_id, "tools", "gen_profiles.py")
+    if not os.path.isfile(tool):
+        return 0
+    print("[build] generate profile data for %s" % mod_id, flush=True)
+    return ctx.run([sys.executable, tool], cwd=os.path.dirname(tool))
+
+
+def codegen_deep_mods(ctx):
+    for mid in deep_mods(ctx.src):
+        rc = codegen_deep_mod(ctx, mid)
+        if rc:
+            return rc
+    return 0
+
+
 def do_game(ctx, step, mod_id):
     b = ctx.backend
     if step == "premake":
+        rc = codegen_deep_mods(ctx)
+        if rc:
+            return rc
         return b.premake(ctx)
     if step == "mod":
         if not mod_id:
             raise SystemExit("build.py: 'game mod' needs a module id")
+        rc = codegen_deep_mod(ctx, mod_id)
+        if rc:
+            return rc
         rc = b.build_deep_mod(ctx, mod_id)
         if rc:
             return rc
@@ -618,6 +666,9 @@ def do_game(ctx, step, mod_id):
     if step == "exports":
         return b.build_exports(ctx)
     if step in (None, "", "all"):
+        rc = codegen_deep_mods(ctx)
+        if rc:
+            return rc
         rc = b.premake(ctx)
         if rc:
             return rc

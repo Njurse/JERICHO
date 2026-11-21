@@ -1,0 +1,18 @@
+{
+  "order": 1,
+  "internal": "avalanche",
+  "display": "Avalanche",
+  "homeCity": "VEGAS",
+  "vehicle": { "city": "VEGAS", "model": 11 },
+  "stats": { "armor": 4, "speed": 2, "handling": 3, "specialPower": 4 },
+  "special": "special_avalanche",
+  "physics": {
+    "mass": 6800,
+    "powerRatio": 3800,
+    "traction": 5400,
+    "wheelSize": 72,
+    "topSpeedPct": 88
+  },
+  "palette": -1,
+  "crew": { "lat": [6, 6], "fwd": [0, 0], "up": [0, 0], "yaw": [0, 0], "sillRaise": 0, "armScale": 0 }
+}

@@ -1,11 +1,16 @@
-# Caine's Crossfire — Sound bank reference (candidate weapon sounds)
+# Caine's Crossfire — Sound banks and weapon audio
 
-How Driver 2's audio is laid out, the API a JERICHO module uses to play it,
-and the sample indices worth trying for the weapon prototype. Everything here
-is gathered from the engine source (`src_rebuild/Game/C/`); there is **no
-symbolic sample-name table** in the code — samples are plain numeric indices
-into a bank — so the tables below are the indices the game itself uses plus
-their call-site meaning.
+The module's weapon, pickup and reticle sounds come from ONE compiled PSX
+dynamic bank, `sounds/weapons.sbk`, generated from the WAVs in `sounds/` by
+`tools/build_sound_bank.py`. The engine appends it to `SOUND_BANK_SFX` at level
+load, so every sound plays through the normal SPU voice pool and the 3D helpers
+(`Start3DSoundVolPitch` / `Start3DTrackingSound`) — position, doppler and
+distance falloff included. A missing bank falls back to the weapon's previous
+stock sample.
+
+The rest of this file is the engine-side reference the module was built
+against: the three audio layers, the play API, the voice budget and the stock
+sample indices.
 
 ## Architecture (3 layers)
 
@@ -80,6 +85,107 @@ int  jer_sound_locked_count(void);
 - With `debug_log` on, a run logs the budget: `sfx voice: chan=9 held=0
   locked=12/12` is the reserve being protected.
 
+## The module's compiled weapon bank
+
+`sounds/weapons.sbk` is a PSX dynamic bank: `int32 sample count`, that many
+16-byte `(address, length, loop, rate)` entries, then the VAG payload. It is
+the layout `LoadSoundBankDynamic()` reads and the same one the car bakes
+write. The module requests it once at registration:
+
+```c
+sWpnSndReq = jer_sound_request_mod_bank("cainescrossfire", "weapons",
+                                        SOUND_BANK_SFX);
+```
+
+The engine loads it in `LoadLevelSFX`, before the car-import memtop, and
+records `jer_sound_mod_bank_base()` / `_count()`. The helpers re-read that base
+on every play, so a level change cannot leave a stale index behind. A missing
+file, a full bank or an omitted optional slot makes the helpers fall back to
+the weapon's existing stock sample — the module never goes silent because of
+the bank.
+
+### Bank order
+
+The order is the ABI between `tools/build_sound_bank.py` and
+`cainescrossfire.h`'s `CD2_SND_*` enum (1-based; 0 = none):
+
+| offset | id | source | loop | role |
+|---:|---|---|---|---|
+| 0 | MG_LOOP | machine_guns.wav | yes | MG/SMG held fire |
+| 1 | MG_SHOT | machine_guns.wav | no | MG/SMG one-shot (AI + RT fallback) |
+| 2 | FREEZE_FIRE | freeze_fire.wav | no | freeze launch |
+| 3 | FREEZE_IMPACT | freeze_impact.wav | no | freeze impact |
+| 4 | FREEZE_TRAVEL | freeze_ray_travel.wav | yes | freeze projectile travel |
+| 5 | EXPLOSION1 | explosion1.wav | no | missile impact accent |
+| 6 | EXPLOSION2 | explosion2.wav | no | seeker/zoomy impact accent |
+| 7 | EXPLOSION3 | explosion3.wav | no | cluster parent impact accent |
+| 8 | EXPLOSION4 | explosion4.wav | no | mine impact accent |
+| 9 | PICKUP_WEAPON | pickup_weapon.wav | no | weapon pickup |
+| 10 | PICKUP_HEALTH | pickup_health.wav | no | health pickup |
+| 11 | RETICLE_SELECTED | reticle_selected.wav | no | Fixer lock acquired |
+| 12 | RETICLE_CHARGE | reticle_charge.wav | yes | Fixer charge loop (pitch ramps) |
+| 13 | RETICLE_FULL | reticle_full.wav | no | Fixer full charge / fire cue |
+| 14 | SCREAM | scream.wav | no | weapon kill |
+| 15 | SNIPER_SHOT | gun_sniper_rifle_shot.wav | no | optional sniper shot |
+
+`meldedv8.wav` is deliberately NOT in this bank: it is an engine loop for the
+vehicle bank. `gun-sniper-rifle-shot.mp3` is not PCM; the builder converts it
+with ffmpeg when available and otherwise leaves slot 15 out (the code checks
+the loaded count, so the other indices do not shift).
+
+### How a weapon uses it
+
+`CD2_WEAPON_DEF` carries six optional fields:
+
+```c
+int fireSound;    // CD2_SND_* one-shot at the muzzle (0 = stock)
+int firePitch;    // SPU pitch, 4096 = normal (0 = default)
+int impactSound;  // CD2_SND_* accent at the impact (0 = none)
+int impactPitch;
+int travelSound;  // CD2_SND_* LOOP while a projectile flies (0 = none)
+int travelPitch;
+```
+
+The helpers in `weapons/core/weapons.c` resolve these against the live bank:
+
+- `cd2WpnSndFire(def, &channel, x, y, z, fallbackSample, fallbackVolume,
+  fallbackPitch)` — one-shot at the muzzle. Every weapon fire path goes through
+  it; the MG/SMG player loops are the exception described below.
+- `cd2WpnSndImpact(...)` — one-shot at the impact. It LAYERS over the engine's
+  own explosion sound; the stock explosion is never suppressed.
+- `cd2WpnSndTravelStart/Stop` — a 3D tracked loop owned by the projectile pool
+  (`projectile.c` adds `sndChan` to each shot). At most **4** travel loops run
+  at once (`CD2_WPN_TRAVEL_MAX`), so a volley cannot eat the 16-voice pool.
+- `cd2WpnSndPlay` / `cd2WpnSndPlay2D` — a one-shot by `CD2_SND_*` id, 3D or
+  non-positional.
+
+### MG, SMG and the held-fire loop
+
+Firing the MG every 2 frames (15/s) cannot retrigger a 1.3 s burst sample. The
+player's MG therefore starts `MG_LOOP` ONCE on a 3D-tracked channel when LT is
+held and stops it on release. The SMG reuses the same loop for its 14-frame
+six-shot burst at pitch **5120** (slightly above the MG's 4096). AI cars and
+the RT fallback never loop: they play the one-shot `MG_SHOT`. The loop channels
+use `jer_sound_ensure`, so they re-lock after a level change; `cd2WpnSndStopAll`
+stops them on disable, no player car, totaled/frozen/editor, reset and the
+frontend.
+
+### Fixer's reticle cues
+
+Fixer's Laser Lock is the one charging special. For the LOCAL player only:
+
+- `RETICLE_SELECTED` plays when a new lock is acquired;
+- `RETICLE_CHARGE` loops while the charge builds, with `SetChannelPitch`
+  ramping from 4096 to 8192 across `CD2_FIXER_CHARGE` (5.5 s);
+- `RETICLE_FULL` plays once at full charge, the "fire now" cue;
+- a world-space reticle (four corner brackets) is drawn on the locked car in
+  the beam's white → yellow → red ramp and pulses at full;
+- losing the target, firing, or SWAPPING WEAPONS stops both cues and clears the
+  lock — weapon swap is the player's abort.
+
+AI Fixers keep the beam but make no reticle noise; the top-right lock-on name
+and health panel is a separate, wider lock and is not cleared by this.
+
 ## Banks (`gamesnd.h`)
 
 ```c
@@ -122,39 +228,46 @@ from `CarHasSiren()` returning a packed `(bank << 8) | sample`.
 ### `SOUND_BANK_TANNER`
 `4` — a Tanner SFX used in cutscenes (`gamesnd.c:1727`, `mc_snd.c:206`).
 
-## Candidate weapon sounds
+## Per-weapon mapping (current)
 
-**Explosion (rocket impact) — already wired.** `weapons.c` calls
-`AddExplosion(pos, LITTLE_BANG)`; `AddExplosion` (`job_fx.c:114`) calls
-`ExplosionSound(pos, type)`, which plays `phrase_top` (SFX `3`/`7`) or the
-mission explosion (`GetMissionSound(12/29)`). No extra code needed.
+| weapon | fire | travel | impact |
+|---|---|---|---|
+| MG | MG_LOOP (held) / MG_SHOT | - | - |
+| SMG | MG_LOOP at 5120 / MG_SHOT | - | - |
+| FREEZE | FREEZE_FIRE | FREEZE_TRAVEL | FREEZE_IMPACT |
+| MISSILE | stock 6 (config `missile_sound`) | - | EXPLOSION1 |
+| SEEKER | stock 5 | - | EXPLOSION2 |
+| CLUSTER | stock 6 | - | EXPLOSION3 |
+| ZOOMY | stock 5 | - | EXPLOSION2 |
+| MINE | stock 5 | - | EXPLOSION4 |
+| SHOTGUN | MG_SHOT pitched down | - | - |
+| FIXER | SNIPER_SHOT (if converted) | - | - |
+| other specials | stock sample + pitch | - | - |
+| pickups | PICKUP_WEAPON / PICKUP_HEALTH | - | - |
+| weapon kill | SCREAM | - | - |
 
-**Machine gun shot** — there is no dedicated gunshot in the bank, so audition
-a short percussive SFX. First candidates: the crash samples (`SOUND_BANK_SFX`
-`4`/`5`) pitched up a little. Wire it in `cd2MgFire`
-(weapons/raycast/machinegun.c) at spawn time:
+The explosion assignments are the starting defaults; every field is data, so
+retuning one is a one-line change in that weapon's `cd2Make*Def()`.
 
-```c
-// one line, world-positioned, auto channel
-Start3DSoundVolPitch(-1, SOUND_BANK_SFX, 5,
-    o.vx, o.vy, o.vz, -2000, 4096 + 2048);   // +2048 pitch = a bit snappier
+## Reviewing and regenerating the bank
+
+The builder lives at `tools/build_sound_bank.py` and uses the bake suite's
+`vag.py` (the same encoder the car banks use):
+
+```
+python tools/build_sound_bank.py --review   # format/level/loop-seam report
+python tools/build_sound_bank.py --build    # write sounds/weapons.sbk
+python tools/build_sound_bank.py --check    # decode it and verify flags/rates
+python tools/build_sound_bank.py --all      # build then check
 ```
 
-**Rocket launch** — a rising "whoosh" is the closest match. Candidates:
-- `SOUND_BANK_SFX` `12` (special siren, pitched way up) as a launch whistle, or
-- a cop siren bank sample (`SBK_COP_SIREN_START = 69` onward) pitched up.
+`tools/build_sound_bank.bat` is the same commands on Windows. `--review`
+reports rate/channels/duration/peak/RMS/crest/DC/clipping for every source and
+the best block-aligned loop for `machine_guns`, `freeze_ray_travel` and
+`reticle_charge`; it does not audition them. The builder levels each sample to
+retail's car-bank loudness (peak 0.999 / rms 0.34), strips DC, fades one-shots,
+keeps the source rate, and writes the three loop samples with VAG loop flags.
 
-Wire it in `cd2MissileFire` (weapons/projectile/missile.c) with the muzzle
-position. For a looping/tracking
-sound that follows the projectile, use `Start3DTrackingSound(channel, bank,
-sample, &rocket.pos, &rocket.vel)`.
-
-## Auditioning a sample
-
-There's no in-game sample browser yet; the quick way to try a candidate is to
-temporarily play it from the pause-menu Debug toggle (or log its id), or —
-during a playtest with **Modules → Caine's Crossfire → Debug → Telemetry Log ON** —
-watch `JERICHO.log` for the `[cainescrossfire]` weapon lines (`weapons frame`,
-`MG fired`, `draw world`) to correlate fire events with what you hear. Pick
-`bank`/`sample`, set a `volume` near `-2000..-3000` and `pitch` around `4096`,
-then tune up/down by ear.
+The engine-side bank format and loading rules are in `jer_sound.h`
+(`jer_sound_request_mod_bank`) and `src_rebuild/Game/C/sound.c`
+(`LoadSoundBankDynamic`).

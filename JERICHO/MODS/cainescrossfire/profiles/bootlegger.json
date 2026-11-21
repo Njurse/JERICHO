@@ -1,0 +1,16 @@
+{
+  "order": 7,
+  "internal": "bootlegger",
+  "display": "Bootlegger",
+  "homeCity": "VEGAS",
+  "vehicle": { "city": "VEGAS", "model": 1 },
+  "stats": { "armor": 2, "speed": 5, "handling": 4, "specialPower": 3 },
+  "special": "special_bootlegger",
+  "physics": {
+    "mass": 3000,
+    "powerRatio": 4600,
+    "topSpeedPct": 110
+  },
+  "palette": 1,
+  "crew": { "lat": [0, 0], "fwd": [0, 0], "up": [0, 0], "yaw": [0, 0], "sillRaise": 0, "armScale": 0 }
+}

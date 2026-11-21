@@ -79,3 +79,39 @@ function jericho_scan_mods()
 
 	return mods
 end
+
+-- The mod.toml `runtime` value: "dll" for a loadable addon, "data" for an
+-- installed data pack (car banks, textures) that is never executed, and "" for
+-- a compiled-in module. Comments are stripped so a commented-out value cannot
+-- change the classification.
+function jericho_mod_runtime(id)
+	local toml = io.open(jericho_mod_dir(id) .. "/mod.toml", "r")
+	local value = ""
+
+	if toml then
+		local line = toml:read("*l")
+
+		while line do
+			local code = line:gsub("#.*$", "")
+			local v = code:match("^%s*runtime%s*=%s*[\"']([%w_%-]+)[\"']")
+
+			if v then
+				value = v:lower()
+			end
+
+			line = toml:read("*l")
+		end
+
+		toml:close()
+	end
+
+	return value
+end
+
+function jericho_is_dll_addon(id)
+	return jericho_mod_runtime(id) == "dll"
+end
+
+function jericho_is_data_mod(id)
+	return jericho_mod_runtime(id) == "data"
+end

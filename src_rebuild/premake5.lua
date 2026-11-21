@@ -56,29 +56,8 @@ for _, req in ipairs(JERICHO_REQUIRED_MODS) do
 	manifest:close()
 end
 
--- True when <id>'s mod.toml marks it as a runtime DLL addon.
-function jericho_is_dll_addon(id)
-	local toml = io.open(jericho_mod_dir(id) .. "/mod.toml", "r")
-
-	if toml then
-		local line = toml:read("*l")
-
-		while line do
-			if line:match("^%s*runtime%s*=%s*\"dll\"") then
-				toml:close()
-				return true
-			end
-
-			line = toml:read("*l")
-		end
-
-		toml:close()
-	end
-
-	return false
-end
-
--- Deep (compiled-in) modules: every installed mod that is NOT a DLL addon.
+-- Deep (compiled-in) modules: every installed mod that is NOT a DLL addon
+-- and NOT a data pack.
 JERICHO_COMPILED_MODS = {}
 -- Optional out-of-tree mods: their own repos, not part of the superproject and
 -- NOT compiled even when the folder is present, unless opted in with
@@ -94,7 +73,7 @@ end
 for _, id in ipairs(jericho_scan_mods()) do
 	if JERICHO_OPTIONAL_MODS[id] and not jericho_optional_enabled(id) then
 		print("JERICHO: skipping optional mod " .. id .. " (set JERICHO_WITH_" .. id:upper() .. "=1 to build it)")
-	elseif not jericho_is_dll_addon(id) then
+	elseif not jericho_is_dll_addon(id) and not jericho_is_data_mod(id) then
 		table.insert(JERICHO_COMPILED_MODS, id)
 	end
 end

@@ -31,6 +31,7 @@
 #include "bcollide.h"
 #include "sound.h"
 #include "gamesnd.h"
+#include "jer_sound.h"		/* module sound bank + jer_sound_unlock */
 #include "pres.h"
 #include "draw.h"
 #include "system.h"
@@ -99,6 +100,314 @@ int cd2WpnRand(int n)
 #define CD2_WPN_NEXT		MPAD_R1	// right bumper: next weapon
 #define CD2_WPN_PREV		MPAD_L1	// left bumper: previous weapon
 
+// ---------------------------------------------------------------------------
+// Sound helpers (the module's compiled bank; CD2_SND_* in cainescrossfire.h)
+// ---------------------------------------------------------------------------
+// The bank is requested once at registration and appended to SOUND_BANK_SFX at
+// every level load. These helpers ask for its CURRENT base each time, so a
+// level change cannot leave a stale index behind. A missing bank, or an
+// optional slot the builder omitted, makes cd2WpnSndSample return -1 and the
+// caller's stock sample is used instead.
+static int sWpnSndReq = -1;
+
+#define CD2_WPN_TRAVEL_MAX	4	// concurrent projectile loops (voice budget)
+static int sWpnTravelLive;
+
+int cd2WpnSndSample(int id)
+{
+	int base, count;
+
+	if (id <= CD2_SND_NONE || sWpnSndReq < 0)
+		return -1;
+
+	count = jer_sound_mod_bank_count(sWpnSndReq);
+	base = jer_sound_mod_bank_base(sWpnSndReq);
+
+	if (base < 0 || id > count)
+		return -1;
+
+	return base + id - 1;
+}
+
+int cd2WpnSndPlay(int id, int x, int y, int z, int volume, int pitch)
+{
+	int sample = cd2WpnSndSample(id);
+
+	if (sample < 0)
+		return 0;
+
+	if (pitch <= 0)
+		pitch = 4096;
+
+	return Start3DSoundVolPitch(-1, SOUND_BANK_SFX, sample, x, y, z,
+		volume, pitch) >= 0;
+}
+
+int cd2WpnSndPlay2D(int id, int volume, int pitch)
+{
+	int sample = cd2WpnSndSample(id);
+
+	if (sample < 0)
+		return 0;
+
+	if (pitch <= 0)
+		pitch = 4096;
+
+	return StartSound(-1, SOUND_BANK_SFX, sample, volume, pitch) >= 0;
+}
+
+int cd2WpnSndFire(const CD2_WEAPON_DEF* d, int* channel, int x, int y, int z,
+		  int fallbackSample, int fallbackVolume, int fallbackPitch)
+{
+	int fromBank = (d != NULL) ? cd2WpnSndSample(d->fireSound) : -1;
+	int sample = fromBank;
+	int pitch;
+
+	if (sample < 0)
+	{
+		if (fallbackSample < 0)
+			return 0;
+
+		sample = fallbackSample;
+	}
+
+	pitch = (fromBank >= 0 && d != NULL && d->firePitch > 0)
+		? d->firePitch : fallbackPitch;
+
+	if (pitch <= 0)
+		pitch = 4096;
+
+	if (channel != NULL && *channel < 0)
+		*channel = cd2TakeVoice();
+
+	Start3DSoundVolPitch((channel != NULL) ? *channel : -1,
+		SOUND_BANK_SFX, sample, x, y, z, fallbackVolume, pitch);
+
+	return fromBank >= 0;
+}
+
+int cd2WpnSndImpact(const CD2_WEAPON_DEF* d, int x, int y, int z,
+		    int fallbackSample, int fallbackVolume, int fallbackPitch)
+{
+	int fromBank = (d != NULL) ? cd2WpnSndSample(d->impactSound) : -1;
+	int sample = fromBank;
+	int pitch;
+
+	if (sample < 0)
+	{
+		if (fallbackSample < 0)
+			return 0;
+
+		sample = fallbackSample;
+	}
+
+	pitch = (fromBank >= 0 && d != NULL && d->impactPitch > 0)
+		? d->impactPitch : fallbackPitch;
+
+	if (pitch <= 0)
+		pitch = 4096;
+
+	Start3DSoundVolPitch(-1, SOUND_BANK_SFX, sample, x, y, z,
+		fallbackVolume, pitch);
+
+	return fromBank >= 0;
+}
+
+int cd2WpnSndTravelStart(const CD2_WEAPON_DEF* d, int* channel,
+			 const VECTOR* pos, const VECTOR* vel)
+{
+	int sample;
+	int chan;
+
+	if (d == NULL || channel == NULL || pos == NULL)
+		return -1;
+
+	sample = cd2WpnSndSample(d->travelSound);
+
+	if (sample < 0 || sWpnTravelLive >= CD2_WPN_TRAVEL_MAX)
+		return -1;
+
+	if (*channel < 0)
+		*channel = cd2TakeVoice();
+
+	if (*channel < 0)
+		return -1;
+
+	chan = Start3DTrackingSound(*channel, SOUND_BANK_SFX, sample,
+		(VECTOR*)pos, (LONGVECTOR3*)vel);
+
+	if (chan < 0)
+	{
+		jer_sound_unlock(*channel);
+		*channel = -1;
+		return -1;
+	}
+
+	if (d->travelPitch > 0)
+		SetChannelPitch(chan, d->travelPitch);
+
+	SetChannelVolume(chan, -2200, 0);
+
+	sWpnTravelLive++;
+	return chan;
+}
+
+void cd2WpnSndTravelStop(int* channel)
+{
+	if (channel == NULL || *channel < 0)
+		return;
+
+	StopChannel(*channel);
+	jer_sound_unlock(*channel);
+	*channel = -1;
+
+	if (sWpnTravelLive > 0)
+		sWpnTravelLive--;
+}
+
+// ---------------------------------------------------------------------------
+// MG/SMG held-fire loops (see weapon.h)
+// ---------------------------------------------------------------------------
+static int sMgLoopChan = -1;
+static int sMgLoopOn;
+static int sSmgLoopChan = -1;
+static int sSmgLoopOn;
+static int sSmgFrames;
+
+#define CD2_MG_LOOP_VOLUME	-2000
+#define CD2_SMG_LOOP_VOLUME	-2600
+#define CD2_SMG_LOOP_PITCH	(4096 + 1024)	// "slightly higher" than the MG
+#define CD2_SMG_LOOP_TAIL	2
+
+int cd2WpnSndIsLocal(const CAR_DATA* cp)
+{
+	return (cp != NULL && MainPlayer.playerCarId >= 0 &&
+		cp->id == MainPlayer.playerCarId);
+}
+
+int cd2WpnSndMgActive(void)
+{
+	return sMgLoopOn;
+}
+
+// Start/stop the player's MG loop from the trigger. Only the local player
+// loops; an AI car's MG stays a one-shot (cd2MgFire handles that path).
+static void cd2WpnSndMgHold(CAR_DATA* cp, int held)
+{
+	int sample;
+
+	if (!cd2WpnSndIsLocal(cp))
+		return;
+
+	if (!held)
+	{
+		if (sMgLoopOn && sMgLoopChan >= 0)
+			StopChannel(sMgLoopChan);
+
+		sMgLoopOn = 0;
+		return;
+	}
+
+	if (sMgLoopOn)
+		return;
+
+	sample = cd2WpnSndSample(CD2_SND_MG_LOOP);
+
+	if (sample < 0)
+		return;
+
+	if (jer_sound_ensure(&sMgLoopChan) < 0)
+		return;
+
+	if (Start3DTrackingSound(sMgLoopChan, SOUND_BANK_SFX, sample,
+			(VECTOR*)cp->hd.where.t,
+			(LONGVECTOR3*)cp->st.n.linearVelocity) < 0)
+	{
+		jer_sound_unlock(sMgLoopChan);
+		sMgLoopChan = -1;
+		return;
+	}
+
+	SetChannelVolume(sMgLoopChan, CD2_MG_LOOP_VOLUME, 0);
+	sMgLoopOn = 1;
+}
+
+// One SMG trigger is a six-shot burst; play the same loop for that window at a
+// slightly higher pitch. Returns 0 for an AI car or when the bank is absent,
+// so the caller keeps its one-shot MG_SHOT path.
+int cd2WpnSndSmgBurst(const CAR_DATA* cp)
+{
+	int sample;
+
+	if (!cd2WpnSndIsLocal(cp))
+		return 0;
+
+	sample = cd2WpnSndSample(CD2_SND_MG_LOOP);
+
+	if (sample < 0)
+		return 0;
+
+	if (jer_sound_ensure(&sSmgLoopChan) < 0)
+		return 0;
+
+	if (Start3DTrackingSound(sSmgLoopChan, SOUND_BANK_SFX, sample,
+			(VECTOR*)cp->hd.where.t,
+			(LONGVECTOR3*)cp->st.n.linearVelocity) < 0)
+	{
+		jer_sound_unlock(sSmgLoopChan);
+		sSmgLoopChan = -1;
+		return 0;
+	}
+
+	SetChannelPitch(sSmgLoopChan, CD2_SMG_LOOP_PITCH);
+	SetChannelVolume(sSmgLoopChan, CD2_SMG_LOOP_VOLUME, 0);
+
+	sSmgLoopOn = 1;
+	sSmgFrames = cd2WdefSmg.burstCount * cd2WdefSmg.burstInterval +
+		CD2_SMG_LOOP_TAIL;
+
+	if (sSmgFrames < 1)
+		sSmgFrames = 1;
+
+	return 1;
+}
+
+// Per-frame router: mgHeld is the player's LT state. The SMG timer is counted
+// down here, so the burst loop stops even if no new shot fires.
+void cd2WpnSndDrive(void* vcp, int mgHeld)
+{
+	CAR_DATA* cp = (CAR_DATA*)vcp;
+
+	if (cp == NULL)
+	{
+		cd2WpnSndStopAll();
+		return;
+	}
+
+	cd2WpnSndMgHold(cp, mgHeld);
+
+	if (sSmgFrames > 0 && --sSmgFrames == 0)
+	{
+		if (sSmgLoopOn && sSmgLoopChan >= 0)
+			StopChannel(sSmgLoopChan);
+
+		sSmgLoopOn = 0;
+	}
+}
+
+void cd2WpnSndStopAll(void)
+{
+	if (sMgLoopOn && sMgLoopChan >= 0)
+		StopChannel(sMgLoopChan);
+
+	if (sSmgLoopOn && sSmgLoopChan >= 0)
+		StopChannel(sSmgLoopChan);
+
+	sMgLoopOn = 0;
+	sSmgLoopOn = 0;
+	sSmgFrames = 0;
+}
+
 // Weapon impact knockback tuning (lever action): spin = leverArm * strength *
 // CD2_KNOCK_SCALE, capped at CD2_KNOCK_MAX (world angular-velocity units).
 #define CD2_KNOCK_SCALE		6
@@ -128,7 +437,8 @@ static const CD2_WEAPON_DEF* const gWdefs[CD2_WID_COUNT] =
 	&cd2WdefSpecialBootlegger,
 	&cd2WdefSpecialInvocada,
 	&cd2WdefSpecialFixer,
-	&cd2WdefSpecialWheelman
+	&cd2WdefSpecialWheelman,
+	&cd2WdefSpecialDeathcruiser
 };
 
 const CD2_WEAPON_DEF* cd2WpnDef(int weaponId)
@@ -144,6 +454,49 @@ const char* cd2WpnName(int weaponId)
 	const CD2_WEAPON_DEF* d = cd2WpnDef(weaponId);
 
 	return d ? d->name : "NONE";
+}
+
+// Case-insensitive equality for a weapon's code/display name.
+static int cd2WpnNameEq(const char* a, const char* b)
+{
+	while (*a != 0 && *b != 0)
+	{
+		int ca = *a, cb = *b;
+
+		if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
+		if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
+
+		if (ca != cb)
+			return 0;
+
+		a++;
+		b++;
+	}
+
+	return *a == *b;
+}
+
+int cd2WpnFindByName(const char* name)
+{
+	int i;
+
+	if (name == NULL || name[0] == 0)
+		return CD2_WID_NONE;
+
+	for (i = 0; i < CD2_WID_COUNT; i++)
+	{
+		const CD2_WEAPON_DEF* d = gWdefs[i];
+
+		if (d == NULL)
+			continue;
+
+		if (d->name != NULL && cd2WpnNameEq(d->name, name))
+			return i;
+		if (d->displayName != NULL && cd2WpnNameEq(d->displayName, name))
+			return i;
+	}
+
+	return CD2_WID_NONE;
 }
 
 // The full on-screen name: the def's displayName when set, else the short name.
@@ -430,6 +783,7 @@ void cd2WpnResetAll(void)
 	cd2RaycastReset();
 	cd2ProjectileReset();
 	cd2DropReset();
+	cd2WpnSndStopAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -886,6 +1240,7 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	if (!gCd2Cfg.enabled)
 	{
 		prevRT = prevLB = prevRB = 0;
+		cd2WpnSndStopAll();
 		return JER_RESULT_CONTINUE;
 	}
 
@@ -902,6 +1257,7 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	if (!cd2WpnPlayerCar(&cp))
 	{
 		prevRT = prevLB = prevRB = 0;
+		cd2WpnSndStopAll();
 
 		// no player car: nothing to fire, but live shots keep flying
 		cd2RaycastStep();
@@ -923,6 +1279,7 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	if (cd2CarTotaled(cp) || cd2FreezeActive(cp->id) || cd2EditorActive())
 	{
 		prevRT = prevLB = prevRB = 0;
+		cd2WpnSndStopAll();
 		cd2WpnSetCarArmed(cp, CD2_WID_NONE);	// downed driver = not armed
 
 		cd2RaycastStep();
@@ -971,6 +1328,10 @@ static int cd2WpnOnFrame(void* ud, void* args)
 	rt = (pad & CD2_WPN_FIRE_SEL) ? 1 : 0;
 	rb = (pad & CD2_WPN_NEXT) ? 1 : 0;
 	lb = (pad & CD2_WPN_PREV) ? 1 : 0;
+
+	// The player's MG loop follows LT; the SMG burst timer ticks down here,
+	// so the burst loop ends even if no further shot is fired.
+	cd2WpnSndDrive(cp, lt);
 
 	if (gCd2Cfg.debugLog && (dbg++ & 31) == 0)
 		printInfo("[cainescrossfire] wpn frame: pad=0x%04X LT=%d RT=%d LB=%d RB=%d sel=%d ammo=%d\n",
@@ -1137,6 +1498,18 @@ static int cd2WpnOnGameStart(void* ud, void* args)
 // ---------------------------------------------------------------------------
 void cd2WeaponsRegister(JERICHO_CONTEXT* ctx)
 {
+	// Ask the engine for the compiled weapon bank at every level load. A
+	// missing file is not fatal: every sound helper falls back to the stock
+	// sample, and the request slot simply reports base=-1/count=0.
+	sWpnSndReq = jer_sound_request_mod_bank("cainescrossfire", "weapons",
+		SOUND_BANK_SFX);
+
+	if (sWpnSndReq >= 0)
+		ctx->jer_log(ctx, "[cainescrossfire] weapon bank requested: slot %d\n",
+			sWpnSndReq);
+	else
+		ctx->jer_log(ctx, "[cainescrossfire] weapon bank request failed - stock sounds\n");
+
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, cd2WpnOnFrame, NULL, 0);
 	ctx->jer_register_hook(ctx, JER_EVENT_GAME_START, cd2WpnOnGameStart, NULL, 0);
 	// the same reset when the game returns to the frontend menus

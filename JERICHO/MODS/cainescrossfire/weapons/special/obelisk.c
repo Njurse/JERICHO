@@ -187,8 +187,9 @@ static void cd2ObeliskFire(void* vcp)
 	}
 
 	if (gSalvoChannel >= 0)
-		Start3DSoundVolPitch(gSalvoChannel, SOUND_BANK_SFX, 6,
-			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2], -1800, 4096 - 900);
+		cd2WpnSndFire(&cd2WdefSpecialObelisk, &gSalvoChannel,
+			cp->hd.where.t[0], cp->hd.where.t[1], cp->hd.where.t[2],
+			6, -1800, 4096 - 900);
 }
 
 static int cd2ObeliskOnFrame(void* ud, void* args)

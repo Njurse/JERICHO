@@ -34,7 +34,7 @@ Firing one headlessly (the debug driver):
 270:fire:deadstar
 ```
 
-## The eleven
+## The twelve
 
 | internal | display | car | recharge | capacity |
 |---|---|---|---|---|
@@ -49,6 +49,7 @@ Firing one headlessly (the debug driver):
 | `special_invocada` | Cyclone | Invocada | 780 (26s) | 2 |
 | `special_fixer` | Laser Lock | Fixer | 150 (5s) | 2 |
 | `special_wheelman` | Shockwave | Wheelman | 700 (23s) | 2 |
+| `special_deathcruiser` | Death Cruiser (placeholder) | Death Cruiser | 120 (4s) | 5 |
 
 ### Hornet — Spike Storm
 
@@ -129,6 +130,15 @@ turned at ~2s, red by ~4s, full charge at ~5.5s. Firing spends it: damage scales
 400 → 2600 and the twist away 200 → 1400 across the charge, and there are five
 seconds between shots, so a charge cannot simply be sat on.
 
+The lock also drives the reticle: `reticle_selected` plays when a target is
+acquired, `reticle_charge` loops while the charge builds with its pitch
+climbing from 4096 to 8192, and `reticle_full` plays once at full damage as the
+"fire now" cue. A world-space reticle (four corner brackets) sits on the locked
+car, follows the beam's white → yellow → red ramp and pulses at full. It is
+player-only; AI Fixers show the beam silently. Swapping weapons, losing the
+target or firing clears the charge and the lock — weapon swap is the player's
+abort. The cues come from the module's compiled bank (see `SOUNDS.md`).
+
 ### Lock-on target preference
 
 Every lock-on in the module - Fixer's laser, a homing projectile's seek
@@ -199,6 +209,15 @@ here: the car driving into the other deals the damage and takes none of the
 exchange itself. Before that rule, ramming a heavy opponent could kill Deadstar
 with its own dash. See `HANDLING.md` § *The damage model*.
 
+### Death Cruiser — placeholder
+
+**PLACEHOLDER.** Firing it plays the weapon-pickup cue at the car and does
+nothing else: no projectile, no damage and no status. It exists so the roster,
+HUD, per-car ammo and the special-weapon path are all exercised while the real
+weapon is still being designed. When the real special lands, replace the fire
+function and the def's class/ammo/recharge in `weapons/special/deathcruiser.c`;
+the profile only names `special_deathcruiser`.
+
 ## What is a first cut
 
 The mechanics are the described ones, built on the framework's primitives, but a
@@ -212,4 +231,6 @@ few are approximations to iterate on:
   zig-zag.
 - Avalanche's crush holds positions directly (a rigged climb animation is later).
 - Corvo's bolt, Highwayman's flame, and the ring are line/particle visuals.
-- The flame/blob/pellet sounds are sample + pitch, not bespoke audio.
+- The MG/SMG, Freeze, pickups, weapon kill and Fixer reticle use the compiled
+  sound bank; the remaining specials still use stock samples + pitch.
+  Per-weapon fire/travel/impact fields are available for later passes.

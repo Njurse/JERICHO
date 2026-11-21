@@ -41,14 +41,14 @@
 // angle and zero is an oscillator, so the car rocked back and forth instead of
 // doing one firm movement and settling. These two rates are what replaced it.
 #define CD2_KNOCK_DECAY		600	// /4096 - velocity kept per frame in phase 1
-#define CD2_KNOCK_SETTLE	1700	// /4096 - fraction of the angle eased out per frame
+#define CD2_KNOCK_SETTLE	2700	// /4096 - fraction of the angle eased out per frame
 
 // A hard speed change stiffens the return. The settle above is a fixed fraction per
 // frame; these add to it in proportion to |delta|, the car's own speed change this step,
 // so a violent event comes back with authority and a small one cannot snap the body
 // around. The cap is deliberately well short of 4096: at 4096 the whole angle is removed
 // in a single frame, which is the snap this file has already been bitten by once.
-#define CD2_KNOCK_SETTLE_PER_FORCE	1664
+#define CD2_KNOCK_SETTLE_PER_FORCE	5664
 // Sized against the IMPULSE that started the knock (recorded in the state by cd2KnockAdd),
 // not against the car's speed change. That was tried first and abandoned on measurement:
 // hd.speed does not move during a turbo engagement, so the delta was exactly 0 through
