@@ -33,6 +33,11 @@ an empty value, a typo or an unwrapped quoted string leaves it **off**.
 > read back from the manifest at runtime is `dependencies`** - see Dependencies
 > below, because the registry cannot carry it.
 
+> **Data packs are not modules.** A `mod.toml` with `runtime = "data"` is
+> installed and enabled through `modlist.ini`, but it has no entry symbol and
+> never appears in this module table. carhacks reads its
+> `banks/<dir>/bank.json` and registers the city banks.
+
 Every boot writes the resolution to `JERICHO.log`:
 
 ```

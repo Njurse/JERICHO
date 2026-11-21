@@ -4,8 +4,9 @@ The mod store (Options → JERICHO → Mods → **Mod Repo**) installs, updates 
 removes ONE mod at a time. It never touches the game exe: it downloads a package,
 verifies it, and unpacks it into `JERICHO/MODS/<id>/`.
 
-A **compiled-in** module (one whose `mod.toml` has no `runtime = "dll"`) is not
-in the running exe just because its folder is installed — premake generates the
+A **compiled-in** module (one whose `mod.toml` has neither `runtime = "dll"` nor
+`runtime = "data"`) is not in the running exe just because its folder is
+installed — premake generates the
 module registry at build time. So after installing one the store asks whether to
 recompile the game when you **leave the repo browser**; **Yes** closes the game,
 rebuilds it and starts it again (the same path as **Compile Mods**), **No**
@@ -98,9 +99,15 @@ store installed itself (it keeps a record per mod in
 `JERICHO/CONFIG/modstore/installed/<id>.json`).
 
 `mod.toml` also allows `version`, `author`, `dependencies`, `default-enabled`,
-`runtime = "dll"` and `incompatible`. The manifest is authoritative: the game,
-the inventory and the store all report the version written there, even for a
-mod compiled into the exe.
+`runtime = "dll"` or `runtime = "data"` and `incompatible`. The manifest is
+authoritative: the game, the inventory and the store all report the version
+written there, even for a mod compiled into the exe.
+
+`runtime = "data"` marks an installed data pack (car banks, textures, sounds):
+the store installs and enables it, but it is neither compiled into the exe nor
+loaded as a DLL. A data pack keeps its banks under `banks/<dir>/bank.json`;
+carhacks registers them when the mod is enabled. An absent or empty `runtime`
+is a compiled-in module.
 
 ## 3. Get the hash and size
 
