@@ -35,31 +35,17 @@ GAME_REGION = os.getenv("GAME_REGION") or "NTSC_VERSION"
 local ALL_MODS = jericho_scan_mods()
 
 -- Only API addons are built here: a mod.toml declaring runtime = "dll".
--- Deep mods (no such declaration) are compiled into the game by
--- premake5.lua — MSVC cannot import game data globals into a DLL, so
--- those must stay linked in. See premake_modules/jericho_mods.lua.
+-- Compiled-in mods (empty runtime) are linked into the game by premake5.lua,
+-- and data packs (runtime = "data", e.g. car banks) are installed but neither
+-- linked nor loaded. See premake_modules/jericho_mods.lua.
 local MODS = {}
 for _, id in ipairs(ALL_MODS) do
-	local toml = io.open(jericho_mod_dir(id) .. "/mod.toml", "r")
-	local isAddon = false
+	local runtime = jericho_mod_runtime(id)
 
-	if toml then
-		local line = toml:read("*l")
-
-		while line do
-			if line:match("^%s*runtime%s*=%s*\"dll\"") then
-				isAddon = true
-				break
-			end
-
-			line = toml:read("*l")
-		end
-
-		toml:close()
-	end
-
-	if isAddon then
+	if runtime == "dll" then
 		table.insert(MODS, id)
+	elseif runtime == "data" then
+		print("** JERICHO: " .. id .. " is a data pack — skipped by the DLL build (runtime = \"data\")")
 	else
 		print("** JERICHO: " .. id .. " is a compiled-in mod — skipped by the DLL build (add runtime = \"dll\" to its mod.toml to make it a DLL addon)")
 	end
