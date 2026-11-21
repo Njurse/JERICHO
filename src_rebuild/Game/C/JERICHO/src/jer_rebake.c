@@ -508,8 +508,14 @@ void jer_rebake_frontend_tick(int onMainMenu)
 		char ped[RB_PATH_MAX];
 		int pedsOk, carsOk;
 
-		snprintf(ped, sizeof(ped), "%s/../DRIVER2/LEVELS/JMPPED.LEV", jer_root_dir());
+		snprintf(ped, sizeof(ped), "%s/MODS/mp/JMPPED.LEV", jer_root_dir());
 		pedsOk = RbLevReadable(ped);
+		if (!pedsOk)
+		{
+			snprintf(ped, sizeof(ped), "%s/../DRIVER2/LEVELS/JMPPED.LEV",
+				jer_root_dir());
+			pedsOk = RbLevReadable(ped);
+		}
 		carsOk = baked >= 0;
 		if (!pedsOk || !carsOk)
 		{
