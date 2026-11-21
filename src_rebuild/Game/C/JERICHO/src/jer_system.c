@@ -57,6 +57,15 @@ typedef struct JER_HANDLER
 
 static JER_HANDLER gHandlers[JER_MAX_HANDLERS];
 static int gHandlerCount;
+static int gHandlerOverflowLogged;	/* table-full drop already logged this pass */
+
+/* Hooks registered while a fire is running are queued here and inserted once
+ * the outermost jerCtxFire returns (inserting in place would shift gHandlers[]
+ * under the dispatch loop). */
+#define JER_MAX_PENDING 32
+static JER_HANDLER gPending[JER_MAX_PENDING];
+static int gPendingCount;
+static int gFireDepth;
 static JER_MODULE gModules[JER_MAX_MODULES];
 static int gModuleCount;
 
@@ -475,16 +484,26 @@ static void jerSnapshotModules(const char* rootDir)
 /* MOD_CONTEXT function pointers (called by modules)                   */
 /* ------------------------------------------------------------------ */
 
-static void jerCtxRegisterHook(JERICHO_CONTEXT* ctx, int event, JER_HOOK_FN fn, void* userdata, int priority)
+/* Insert one handler keeping (event, priority) order -- lower priority runs
+ * first, equal priorities keep registration order. */
+static void jerInsertHandler(int event, JER_HOOK_FN fn, void* userdata, int priority, JER_MODULE* owner)
 {
 	int i;
 
-	(void)ctx;
-
-	if (fn == NULL || gHandlerCount >= JER_MAX_HANDLERS)
+	if (gHandlerCount >= JER_MAX_HANDLERS)
+	{
+		/* Used to return silently: the module simply never saw the event. Say
+		 * so once per activation pass, naming who lost the hook. */
+		if (!gHandlerOverflowLogged)
+		{
+			jerLog("[jericho] handler table full (%d): dropped hook for event %d from '%s' "
+				"(further drops this pass are not logged)\n",
+				JER_MAX_HANDLERS, event, owner != NULL ? owner->id : "engine");
+			gHandlerOverflowLogged = 1;
+		}
 		return;
+	}
 
-	/* insert keeping (event, priority) order — lower priority runs first */
 	for (i = gHandlerCount; i > 0; i--)
 	{
 		if (gHandlers[i - 1].event < event ||
@@ -500,8 +519,53 @@ static void jerCtxRegisterHook(JERICHO_CONTEXT* ctx, int event, JER_HOOK_FN fn, 
 	gHandlers[i].fn = fn;
 	gHandlers[i].userdata = userdata;
 	gHandlers[i].priority = priority;
-	gHandlers[i].module = gCurrentModule;
+	gHandlers[i].module = owner;
 	gHandlerCount++;
+}
+
+/* Add the hooks queued while a fire was running (see jerCtxRegisterHook). */
+static void jerFlushPendingHandlers(void)
+{
+	int i;
+
+	for (i = 0; i < gPendingCount; i++)
+	{
+		jerInsertHandler(gPending[i].event, gPending[i].fn, gPending[i].userdata,
+			gPending[i].priority, gPending[i].module);
+	}
+
+	gPendingCount = 0;
+}
+
+static void jerCtxRegisterHook(JERICHO_CONTEXT* ctx, int event, JER_HOOK_FN fn, void* userdata, int priority)
+{
+	(void)ctx;
+
+	if (fn == NULL)
+		return;
+
+	/* A handler that registers a hook while jerCtxFire walks gHandlers[] would
+	 * shift entries under the loop (insertion sort), so a handler could run twice
+	 * or be skipped. Queue it and add it when the outermost fire returns. */
+	if (gFireDepth > 0)
+	{
+		if (gPendingCount >= JER_MAX_PENDING)
+		{
+			jerLog("[jericho] %d hooks registered during dispatch: dropped hook for event %d from '%s'\n",
+				JER_MAX_PENDING, event, gCurrentModule != NULL ? gCurrentModule->id : "engine");
+			return;
+		}
+
+		gPending[gPendingCount].event = event;
+		gPending[gPendingCount].fn = fn;
+		gPending[gPendingCount].userdata = userdata;
+		gPending[gPendingCount].priority = priority;
+		gPending[gPendingCount].module = gCurrentModule;
+		gPendingCount++;
+		return;
+	}
+
+	jerInsertHandler(event, fn, userdata, priority, gCurrentModule);
 }
 
 static int jerCtxFire(JERICHO_CONTEXT* ctx, int event, void* args)
@@ -510,6 +574,8 @@ static int jerCtxFire(JERICHO_CONTEXT* ctx, int event, void* args)
 	int i;
 
 	(void)ctx;
+
+	gFireDepth++;
 
 	for (i = 0; i < gHandlerCount; i++)
 	{
@@ -525,6 +591,9 @@ static int jerCtxFire(JERICHO_CONTEXT* ctx, int event, void* args)
 		if (result == JER_RESULT_STOP)
 			break;
 	}
+
+	if (--gFireDepth == 0 && gPendingCount > 0)
+		jerFlushPendingHandlers();
 
 	return result;
 }
@@ -1417,6 +1486,8 @@ void jer_manager_reload(const char* rootDir)
 	/* deactivate by clearing handlers; also drop all override slots so a
 	 * module disabled from the Mods menu can't leave its override behind */
 	gHandlerCount = 0;
+	gPendingCount = 0;
+	gHandlerOverflowLogged = 0;
 	memset(gOverrideSlots, 0, sizeof(gOverrideSlots));
 
 	jerSnapshotModules(rootDir);

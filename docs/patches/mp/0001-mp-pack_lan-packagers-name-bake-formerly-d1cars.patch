@@ -1,0 +1,229 @@
+From 8c8c44848f8374952e820c709789a6a0998a367a Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 21:15:05 +0000
+Subject: [PATCH] mp: pack_lan packagers name bake (formerly d1cars)
+
+make_lan_package_micheal.sh hard-failed with 'no d1cars module in the repo'
+since the module became bake; the public packager, sync_lan.bat and the
+pack_lan README described the d1cars folder too. Paths and prose now name bake.
+(mp_lobby.c and the dedi already treat d1cars as bake's old id on purpose.)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015LjSznjzjHgGhjQaMfW1Mq
+---
+ tools/pack_lan/README.md                   | 18 +++++++--------
+ tools/pack_lan/make_lan_package.bat        | 10 ++++-----
+ tools/pack_lan/make_lan_package_micheal.sh | 26 +++++++++++-----------
+ tools/pack_lan/micheal_package/modlist.ini |  4 ++--
+ tools/pack_lan/sync_lan.bat                |  2 +-
+ 5 files changed, 30 insertions(+), 30 deletions(-)
+
+diff --git a/tools/pack_lan/README.md b/tools/pack_lan/README.md
+index 318aea7..f538d4d 100644
+--- a/tools/pack_lan/README.md
++++ b/tools/pack_lan/README.md
+@@ -6,21 +6,21 @@ want depends on whether Driver 1 content is going with it.
+ 
+ | You want… | Use | Ships |
+ | --- | --- | --- |
+-| the public LAN package | `make_lan_package.bat` | the **Release** exe, four mods (carhacks, crumple, d1cars, mp), the game data minus its movies, plus `BAKE_D1_CARS.bat` / `BAKE_D1_CARS.sh` and the d1cars bake tools |
++| the public LAN package | `make_lan_package.bat` | the **Release** exe, four mods (carhacks, crumple, bake, mp), the game data minus its movies, plus `BAKE_D1_CARS.bat` / `BAKE_D1_CARS.sh` and the bake tools |
+ | a private hand-off, with Driver 1 | `make_lan_package_micheal.sh` | the **dev** exe, **six** mods (those four plus levelhacks and sandbox), no game data at all |
+ 
+ ## Why there are two, and why they cannot be one
+ 
+-`make_lan_package.bat` packages `bin/Release`, and that exe carries the four
++`make_lan_package.bat` packages `bin/Release`, and that exe carries the
+ pre-included modules (`JERICHO_RELEASE_MODS` in `premake5.lua`): carhacks, crumple,
+-d1cars and mp. **The d1cars module ships; the Driver 1 car DATA does not.** It is
++mp and pedhacks, plus the bake runtime addon. **The bake module ships; the Driver 1 car DATA does not.** It is
+ baked out of Driver 1's copyrighted files, so the package carries the way to make it
+ instead -- the bake tools plus `BAKE_D1_CARS.bat` / `BAKE_D1_CARS.sh` at the package
+ root, which read the player's own Driver 1 data from `DRIVER\` and write the baked
+ blobs into `JERICHO\MODS\carhacks\D1CARS\` (carhacks owns them).
+ 
+-That is why the packager copies `JERICHO\MODS\d1cars\tools` out of the REPO: the dev
+-mirror excludes d1cars (premake `JER_MIRROR_EXCLUDE`), so `bin\Release` never has it
++That is why the packager copies `JERICHO\MODS\bake\tools` out of the REPO: the dev
++mirror excludes bake (premake `JER_MIRROR_EXCLUDE`), so `bin\Release` never has it
+ and the package would otherwise ship with no way to bake. The bake script comes in two
+ flavours, `.bat` for Windows and `.sh` for Linux/macOS, so whichever machine you are on
+ one of them runs. The CI release archives are staged the same way (see `docs/CI.md`).
+@@ -39,9 +39,9 @@ The private packager exists for the things a public release does not carry: the
+ itself, which the public one deliberately does not (below).
+ 
+ The dev build also mirrors every module into `bin/Release_dev/JERICHO/MODS`,
+-*except* d1cars and gaildrv2 (`JER_MIRROR_EXCLUDE`). That exclusion matters more
++*except* bake and gaildrv2 (`JER_MIRROR_EXCLUDE`). That exclusion matters more
+ than it looks: the loader reads `MODS/<id>/mod.toml` **even for a module compiled
+-into the exe** (`jer_loader.c`), so a package with d1cars enabled but no d1cars
++into the exe** (`jer_loader.c`), so a package with bake enabled but no bake
+ folder has a module with no metadata to load with. The Micheal packager copies
+ that one folder out of the repo for exactly this reason.
+ 
+@@ -66,11 +66,11 @@ A different shape on purpose, matching the earlier hand-offs:
+   `DRIVER2\`, and `PACKAGE_NOTES.txt` inside says so in the first paragraph.
+ * the **dev** exe, staged as `JERICHO.exe` so the launchers and readmes are the
+   same files the public package ships;
+-* `JERICHO\MODS\carhacks\D1CARS\`, the baked Driver 1 car content, plus `JERICHO\MODS\d1cars`;
++* `JERICHO\MODS\carhacks\D1CARS\`, the baked Driver 1 car content, plus `JERICHO\MODS\bake`;
+ * `JERICHO\CONFIG\modlist.ini` with six modules on (see
+   `micheal_package/modlist.ini`) and `JERICHO\CONFIG\mp.ini` carrying the
+   recipient's player name (see `micheal_package/mp.ini`);
+-* and it strips what must never ship: the d1cars submodule's `.git`, and this
++* and it strips what must never ship: the bake submodule's `.git`, and this
+   machine's own `build.log`, `*.old` and stale `modlist.ini.bak-*`. The script
+   fails the build if any of them reach the archive.
+ 
+diff --git a/tools/pack_lan/make_lan_package.bat b/tools/pack_lan/make_lan_package.bat
+index 5b7b4b0..ca5cda6 100644
+--- a/tools/pack_lan/make_lan_package.bat
++++ b/tools/pack_lan/make_lan_package.bat
+@@ -4,7 +4,7 @@ rem
+ rem   make_lan_package.bat [output.7z]
+ rem
+ rem Ships the RELEASE build (bin\Release\JERICHO.exe): the public build, which
+-rem pre-includes carhacks + crumple + d1cars + mp. It is NOT the dev build -- a dev
++rem pre-includes carhacks + crumple + bake + mp. It is NOT the dev build -- a dev
+ rem build carries every mod and stays local. See premake5.lua JERICHO_RELEASE_MODS.rem
+ rem Ships the exe, the DLLs and JERICHO -- but NOT DRIVER2\ (the game data),
+ rem which is the player's own Driver 2 files and is not redistributed (the repo
+@@ -12,16 +12,16 @@ rem copy is placeholders). The player drops their own DRIVER2\ next to the exe.
+ rem
+ rem DRIVER\D1CARS IS NOT SHIPPED, and that is deliberate: it is baked out of
+ rem Driver 1's copyrighted data. What IS shipped is the way to make it -- the
+-rem d1cars bake tools and BAKE_D1_CARS.bat / .sh at the package root, which reads the
++rem bake tools and BAKE_D1_CARS.bat / .sh at the package root, which reads the
+ rem player's OWN Driver 1 data from DRIVER\ and writes it into
+-rem JERICHO\MODS\carhacks\D1CARS\ (carhacks owns the baked car data). The d1cars
++rem JERICHO\MODS\carhacks\D1CARS\ (carhacks owns the baked car data). The bake
+ rem MODULE is linked into the exe (JERICHO_RELEASE_MODS), so nothing else is
+ rem missing; carhacks offers a D1 city only once its blob is on disk
+ rem (chkCityAssetsPresent), so before the bake the cities simply are not offered
+ rem - the feature degrades to absent rather than to broken.
+ rem
+ rem The tools are copied out of the REPO below because the dev mirror EXCLUDES
+-rem d1cars (premake JER_MIRROR_EXCLUDE), so bin\Release never gets them.
++rem bake (premake JER_MIRROR_EXCLUDE), so bin\Release never gets them.
+ setlocal
+ set "HERE=%~dp0"
+ set "ROOT=%HERE%..\..\..\..\.."
+@@ -39,7 +39,7 @@ if not exist "%SEVENZ%" (
+ 
+ echo packaging %EXEDIR% -^> %OUT%
+ 
+-rem The bake tools, out of the repo: the dev mirror excludes d1cars, so the exe
++rem The bake tools, out of the repo: the dev mirror excludes bake, so the exe
+ rem dir has no copy of them and the package would ship without a way to bake.
+ if exist "%ROOT%\JERICHO\MODS\bake\tools" (
+     xcopy /E /I /Y "%ROOT%\JERICHO\MODS\bake\tools" "%EXEDIR%\JERICHO\MODS\bake\tools" >nul
+diff --git a/tools/pack_lan/make_lan_package_micheal.sh b/tools/pack_lan/make_lan_package_micheal.sh
+index ff2bf2a..0a4eaa5 100644
+--- a/tools/pack_lan/make_lan_package_micheal.sh
++++ b/tools/pack_lan/make_lan_package_micheal.sh
+@@ -9,19 +9,19 @@
+ #   * the DEV exe staged as JERICHO.exe, not as JERICHO_dev.exe -- the launchers in
+ #     pack_lan/ now call JERICHO.exe (the public package's name), and the notes tell
+ #     him the layout is <somewhere>\JERICHO.exe.
+-#   * JERICHO\MODS\d1cars shipped out of the REPO: the dev mirror excludes d1cars and
++#   * JERICHO\MODS\bake shipped out of the REPO: the dev mirror excludes bake and
+ #     gaildrv2 (premake JER_MIRROR_EXCLUDE), and the loader reads MODS\<id>\mod.toml
+-#     even for a compiled-in module (jer_loader.c) -- so without this the d1cars
++#     even for a compiled-in module (jer_loader.c) -- so without this the bake
+ #     module has no metadata to load with.
+ #   * a JERICHO\CONFIG\modlist.ini with SIX modules on: carhacks, crumple,
+-#     levelhacks, mp, d1cars, sandbox. (The dev tree's own modlist cannot be shipped
++#     levelhacks, mp, bake, sandbox. (The dev tree's own modlist cannot be shipped
+ #     as-is: it also turns sandbox's neighbours on/off to taste.)
+ #   * this build's notes, as PACKAGE_NOTES.txt.
+ #
+ # NOT TRACKED, like the tmp/ helpers beside it: a one-off hand-delivery, not the
+ # public package. The tracked, public packager is
+ # JERICHO/MODS/mp/tools/pack_lan/make_lan_package.bat, which ships the RELEASE exe
+-# and cannot carry d1cars at all (premake JERICHO_RELEASE_MODS).
++# (bake, formerly d1cars, is a release mod now, so the public package carries it too).
+ set -e
+ HERE="$(cd "$(dirname "$0")" && pwd)"
+ ROOT="$(cd "$HERE/../../../../.." && pwd)"
+@@ -36,7 +36,7 @@ STAGE="${TMPDIR:-/tmp}/micheal_stage_$SHA"
+ 
+ test -x "$SZ" || { echo "no 7-Zip"; exit 1; }
+ test -f "$EXE/JERICHO_dev.exe" || { echo "no dev exe"; exit 1; }
+-test -f "$REPOMODS/d1cars/mod.toml" || { echo "no d1cars module in the repo"; exit 1; }
++test -f "$REPOMODS/bake/mod.toml" || { echo "no bake module in the repo"; exit 1; }
+ test -d "$REPOMODS/carhacks/D1CARS" || { echo "no JERICHO/MODS/carhacks/D1CARS in the repo (bake it first)"; exit 1; }
+ 
+ rm -f "$OUT"
+@@ -46,7 +46,7 @@ mkdir -p "$STAGE/JERICHO/MODS"
+ echo "== game: the dev exe, under the name the launchers use =="
+ cp "$EXE/JERICHO_dev.exe" "$STAGE/JERICHO.exe"
+ cd "$EXE"
+-# The exclusions are dev leftovers that must not reach him: .git is the d1cars
++# The exclusions are dev leftovers that must not reach him: .git is the bake
+ # submodule's gitlink, build.log / *.old / the modlist backup are this machine's
+ # own scratch.
+ "$SZ" a -tzip -mx=5 -xr'!.git' -xr'!build.log' -xr'!*.old' -xr'!modlist.ini.bak-*' -xr'!D1CARS' "$OUT" \
+@@ -54,16 +54,16 @@ cd "$EXE"
+ cd "$STAGE"
+ "$SZ" a -tzip -mx=5 "$OUT" JERICHO.exe | tail -2
+ 
+-echo "== the d1cars module folder (the dev mirror excludes it) =="
+-cp -r "$REPOMODS/d1cars" "$STAGE/JERICHO/MODS/d1cars"
++echo "== the bake module folder (the dev mirror excludes it) =="
++cp -r "$REPOMODS/bake" "$STAGE/JERICHO/MODS/bake"
+ # obj/lib are build output, tools is the offline bake pipeline: not runtime. The
+ # module is compiled into the exe; the loader only wants mod.toml (and the docs
+ # and sources ship because that is the shape the mirrored modules have). .git is
+ # the submodule's gitlink and must never ship.
+-rm -rf "$STAGE/JERICHO/MODS/d1cars/obj" "$STAGE/JERICHO/MODS/d1cars/lib" \
+-       "$STAGE/JERICHO/MODS/d1cars/tools" "$STAGE/JERICHO/MODS/d1cars/.git"
++rm -rf "$STAGE/JERICHO/MODS/bake/obj" "$STAGE/JERICHO/MODS/bake/lib" \
++       "$STAGE/JERICHO/MODS/bake/tools" "$STAGE/JERICHO/MODS/bake/.git"
+ cd "$STAGE"
+-"$SZ" a -tzip -mx=5 "$OUT" 'JERICHO/MODS/d1cars' | tail -2
++"$SZ" a -tzip -mx=5 "$OUT" 'JERICHO/MODS/bake' | tail -2
+ 
+ echo "== Driver 1 car data (carhacks owns the baked LEVs) =="
+ mkdir -p "$STAGE/JERICHO/MODS/carhacks"
+@@ -102,7 +102,7 @@ if "$SZ" l "$OUT" | grep -aiE '(^|[\\/])\.git($|[\\/])|build\.log|modlist\.ini\.
+ else
+     echo "ok: no .git, no build.log, no stale modlist backup"
+ fi
+-echo "-- the exe that landed, and that d1cars' mod.toml is beside it --"
+-"$SZ" l "$OUT" JERICHO.exe 'JERICHO/MODS/d1cars/mod.toml' 'JERICHO/MODS/carhacks/D1CARS/*' | tail -6
++echo "-- the exe that landed, and that bake's mod.toml is beside it --"
++"$SZ" l "$OUT" JERICHO.exe 'JERICHO/MODS/bake/mod.toml' 'JERICHO/MODS/carhacks/D1CARS/*' | tail -6
+ echo "-- size --"
+ ls -la "$OUT"
+diff --git a/tools/pack_lan/micheal_package/modlist.ini b/tools/pack_lan/micheal_package/modlist.ini
+index d30ab9e..2b381b6 100644
+--- a/tools/pack_lan/micheal_package/modlist.ini
++++ b/tools/pack_lan/micheal_package/modlist.ini
+@@ -1,9 +1,9 @@
+ # PRIVATE Driver 1 playtest build for Micheal -- core suite first, optional after.
+-# mp, carhacks and d1cars are mandatory and lead; crumple/levelhacks/sandbox are
++# mp, carhacks and bake are mandatory and lead; crumple/levelhacks/sandbox are
+ # optional and keep their order behind them.
+ mp = 1
+ carhacks = 1
+-d1cars = 1
++bake = 1
+ crumple = 1
+ levelhacks = 1
+ sandbox = 1
+diff --git a/tools/pack_lan/sync_lan.bat b/tools/pack_lan/sync_lan.bat
+index 090e3b6..46b065c 100644
+--- a/tools/pack_lan/sync_lan.bat
++++ b/tools/pack_lan/sync_lan.bat
+@@ -46,7 +46,7 @@ popd
+ 
+ rem ------------------------------------------------------------------- 3) build
+ rem The RELEASE build, not the dev one: a release pre-includes only the release
+-rem modules -- carhacks + crumple + d1cars + mp (premake5.lua
++rem modules -- carhacks + crumple + bake + mp (premake5.lua
+ rem JERICHO_RELEASE_MODS) -- and bin\Release is what this package ships.
+ rem
+ rem exports.def is generated from a LINKER MAP, so the committed copy matches one
+-- 
+2.43.0
+

@@ -78,12 +78,14 @@ repositories ([JERICHO-Mod-MP](https://github.com/Njurse/JERICHO-Mod-MP),
 clone needs them explicitly:
 
 ```sh
-git submodule update --init JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple
+git submodule update --init src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake
 ```
 
-`tools/update_mod_submodules.sh` advances those pins to the latest commits (review
-the printed diff, then commit the gitlinks). `bake` is fetched for release builds
-but its Driver 1 data is excluded from the mirror. `gaildrv2` is hibernated at
+The build stops with the exact command to run if one of the four mods is
+missing. `bake` (the Driver 1 car toolkit, formerly `d1cars`) is a release mod,
+but its Driver 1 data is excluded from the mirror. `tools/update_mod_submodules.sh`
+advances the mod pins to the latest commits (review the printed diff, then commit
+the gitlinks). `gaildrv2` is hibernated at
 [JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2) and is not
 a submodule of this tree.
 
@@ -113,7 +115,7 @@ These are the numbers and behaviours the headers define.
 
 | Limit | Behaviour |
 |---|---|
-| Event handlers | **256** across every module; registering past that returns without a log |
+| Event handlers | **256** across every module; registering past that drops the hook and logs it once (module and event) in `JERICHO.log` |
 | Override slots | **8**; only `JER_OVERRIDE_SLOT_SIM` (the world step) is named today |
 | Module table | fixed (`JER_MAX_MODULES`, 32 slots) |
 | External loading | Windows and Linux |
