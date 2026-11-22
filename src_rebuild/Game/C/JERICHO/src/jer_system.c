@@ -75,7 +75,9 @@ static int gDisableAllModules = 0;
 
 /* Per-module hard overrides (jer_force_module), same rules: they outrank
  * modlist.ini and default-enabled, and gDisableAllModules outranks them. */
-#define JER_MAX_FORCED 8
+/* 40: a server's addon offer (jer_joinmods) can force one per mod a server runs
+ * (MP_MAX_MODS = 32), and the debug flags (-testmode, -mod) take a few more. */
+#define JER_MAX_FORCED 40
 static struct { char id[32]; int enabled; } gForcedModules[JER_MAX_FORCED];
 static int gForcedCount = 0;
 
@@ -1455,10 +1457,12 @@ int jer_modules_disabled(void)
  */
 void jer_force_module(const char* id, int enabled)
 {
-	int i = jerModuleForced(id);
+	int i;
 
 	if (id == NULL || id[0] == 0)
 		return;
+
+	i = jerModuleForced(id);	/* after the check: it strcmp()s the id */
 
 	/* a repeat of the same id just overwrites */
 	if (i >= 0)

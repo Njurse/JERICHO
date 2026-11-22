@@ -78,6 +78,7 @@ makes the browser more useful.
 | `bake_version` | for `bake`: a Driver 1 bake older than this prompts a re-bake |
 | `interface` | exact JERICHO SDK/interface the package was built against; the loader refuses an exact mismatch |
 | `host_api` | optional host API generation the package expects; a newer generation is refused before the module entry runs |
+| `runtime` | optional, from the package's `mod.toml`: `"dll"` says the package carries a loadable addon. Only a hint (a server's addon offer reads it); after an install the files decide |
 
 ## 2. The package
 
@@ -187,6 +188,39 @@ Other test levers, for a headless run with `-nointro`:
 | `menu` | walk screen 41 → table menu → repo browser, then toggle and reorder a row |
 | `recompile` | pretend a compiled-in mod was just installed, enter and leave the repo browser, then log the recompile prompt |
 | `rebuild` | answer that prompt's **Yes** (the game exits and hands the build off; use only where a rebuild is wanted) |
+
+## Joining a server that runs other mods
+
+A multiplayer server refuses a player whose mods differ from its own, and now
+says which mods it runs (the `JPMR` list in mp's `JPRJ`). Instead of a dead end,
+`jer_joinmods.c` works out what would let the player in, using the same repos
+the browser shows (the official one plus `CONFIG/modstore.ini`'s), and **asks
+before doing anything**:
+
+| the server... | here | what is offered |
+|---|---|---|
+| runs a mod that is installed but off | switched **on** for that session | `-mod <id>` |
+| runs a mod that is not installed, or not at its version (exact check) | **downloaded** from the first repo the store would install it from, then on for that session | `-mod <id>` |
+| does not run a mod that is on here | switched **off** for that session | `-nomod <id>` |
+
+The prompt names the mods and the repo: **Download & Join** (or **Restart &
+Join** when nothing has to be fetched) installs through `jer_modstore_install`,
+then relaunches JERICHO with `-join <server>`, the flags above and `-joinmods`.
+Those are boot flags, so the next ordinary start is the player's own mod set,
+and a mod downloaded for one session is written to `modlist.ini` as **off** (its
+`default-enabled` would otherwise switch it on at every later start). **Keep
+Them On** does the same but enables the server's mods in `modlist.ini` for good.
+**No** does nothing at all. The relaunched game says which mods are on for that
+session only; the Mods menu turns them on for good later.
+
+Nothing is offered, just named, when no configured repo has the mod (or not at
+the server's version), when the store would refuse the row (its note is
+passed on), when the mod is source that has to be built into the game (no DLL
+and not a data pack, which a download alone cannot run), or when the server does
+not run a core module. Test it headless with `src_rebuild/Game/C/JERICHO/test/
+run_tests.sh`: `test_joinmods` drives the whole flow against a repo on disk,
+including a real download, with `JERICHO_TEST_JOINMODS=nolaunch` logging the
+relaunch instead of starting a second game.
 
 ## 5. The rules a repo should respect
 

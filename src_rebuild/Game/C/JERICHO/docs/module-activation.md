@@ -152,6 +152,12 @@ called before `jer_init`. It outranks both `modlist.ini` and the module's
 `default-enabled`, adds the module to the activation order, and shows up in the
 inventory as `src=forced`. `-nomods` still outranks it.
 
+`-mod <id>` forces one module on and `-nomod <id>` forces one off, for that boot
+only, without touching `modlist.ini`; a core module stays on whatever the flag
+says. A server's addon offer relaunches with them (`jer_joinmods.c`, see
+`mod-repo.md`), plus `-joinmods` so the relaunched game tells the player those
+changes last this session only. Up to 40 modules can be forced at once.
+
 `-testmode` / `-testcar <slot|n>` / `-testped` (main.c, next to the `-nomods`
 scan) use it for the `testmode` module, so a session can be set up with flags and
 no ini editing. Modules can read their own arguments through `JER_EVENT_CMDLINE`

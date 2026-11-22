@@ -29,6 +29,7 @@
 #include "jer_screen.h"	/* jer_screen_active: never prompt over a presentation screen */
 #include "jer_text.h"
 #include "jer_internal.h"	/* jer_config_set_line: one key, the file's comments kept */
+#include "jer_joinmods.h"	/* a refused join's addon offer runs in this tick */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -128,6 +129,9 @@ typedef struct STORE_MOD
 	int  size;
 	int  defaultEnabled;
 	int  bakeVersion;
+	char runtime[16];		/* the index entry's `runtime` ("dll" for a loadable addon).
+							 * Empty = not declared, or built in / a data pack: only
+							 * the installed files tell those apart. */
 } STORE_MOD;
 
 /* What the store installed for one id (CONFIG/modstore/installed/<id>.json). */
@@ -994,6 +998,7 @@ static int StoreIndexParse(const char* json, int len, int repo)
 		JsonString(JsonFindValue(objStart, objEnd, "sha256"), objEnd, m->sha, sizeof(m->sha));
 		JsonString(JsonFindValue(objStart, objEnd, "requires"), objEnd, m->requires, sizeof(m->requires));
 		JsonString(JsonFindValue(objStart, objEnd, "min_jericho"), objEnd, m->minCore, sizeof(m->minCore));
+		JsonString(JsonFindValue(objStart, objEnd, "runtime"), objEnd, m->runtime, sizeof(m->runtime));
 		/* a number in the index (the packager writes it unquoted), so read it as one
 		 * and keep the text for the row note */
 		{
@@ -1247,6 +1252,7 @@ static void StoreRowStateBase(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, i
 	it->version = m->version;
 	it->author = m->author;
 	it->description = m->description;
+	it->runtime = m->runtime;
 	it->note = note;
 	it->canInstall = 1;
 	it->canRemove = 0;
@@ -3628,11 +3634,55 @@ int jer_modstore_module_at(int index, JER_MODSTORE_MODULE* out)
 	return 1;
 }
 
+/* What an INSTALLED mod is: something a restart can run (a DLL addon or a data
+ * pack), or code that has to be linked into the exe. The same tests the row
+ * state uses (StoreRowState), for a folder that is on disk now. */
+int jer_modstore_installed_kind(const char* id)
+{
+	char path[STORE_PATH_MAX];
+	STORE_RECORD* rec;
+	FILE* f;
+
+	if (!StoreValidId(id))
+		return JER_MODSTORE_KIND_NONE;
+
+	snprintf(path, sizeof(path), "%s/%s/mod.toml", gStore.modsDir, id);
+	f = fopen(path, "rb");
+	if (f == NULL)
+		return JER_MODSTORE_KIND_NONE;
+	fclose(f);
+
+#if defined(_WIN32)
+	snprintf(path, sizeof(path), "%s/%s/%s.dll", gStore.modsDir, id, id);
+#else
+	snprintf(path, sizeof(path), "%s/%s/%s.so", gStore.modsDir, id, id);
+#endif
+	f = fopen(path, "rb");
+	if (f != NULL)
+	{
+		fclose(f);
+		return JER_MODSTORE_KIND_LOADABLE;
+	}
+
+	if (StoreIsDataPack(id))
+		return JER_MODSTORE_KIND_LOADABLE;
+
+	/* No binary and no data pack: source that has to be built - linked into the
+	 * exe, or a DLL addon shipped without its DLL. Its record's `runtime = "dll"`
+	 * does not change that: the loader needs the file, not the promise of one. */
+	(void)rec;
+	return JER_MODSTORE_KIND_BUILTIN;
+}
+
 void jer_modstore_frontend_tick(int onMainMenu)
 {
 	int reopen;
 
 	StoreJobPoll();
+
+	/* a server's "you need these mods" offer (jer_joinmods.c): it only ever has
+	 * work after mp passed one on, so an ordinary frame costs a branch */
+	jer_joinmods_tick();
 
 	/* the registry is cleared by every module reload, so this is not a one-off */
 	StoreEnsureMenus();
