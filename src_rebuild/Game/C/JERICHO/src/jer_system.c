@@ -1450,6 +1450,30 @@ int jer_modules_disabled(void)
 	return gDisableAllModules;
 }
 
+/* Is `id` ON this boot? jer_module_list answers with what modlist.ini (or the
+ * mod.toml default) SAYS, which is what the Mods menu must show and toggle. This
+ * answers with what RUNS: the decision after -mod, -nomod and -nomods, for a
+ * module that passed validation. Code counts once its entry ran; a module with
+ * no code of its own (a data pack) counts when it is enabled, and a DLL addon
+ * whose DLL is missing does not. */
+int jer_module_running(const char* id)
+{
+	JER_MODULE* m;
+
+	if (id == NULL || id[0] == 0 || gDisableAllModules)
+		return 0;
+
+	m = jerFindModule(id);
+
+	if (m == NULL || !m->enabled || !m->valid)
+		return 0;
+
+	if (m->entry != NULL)
+		return m->activated;
+
+	return !m->isDllAddon;
+}
+
 /*
  * Hard per-module switch (engine test/diagnostic flags). Set BEFORE jer_init so
  * the activation pass honours it regardless of modlist.ini / mod.toml, which is

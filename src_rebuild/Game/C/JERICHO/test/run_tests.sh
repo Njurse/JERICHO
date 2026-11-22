@@ -40,12 +40,17 @@ run() {	# run <name> <binary> [args...]
 }
 
 # --- runtime tests -----------------------------------------------------------
-for name in test_dispatch test_joinmods; do
+for name in test_dispatch test_joinmods test_nomods; do
     cc -std=c99 -Wall -Wextra -Wno-unused-parameter \
         -I"$src_rebuild/Game/C/JERICHO/include" \
         "$here/$name.c" "$lib" -ldl -o "$work/$name"
 done
 run "test_dispatch ($cfg)" "$work/test_dispatch" "$work/root"
+
+# every mod off must leave the original game: -nomods, and the Mods menu's "off"
+for mode in nomods optional-off; do
+    run "test_nomods $mode ($cfg)" "$work/test_nomods" "$work/root" "$mode"
+done
 
 # test_joinmods downloads for real: a one-mod repo on disk (a data pack, which a
 # restart runs without a build), served by file:// through the store's own test

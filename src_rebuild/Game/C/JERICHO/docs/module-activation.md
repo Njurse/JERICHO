@@ -154,7 +154,18 @@ inventory as `src=forced`. `-nomods` still outranks it.
 
 `-mod <id>` forces one module on and `-nomod <id>` forces one off, for that boot
 only, without touching `modlist.ini`; a core module stays on whatever the flag
-says. A server's addon offer relaunches with them (`jer_joinmods.c`, see
+says.
+
+**Saved versus running.** `jer_module_list` reports what `modlist.ini` (or the
+`mod.toml` default) says - the Mods menu's view, so its toggles change what is
+saved - and so it does not see `-mod`, `-nomod` or `-nomods`.
+`jer_module_running(id)` reports what actually runs this boot. Anything that
+describes the live game uses the second: the multiplayer manifest a server
+checks, and an engine row that calls into a module (the pause menu's "Reload car
+assets" is listed only while carhacks runs, so with every mod off the stock
+pause menus are the original game's). `test/test_nomods.c` holds the guarantee:
+under `-nomods`, or with every optional mod off, no module entry runs and no
+hook, override or pause menu is left behind. A server's addon offer relaunches with them (`jer_joinmods.c`, see
 `mod-repo.md`), plus `-joinmods` so the relaunched game tells the player those
 changes last this session only. Up to 40 modules can be forced at once.
 
