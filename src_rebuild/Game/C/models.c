@@ -3707,13 +3707,14 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 // blur). A host whose FASTWHEEL polys are semi-transparent (CHICAGO) hid it by
 // blending; HAVANA's are opaque and drew it. Give the fast variant a copy of the
 // tyre row with its background cleared to 0x0000 (transparent).
-void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
+void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow)
 {
 	CAR_WHEEL_REC* rec;
+	CAR_WHEEL_REC* dam;
 	JER_WHEEL_TEX* wt;
 	static unsigned char* sUnpacked = NULL;
 	unsigned short row[16];
-	int npal, cu[4], cv[4], votes[16] = { 0 }, i, bg = 0, clut;
+	int npal, cu[4], cv[4], votes[16] = { 0 }, i, bg = 0, clut, srcRow;
 
 	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4)
 		return;
@@ -3750,7 +3751,7 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 
 	wt = &rec->tex;
 
-	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
 		return;
 
 	if (wt->u0 < 0 || wt->v0 < 0 || wt->u1 > 256 || wt->v1 > 256 || wt->u1 <= wt->u0 || wt->v1 <= wt->v0)
@@ -3779,15 +3780,35 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		if (votes[i] > votes[bg])
 			bg = i;
 
-	/* A baked wheel carrier's tex.clut is a texture id, not a page row. Using
-	 * it copied page row 0 - the car's body palette - and is why the VEGAS
-	 * fast wheel came out in body colours. The clean tyre row derived from
-	 * the page is the right base; clear the fast sprite's background in a
-	 * fast-only copy of that row. */
-	memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+	/* The bake writes this island's page row into poly 2's texture id, the
+	 * same field CarImportDeriveWheelPaletteRow trusts for the hubcap and
+	 * tyre. Use it when it is a real page row. A fast sprite that shares the
+	 * damaged island (byte-identical png) has no assigned row of its own:
+	 * its pixels were quantised for the hubcap row, so use hubRow when the
+	 * fast rect matches the damaged face or hub rect. Fall back to the clean
+	 * tyre row only when neither is available. */
+	srcRow = tyreRow;
+	dam = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_DAMAGED);
+	if (hubRow >= 0 && hubRow < npal && dam != NULL && dam->present &&
+		((wt->u0 == dam->tex.u0 && wt->v0 == dam->tex.v0 &&
+		  wt->u1 == dam->tex.u1 && wt->v1 == dam->tex.v1) ||
+		 (wt->u0 == dam->tex.hubU0 && wt->v0 == dam->tex.hubV0 &&
+		  wt->u1 == dam->tex.hubU1 && wt->v1 == dam->tex.hubV1)))
+	{
+		srcRow = hubRow;
+	}
+	else if (wt->clut >= 0 && wt->clut < npal)
+	{
+		srcRow = wt->clut;
+	}
+
+	if (srcRow < 0 || srcRow >= npal)
+		return;
+
+	memcpy(row, page + 4 + srcRow * 32, sizeof(row));
 
 	printInfo("cross-city: %s fast wheel sprite (%d,%d)-(%d,%d) row %d, background index %d is %04x - cleared in a fast-only row\n",
-		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, tyreRow, bg, row[bg]);
+		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, srcRow, bg, row[bg]);
 
 	row[bg] = 0;
 	clut = CarImportReserveWheelPalette(city, sourceSet, 2, (const unsigned char*)row);

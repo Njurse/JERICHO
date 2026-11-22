@@ -5238,7 +5238,7 @@ void LoadImportedTPages(void)
 			{
 				CarImportSetWheelPaletteClut(sc, set, wheelClut, 0);
 				CarImportReserveDamagedWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow, hubRow);
-				CarImportReserveFastWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow);
+				CarImportReserveFastWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow, hubRow);
 			}
 		}
 
