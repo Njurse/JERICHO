@@ -193,9 +193,10 @@ Other test levers, for a headless run with `-nointro`:
 
 A multiplayer server refuses a player whose mods differ from its own, and now
 says which mods it runs (the `JPMR` list in mp's `JPRJ`). Instead of a dead end,
-`jer_joinmods.c` works out what would let the player in, using the same repos
-the browser shows (the official one plus `CONFIG/modstore.ini`'s), and **asks
-before doing anything**:
+`jer_joinmods.c` works out what would let the player in - against the player's
+SAVED mod set, which is what the relaunch starts from - using the same repos the
+browser shows (the official one plus `CONFIG/modstore.ini`'s), and **asks before
+doing anything**:
 
 | the server... | here | what is offered |
 |---|---|---|
@@ -211,7 +212,9 @@ and a mod downloaded for one session is written to `modlist.ini` as **off** (its
 `default-enabled` would otherwise switch it on at every later start). **Keep
 Them On** does the same but enables the server's mods in `modlist.ini` for good.
 **No** does nothing at all. The relaunched game says which mods are on for that
-session only; the Mods menu turns them on for good later.
+session only; the Mods menu turns them on for good later. A session that such a
+relaunch started can join a different server the same way; when the saved set
+already fits, the offer is simply to restart on it.
 
 Nothing is offered, just named, when no configured repo has the mod (or not at
 the server's version), when the store would refuse the row (its note is

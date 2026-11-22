@@ -50,11 +50,16 @@ static struct
 {
 	int  state;
 	char address[JER_JOIN_ADDR_MAX];
-	JER_JOIN_MOD need[JER_JOIN_MAX];
+	JER_JOIN_MOD server[JER_JOIN_MAX];	/* what the server runs */
+	int  serverCount;
+	char ignore[8][JER_JOIN_ID_MAX];	/* counted neither way (mp's tooling) */
+	int  ignoreCount;
+	int  flags;
+	JER_JOIN_MOD need[JER_JOIN_MAX];	/* the diff against the saved set (PLAN) */
 	int  needCount;
 	JER_JOIN_MOD extra[JER_JOIN_MAX];
 	int  extraCount;
-	int  flags;
+	int  plainRestart;		/* the saved set already fits: only this boot's flags were wrong */
 
 	int  repo;		/* REFRESH: the repo being fetched */
 	int  fetching;		/* REFRESH: its fetch is running */
@@ -93,8 +98,8 @@ static void JmFail(const char* text)
 	JmEnd();
 }
 
-int jer_joinmods_offer(const char* address, const JER_JOIN_MOD* need, int needCount,
-	const JER_JOIN_MOD* extra, int extraCount, int flags)
+int jer_joinmods_offer(const char* address, const JER_JOIN_MOD* server, int serverCount,
+	const char* const* ignore, int ignoreCount, int flags)
 {
 	int i;
 
@@ -107,22 +112,32 @@ int jer_joinmods_offer(const char* address, const JER_JOIN_MOD* need, int needCo
 		return 0;
 	}
 
-	if (needCount < 0 || needCount > JER_JOIN_MAX || extraCount < 0 || extraCount > JER_JOIN_MAX ||
-		(needCount > 0 && need == NULL) || (extraCount > 0 && extra == NULL) ||
-		needCount + extraCount == 0)
+	if (serverCount < 0 || serverCount > JER_JOIN_MAX || (serverCount > 0 && server == NULL) ||
+		ignoreCount < 0 || (ignoreCount > 0 && ignore == NULL))
 		return 0;
 
-	memset(gJm.need, 0, sizeof(gJm.need));
-	memset(gJm.extra, 0, sizeof(gJm.extra));
+	/* an empty list is still an answer: with JER_JOIN_EXACT_SET it says "no mods" */
+	if (serverCount == 0 && !(flags & JER_JOIN_EXACT_SET))
+		return 0;
+
+	memset(gJm.server, 0, sizeof(gJm.server));
+	memset(gJm.ignore, 0, sizeof(gJm.ignore));
 	snprintf(gJm.address, sizeof(gJm.address), "%s", address);
 
-	for (i = 0; i < needCount; i++)
-		gJm.need[i] = need[i];
-	for (i = 0; i < extraCount; i++)
-		gJm.extra[i] = extra[i];
+	for (i = 0; i < serverCount; i++)
+		gJm.server[i] = server[i];
 
-	gJm.needCount = needCount;
-	gJm.extraCount = extraCount;
+	gJm.ignoreCount = 0;
+	for (i = 0; i < ignoreCount && gJm.ignoreCount < 8; i++)
+	{
+		if (ignore[i] != NULL && ignore[i][0] != 0)
+			snprintf(gJm.ignore[gJm.ignoreCount++], JER_JOIN_ID_MAX, "%s", ignore[i]);
+	}
+
+	gJm.serverCount = serverCount;
+	gJm.needCount = 0;
+	gJm.extraCount = 0;
+	gJm.plainRestart = 0;
 	gJm.flags = flags;
 	gJm.savedRepo = jer_modstore_repo_selected();
 	gJm.repo = 0;
@@ -133,9 +148,9 @@ int jer_joinmods_offer(const char* address, const JER_JOIN_MOD* need, int needCo
 	gJm.installing = 0;
 	gJm.state = JM_REFRESH;
 
-	jer_log("[joinmods] %s refused this machine for its mods: %d to switch on or fetch, "
-		"%d to switch off%s - checking %d repo(s)\n", gJm.address, needCount, extraCount,
-		(flags & JER_JOIN_EXACT) ? " (versions must match)" : "", jer_modstore_repo_count());
+	jer_log("[joinmods] %s refused this machine for its mods; it runs %d%s%s - checking %d repo(s)\n",
+		gJm.address, serverCount, (flags & JER_JOIN_EXACT) ? ", versions must match" : "",
+		(flags & JER_JOIN_EXACT_SET) ? ", and no others" : "", jer_modstore_repo_count());
 	jer_notify("This server runs other mods. Checking your mod repos...", 1, 4);
 	return 1;
 }
@@ -240,6 +255,29 @@ static void JmPlan(void)
 		localCount++;
 	}
 
+	/* The diff is against the SAVED set: it is what the relaunch starts from. */
+	{
+		const char* ignore[8];
+		int k, differs = 0;
+
+		for (k = 0; k < gJm.ignoreCount; k++)
+			ignore[k] = gJm.ignore[k];
+
+		jer_joinplan_diff(gJm.server, gJm.serverCount, ignore, gJm.ignoreCount, gJm.flags,
+			local, localCount, gJm.need, &gJm.needCount, gJm.extra, &gJm.extraCount);
+
+		/* ...and when that already fits, the refusal was this boot's own -mod /
+		 * -nomod flags: a restart on the saved set is the whole fix */
+		for (k = 0; k < localCount && !differs; k++)
+		{
+			int saved = local[k].enabled && local[k].refusal == NULL;
+
+			differs = saved != (jer_module_running(local[k].id) != 0);
+		}
+
+		gJm.plainRestart = gJm.needCount + gJm.extraCount == 0 && differs;
+	}
+
 	/* Only the rows that name a mod the server wants: the store's strings move
 	 * with the selection, so the ones the plan needs are copied out here. */
 	for (r = 0; r < jer_modstore_repo_count() && r < 16; r++)
@@ -303,7 +341,15 @@ static void JmPlan(void)
 
 	if (gJm.plan.downloads + gJm.plan.enables + gJm.plan.disables == 0)
 	{
-		JmFail("This server refused this machine's mods, but nothing here would change that.");
+		if (!gJm.plainRestart)
+		{
+			JmFail("This server refused this machine's mods, but nothing here would change that.");
+			return;
+		}
+
+		snprintf(gJm.question, sizeof(gJm.question),
+			"This server runs your own mod set; this session has other mods on. Restart JERICHO with yours and join?");
+		gJm.state = JM_ASK;
 		return;
 	}
 
@@ -524,9 +570,10 @@ void jer_joinmods_tick(void)
 		if (jer_prompt_active() || jer_screen_active())
 			return;		/* never over another question or a presentation screen */
 
+		/* a plain restart changes nothing that could be kept: two answers */
 		if (jer_prompt_begin3(gJm.question,
 			gJm.plan.downloads > 0 ? "Download & Join" : "Restart & Join", "No",
-			"Keep Them On", JmYes, JmNo, JmKeep))
+			gJm.plainRestart ? "" : "Keep Them On", JmYes, JmNo, JmKeep))
 			gJm.asked = 1;
 		return;
 

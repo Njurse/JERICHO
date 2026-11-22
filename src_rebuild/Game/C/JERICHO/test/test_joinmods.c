@@ -162,7 +162,8 @@ int main(int argc, char** argv)
 	const char* root = argc > 1 ? argv[1] : ".";
 	char* bootArgv[] = { (char*)"jericho", (char*)"-console", (char*)"-joinmods",
 		(char*)"-mod", (char*)"offmod", (char*)"-nomod", (char*)"crossfire" };
-	JER_JOIN_MOD need[1], extra[1];
+	JER_JOIN_MOD need[1], core[3];
+	static const char* const tooling[] = { "bake" };
 	char modlist[600];
 
 	jer_set_logger(TestLogger);
@@ -171,15 +172,17 @@ int main(int argc, char** argv)
 
 	/* 4 first: the boot note is shown on the first frontend frame */
 	jer_joinmods_boot((int)(sizeof(bootArgv) / sizeof(bootArgv[0])), bootArgv);
+	jer_force_module("offmod", 1);		/* this boot's -mod offmod: on now, saved off */
 	jer_init(root);
+	CHECK(jer_module_running("offmod"), "offmod runs this boot (forced)");
 	jer_modstore_frontend_tick(0);
 	CHECK(strstr(gNotice, "offmod on") != NULL && strstr(gNotice, "crossfire off") != NULL,
 		"a -joinmods boot says what is on and off for this session (\"%s\")", gNotice);
 
 	/* 1. installed but off: ask, and No changes nothing */
 	need[0] = Mod("offmod", "1.0.0");
-	CHECK(jer_joinmods_offer("192.168.1.20:1318", need, 1, NULL, 0, 0) == 1, "an offer is taken");
-	CHECK(jer_joinmods_offer("192.168.1.20:1318", need, 1, NULL, 0, 0) == 0, "a second offer waits for the first");
+	CHECK(jer_joinmods_offer("192.168.1.20:1318", need, 1, tooling, 1, 0) == 1, "an offer is taken");
+	CHECK(jer_joinmods_offer("192.168.1.20:1318", need, 1, tooling, 1, 0) == 0, "a second offer waits for the first");
 	Settle();
 	CHECK(jer_prompt_active(), "the player is asked");
 	CHECK(jer_prompt_question() != NULL && strstr(jer_prompt_question(), "offmod") != NULL,
@@ -192,9 +195,25 @@ int main(int argc, char** argv)
 	CHECK(ModlistSays(root, "offmod") != 1, "No writes nothing to modlist.ini");
 	CHECK(strstr(gLog, "would relaunch") == NULL && gQuit == 0, "No does not relaunch");
 
+	/* 1b. this boot's own flags are what the server refused: the saved set fits */
+	gLog[0] = 0;
+	core[0] = Mod("mp", "");
+	core[1] = Mod("carhacks", "");
+	core[2] = Mod("pedhacks", "");
+	CHECK(jer_joinmods_offer("192.168.1.30", core, 3, tooling, 1, JER_JOIN_EXACT_SET) == 1,
+		"an exact-set offer for the saved set is taken");
+	Settle();
+	CHECK(jer_prompt_active() && strstr(jer_prompt_question(), "your own mod set") != NULL,
+		"it offers a restart on the saved set (\"%s\")", jer_prompt_question() ? jer_prompt_question() : "");
+	CHECK(jer_prompt_third_label()[0] == 0, "with two answers: there is nothing to keep");
+	jer_prompt_tick(0, 0, 1, 0);		/* Cross: Restart & Join */
+	Settle();
+	CHECK(strstr(gLog, "would relaunch: ") != NULL && strstr(gLog, "-join 192.168.1.30 -joinmods") != NULL &&
+		strstr(gLog, "-mod offmod") == NULL, "the relaunch drops this boot's -mod and joins");
+
 	/* 2. Keep Them On: enabled for good, and the relaunch line is right */
 	gLog[0] = 0;
-	CHECK(jer_joinmods_offer("192.168.1.20:1318", need, 1, NULL, 0, 0) == 1, "the offer can be made again");
+	CHECK(jer_joinmods_offer("192.168.1.20:1318", need, 1, tooling, 1, 0) == 1, "the offer can be made again");
 	Settle();
 	CHECK(jer_prompt_active(), "asked again");
 	jer_prompt_tick(0, 1, 0, 0);		/* right: No */
@@ -213,20 +232,21 @@ int main(int argc, char** argv)
 	/* 3. what cannot be fixed from here: a notice, no question */
 	gNotice[0] = 0;
 	need[0] = Mod("ghost", "1.0.0");
-	CHECK(jer_joinmods_offer("10.0.0.5", need, 1, NULL, 0, 0) == 1, "an offer for an unknown mod is taken");
+	CHECK(jer_joinmods_offer("10.0.0.5", need, 1, tooling, 1, 0) == 1, "an offer for an unknown mod is taken");
 	Settle();
 	CHECK(!jer_prompt_active() && !jer_joinmods_busy(), "nothing is asked");
 	CHECK(strstr(gNotice, "none of your mod repos offers ghost") != NULL, "the notice names it (\"%s\")", gNotice);
 
 	gNotice[0] = 0;
-	extra[0] = Mod("carhacks", "1.0.0");
-	CHECK(jer_joinmods_offer("10.0.0.5", NULL, 0, extra, 1, 0) == 1, "an offer to drop a core mod is taken");
+	CHECK(jer_joinmods_offer("10.0.0.5", core, 1, tooling, 1, JER_JOIN_EXACT_SET) == 1,
+		"an exact set without a core mod is taken");
 	Settle();
 	CHECK(!jer_prompt_active() && strstr(gNotice, "cannot switch off") != NULL,
 		"a core mod is never switched off (\"%s\")", gNotice);
 
-	CHECK(jer_joinmods_offer("10.0.0.5;reboot", need, 1, NULL, 0, 0) == 0, "a bad address is refused");
+	CHECK(jer_joinmods_offer("10.0.0.5;reboot", need, 1, tooling, 1, 0) == 0, "a bad address is refused");
 	CHECK(jer_joinmods_offer("10.0.0.5", NULL, 0, NULL, 0, 0) == 0, "an empty offer is refused");
+	CHECK(jer_joinmods_offer("10.0.0.5", need, 1, NULL, 1, 0) == 0, "an ignore count without a list is refused");
 
 	/* 5. a mod only a repo has: asked, downloaded, kept off for later, joined */
 	if (getenv("JERICHO_TEST_MODSTORE_URL") == NULL)
@@ -238,7 +258,7 @@ int main(int argc, char** argv)
 		gLog[0] = 0;
 		need[0] = Mod("packmod", "1.0.0");
 		CHECK(!FileExists(root, "MODS/packmod/mod.toml"), "packmod starts out not installed");
-		CHECK(jer_joinmods_offer("10.1.1.1:1318", need, 1, NULL, 0, JER_JOIN_EXACT) == 1, "a download offer is taken");
+		CHECK(jer_joinmods_offer("10.1.1.1:1318", need, 1, tooling, 1, JER_JOIN_EXACT) == 1, "a download offer is taken");
 		Settle();
 		CHECK(jer_prompt_active() && jer_prompt_question() != NULL &&
 			strstr(jer_prompt_question(), "Pack Mod") != NULL,

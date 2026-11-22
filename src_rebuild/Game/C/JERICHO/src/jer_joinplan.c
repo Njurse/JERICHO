@@ -75,6 +75,89 @@ static const JER_JOINPLAN_LOCAL* JpLocal(const JER_JOINPLAN_LOCAL* local, int n,
 	return NULL;
 }
 
+static int JpIgnored(const char* const* ignore, int n, const char* id)
+{
+	int i;
+
+	for (i = 0; ignore != NULL && i < n; i++)
+	{
+		if (JpSame(ignore[i], id, JER_JOIN_ID_MAX))
+			return 1;
+	}
+
+	return 0;
+}
+
+void jer_joinplan_diff(const JER_JOIN_MOD* server, int serverCount,
+	const char* const* ignore, int ignoreCount, int flags,
+	const JER_JOINPLAN_LOCAL* local, int localCount,
+	JER_JOIN_MOD* need, int* needCount, JER_JOIN_MOD* extra, int* extraCount)
+{
+	int exact = (flags & JER_JOIN_EXACT) != 0;
+	int nn = 0, xn = 0, i, j;
+
+	if (server == NULL)
+		serverCount = 0;
+	if (local == NULL)
+		localCount = 0;
+
+	for (i = 0; i < serverCount; i++)
+	{
+		JER_JOIN_MOD row = server[i];
+		const JER_JOINPLAN_LOCAL* have;
+		int k, dup = 0, ok;
+
+		row.id[sizeof(row.id) - 1] = 0;		/* a wire field */
+		row.version[sizeof(row.version) - 1] = 0;
+
+		if (!jer_joinplan_valid_id(row.id) || JpIgnored(ignore, ignoreCount, row.id))
+			continue;
+
+		for (k = 0; k < nn && !dup; k++)
+			dup = JpSame(need[k].id, row.id, JER_JOIN_ID_MAX);
+		for (k = 0; k < i && !dup; k++)
+			dup = JpSame(server[k].id, row.id, JER_JOIN_ID_MAX);
+		if (dup)
+			continue;
+
+		have = JpLocal(local, localCount, row.id);
+		ok = have != NULL && have->enabled && (have->refusal == NULL || have->refusal[0] == 0) &&
+			(!exact || row.version[0] == 0 || JpSame(have->version, row.version, JER_JOIN_VER_MAX));
+
+		if (!ok && nn < JER_JOIN_MAX && need != NULL)
+			need[nn++] = row;
+	}
+
+	if (flags & JER_JOIN_EXACT_SET)
+	{
+		for (j = 0; j < localCount; j++)
+		{
+			const JER_JOINPLAN_LOCAL* m = &local[j];
+			int listed = 0;
+
+			if (m->id == NULL || !m->enabled || (m->refusal != NULL && m->refusal[0] != 0) ||
+				JpIgnored(ignore, ignoreCount, m->id))
+				continue;
+
+			for (i = 0; i < serverCount && !listed; i++)
+				listed = JpSame(server[i].id, m->id, JER_JOIN_ID_MAX);
+
+			if (!listed && xn < JER_JOIN_MAX && extra != NULL)
+			{
+				memset(&extra[xn], 0, sizeof(extra[xn]));
+				JpCopy(extra[xn].id, (int)sizeof(extra[xn].id), m->id);
+				JpCopy(extra[xn].version, (int)sizeof(extra[xn].version), m->version);
+				xn++;
+			}
+		}
+	}
+
+	if (needCount != NULL)
+		*needCount = nn;
+	if (extraCount != NULL)
+		*extraCount = xn;
+}
+
 static int JpCounted(const JER_JOINPLAN* plan, const char* id)
 {
 	int i;

@@ -257,6 +257,67 @@ static void test_question_wording(void)
 	CHECK(strstr(q, "Turn on hallgarth and off crossfire") != NULL);
 }
 
+static int Has(const JER_JOIN_MOD* rows, int n, const char* id)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+		if (!strcmp(rows[i].id, id))
+			return 1;
+
+	return 0;
+}
+
+static void test_diff_against_the_saved_set(void)
+{
+	JER_JOIN_MOD server[5], need[JER_JOIN_MAX], extra[JER_JOIN_MAX];
+	static const char* const tooling[] = { "crossfire" };
+	JER_JOINPLAN_LOCAL refusedOn[1];
+	int nn = -1, xn = -1;
+
+	server[0] = Mod("mp", "");
+	server[1] = Mod("hallgarth", "1.0.0");
+	server[2] = Mod("newmod", "2");
+	server[3] = Mod("newmod", "2");		/* a duplicate row */
+	server[4] = Mod("../x", "1");		/* not an id */
+
+	/* what the server runs and this machine has off, or lacks: need */
+	jer_joinplan_diff(server, 5, NULL, 0, 0, kLocal, LOCALS, need, &nn, extra, &xn);
+	CHECK(nn == 2 && Has(need, nn, "hallgarth") && Has(need, nn, "newmod"));
+	CHECK(xn == 0);				/* no exact set: other mods are fine */
+
+	/* an exact set: what is on here and not listed is extra, core ones included */
+	jer_joinplan_diff(server, 5, NULL, 0, JER_JOIN_EXACT_SET, kLocal, LOCALS, need, &nn, extra, &xn);
+	CHECK(xn == 2 && Has(extra, xn, "carhacks") && Has(extra, xn, "crossfire"));
+	CHECK(!Has(extra, xn, "hallgarth") && !Has(extra, xn, "broken"));	/* off: nothing to switch off */
+
+	/* tooling counts neither way */
+	jer_joinplan_diff(server, 5, tooling, 1, JER_JOIN_EXACT_SET, kLocal, LOCALS, need, &nn, extra, &xn);
+	CHECK(xn == 1 && Has(extra, xn, "carhacks"));
+
+	/* versions bind under EXACT only, and an empty server version means any */
+	server[0] = Mod("mp", "0.25.0");
+	jer_joinplan_diff(server, 1, NULL, 0, JER_JOIN_EXACT, kLocal, LOCALS, need, &nn, extra, &xn);
+	CHECK(nn == 1 && Has(need, nn, "mp"));
+	jer_joinplan_diff(server, 1, NULL, 0, 0, kLocal, LOCALS, need, &nn, extra, &xn);
+	CHECK(nn == 0);
+	server[0] = Mod("mp", "");
+	jer_joinplan_diff(server, 1, NULL, 0, JER_JOIN_EXACT, kLocal, LOCALS, need, &nn, extra, &xn);
+	CHECK(nn == 0);
+
+	/* a module this boot refused is never "on": needed if listed, never extra */
+	refusedOn[0].id = "shaky";
+	refusedOn[0].version = "1";
+	refusedOn[0].enabled = 1;
+	refusedOn[0].core = 0;
+	refusedOn[0].refusal = "needs a newer JERICHO";
+	server[0] = Mod("shaky", "1");
+	jer_joinplan_diff(server, 1, NULL, 0, 0, refusedOn, 1, need, &nn, extra, &xn);
+	CHECK(nn == 1);
+	jer_joinplan_diff(NULL, 0, NULL, 0, JER_JOIN_EXACT_SET, refusedOn, 1, need, &nn, extra, &xn);
+	CHECK(nn == 0 && xn == 0);
+}
+
 static void test_relaunch_line(void)
 {
 	JER_JOINPLAN p;
@@ -319,6 +380,7 @@ int main(void)
 	test_what_cannot_be_fetched();
 	test_wire_rows_are_distrusted();
 	test_question_wording();
+	test_diff_against_the_saved_set();
 	test_relaunch_line();
 
 	printf("%d checks, %d failed\n", gChecks, gFails);

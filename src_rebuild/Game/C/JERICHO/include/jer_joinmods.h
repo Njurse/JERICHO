@@ -54,15 +54,23 @@ typedef struct JER_JOIN_MOD
 
 /* jer_joinmods_offer flags */
 #define JER_JOIN_EXACT		0x1	/* the server matches versions too (MP_MODCHECK_EXACT) */
+#define JER_JOIN_EXACT_SET	0x2	/* the server refuses our OTHER mods too: its set is the set */
 
 /* A server at `address` (host[:port], the -join form) refused this machine for
- * its mods. `need`: mods the server runs that must be ON here, with the
- * server's versions. `extra`: mods ON here that the server does not run.
+ * its mods and said which it runs: `server`, each with its version (binding only
+ * under JER_JOIN_EXACT; an empty one means any). `ignore` names mods that count
+ * neither way (the multiplayer module's tooling, such as bake).
+ *
+ * What to switch on, fetch and switch off is worked out against this install's
+ * SAVED mod set (modlist.ini), because that is what the relaunch starts from - so
+ * a session an earlier offer started, running with other -mod / -nomod flags,
+ * can still join a different server in one go.
+ *
  * Returns 1 when the offer was taken (the repos are checked, then the player is
  * asked or told why it cannot work), 0 when it was not (bad arguments, or an
  * offer is already running). */
-int jer_joinmods_offer(const char* address, const JER_JOIN_MOD* need, int needCount,
-	const JER_JOIN_MOD* extra, int extraCount, int flags);
+int jer_joinmods_offer(const char* address, const JER_JOIN_MOD* server, int serverCount,
+	const char* const* ignore, int ignoreCount, int flags);
 
 /* Non-zero while an offer is being worked: checking repos, waiting on the
  * player, downloading, or about to relaunch. */

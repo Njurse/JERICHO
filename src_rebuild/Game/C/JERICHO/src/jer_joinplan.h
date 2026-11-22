@@ -75,6 +75,19 @@ typedef struct JER_JOINPLAN
 	int blocks;
 } JER_JOINPLAN;
 
+/* What a server's list means here: `need` = the server's mods that are not on in
+ * `local` (or, under JER_JOIN_EXACT, not at the server's version - an empty one
+ * means any); `extra` = with JER_JOIN_EXACT_SET, the mods on in `local` that the
+ * server does not run. `ignore` ids (the multiplayer module's tooling) count
+ * neither way, and a module this boot refused is never "on". `local` is the
+ * SAVED mod set - what a relaunch starts from - so a session that an earlier
+ * offer started can still join a different server. Both outputs hold at most
+ * JER_JOIN_MAX rows; the counts are written back. */
+void jer_joinplan_diff(const JER_JOIN_MOD* server, int serverCount,
+	const char* const* ignore, int ignoreCount, int flags,
+	const JER_JOINPLAN_LOCAL* local, int localCount,
+	JER_JOIN_MOD* need, int* needCount, JER_JOIN_MOD* extra, int* extraCount);
+
 /* Work out the plan. `flags` are jer_joinmods_offer's (JER_JOIN_EXACT). */
 void jer_joinplan_build(JER_JOINPLAN* plan,
 	const JER_JOIN_MOD* need, int needCount,
