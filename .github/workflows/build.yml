@@ -110,7 +110,10 @@ jobs:
           if python tools/doccheck.py; then
             echo "::error::doccheck passed a planted $old path"; exit 1
           fi
-          python tools/doccheck.py | grep -q "retired id '$old'"
+          # doccheck exits 1 here by design; under pipefail a plain pipe into grep
+          # would fail the step even when the message is right, so capture first.
+          out=$(python tools/doccheck.py 2>&1 || true)
+          grep -q "retired id '$old'" <<<"$out"
           git checkout -- docs/README.md
 
       # The Release configuration compiles from the generated registry. A release

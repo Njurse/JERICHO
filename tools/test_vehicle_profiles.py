@@ -104,18 +104,46 @@ def test_generated_c_names_every_profile_once():
     assert "cd2VehBuiltinCount = %d" % len(EXPECTED) in text
 
 
+def _crossfire_bank(root: Path) -> Path:
+    """A minimal stand-in for the CROSSFIRE pack.
+
+    The real pack (cainescrossfire/vehicles) is built data that is not in the
+    repository, so CI has no copy. The test only needs a bank.json declaring
+    two cars and the LEV/LCF files packprofile looks for under build/.
+    """
+    bank = root / "vehicles"
+    (bank / "build").mkdir(parents=True)
+    (bank / "bank.json").write_text(json.dumps({
+        "city": "CROSSFIRE",
+        "declare": {
+            "name": "CROSSFIRE",
+            "donor": {"city": "VEGAS"},
+            "order": [
+                {"car": "crossfire_model1", "slot": 1},
+                {"car": "crossfire_model2", "slot": 2},
+            ],
+        },
+    }), encoding="utf-8")
+    (bank / "build" / "CROSSFIRE.LEV").write_bytes(b"")
+    (bank / "build" / "CROSSFIRE.LCF").write_bytes(b"")
+    return bank
+
+
 def test_packprofile_scaffolds_the_crossfire_pack(tmp_path):
     tool = MOD / "tools" / "packprofile.py"
+    real = MOD / "vehicles"
+    bank = real if (real / "bank.json").is_file() else _crossfire_bank(tmp_path / "pack")
+    out = tmp_path / "out"
     proc = subprocess.run(
-        [sys.executable, str(tool), "--bank", str(MOD / "vehicles"),
-         "--out", str(tmp_path), "--stats", "5,2,2,2", "--home-city", "VEGAS"],
+        [sys.executable, str(tool), "--bank", str(bank),
+         "--out", str(out), "--stats", "5,2,2,2", "--home-city", "VEGAS"],
         cwd=str(ROOT), capture_output=True, text=True,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    names = sorted(p.name for p in tmp_path.glob("*.json"))
+    names = sorted(p.name for p in out.glob("*.json"))
     assert names == ["crossfire_model1.json", "crossfire_model2.json"]
-    first = json.loads((tmp_path / "crossfire_model1.json").read_text(encoding="utf-8"))
-    second = json.loads((tmp_path / "crossfire_model2.json").read_text(encoding="utf-8"))
+    first = json.loads((out / "crossfire_model1.json").read_text(encoding="utf-8"))
+    second = json.loads((out / "crossfire_model2.json").read_text(encoding="utf-8"))
     assert first["vehicle"]["bank"] == "CROSSFIRE"
     assert first["vehicle"]["model"] == 1
     assert second["vehicle"]["model"] == 2

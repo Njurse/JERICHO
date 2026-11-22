@@ -75,7 +75,9 @@ static int gDisableAllModules = 0;
 
 /* Per-module hard overrides (jer_force_module), same rules: they outrank
  * modlist.ini and default-enabled, and gDisableAllModules outranks them. */
-#define JER_MAX_FORCED 8
+/* 40: a server's addon offer (jer_joinmods) can force one per mod a server runs
+ * (MP_MAX_MODS = 32), and the debug flags (-testmode, -mod) take a few more. */
+#define JER_MAX_FORCED 40
 static struct { char id[32]; int enabled; } gForcedModules[JER_MAX_FORCED];
 static int gForcedCount = 0;
 
@@ -1448,6 +1450,30 @@ int jer_modules_disabled(void)
 	return gDisableAllModules;
 }
 
+/* Is `id` ON this boot? jer_module_list answers with what modlist.ini (or the
+ * mod.toml default) SAYS, which is what the Mods menu must show and toggle. This
+ * answers with what RUNS: the decision after -mod, -nomod and -nomods, for a
+ * module that passed validation. Code counts once its entry ran; a module with
+ * no code of its own (a data pack) counts when it is enabled, and a DLL addon
+ * whose DLL is missing does not. */
+int jer_module_running(const char* id)
+{
+	JER_MODULE* m;
+
+	if (id == NULL || id[0] == 0 || gDisableAllModules)
+		return 0;
+
+	m = jerFindModule(id);
+
+	if (m == NULL || !m->enabled || !m->valid)
+		return 0;
+
+	if (m->entry != NULL)
+		return m->activated;
+
+	return !m->isDllAddon;
+}
+
 /*
  * Hard per-module switch (engine test/diagnostic flags). Set BEFORE jer_init so
  * the activation pass honours it regardless of modlist.ini / mod.toml, which is
@@ -1455,10 +1481,12 @@ int jer_modules_disabled(void)
  */
 void jer_force_module(const char* id, int enabled)
 {
-	int i = jerModuleForced(id);
+	int i;
 
 	if (id == NULL || id[0] == 0)
 		return;
+
+	i = jerModuleForced(id);	/* after the check: it strcmp()s the id */
 
 	/* a repeat of the same id just overwrites */
 	if (i >= 0)

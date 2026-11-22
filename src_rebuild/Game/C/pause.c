@@ -350,6 +350,17 @@ static void ReloadCarAssets(int direction)
 	chkImportReloadAll();
 }
 
+/* JERICHO: the row above is carhacks', so it is only listed while carhacks runs
+ * (JerPauseFilteredMenu). With every mod off, or -nomods, the stock pause menus
+ * must read exactly as the original game's - and the row would have run a
+ * disabled module's code. */
+static int JerPauseCarhacksActive(void)
+{
+	/* RUNNING, not "enabled in modlist.ini": carhacks is a core module, so the only
+	 * way it is off is -nomods, which modlist.ini knows nothing about */
+	return jer_module_running("carhacks");
+}
+
 MENU_ITEM MainPauseItems[] =
 {
 	{ G_LTXT_ID(GTXT_Continue), 1u, 2u, NULL, MENU_QUIT_CONTINUE, NULL },
@@ -913,7 +924,11 @@ static void JerPauseApplyRestartOverride(void)
  * filtered copy with those rows REMOVED (not blanked), so the selection index, the
  * row count and the box size are those of the shorter list. One copy per menu, built
  * once and kept: the navigation remembers item POINTERS (ActiveItem[]), so a menu must
- * come back as the same array when the player backs into it. Offline, nothing changes. */
+ * come back as the same array when the player backs into it. Offline, nothing changes.
+ *
+ * The same filtered copy drops a row whose module is not running: "Reload car assets"
+ * without carhacks (JerPauseCarhacksActive). A menu with nothing to drop is shown as
+ * it is, so with every mod off the stock pause menus are the original game's. */
 #define JER_PAUSE_FILTER_MAX	12
 #define JER_PAUSE_FILTER_ITEMS	24
 static MENU_HEADER* gJerFilterSrc[JER_PAUSE_FILTER_MAX];
@@ -925,20 +940,33 @@ static int JerPauseItemIsRestart(const MENU_ITEM* it)
 	return it->SubMenu == &YesNoRestartHeader || it->ExitValue == MENU_QUIT_RESTART;
 }
 
-static MENU_HEADER* JerPauseOnlineMenu(MENU_HEADER* menu)
+static int JerPauseItemHidden(const MENU_ITEM* it, int carhacks)
+{
+	if (gJerPauseRestartAsRespawn && JerPauseItemIsRestart(it))
+		return 1;		/* online: a restart means nothing */
+
+	if (it->func == (pauseFunc)&ReloadCarAssets && !carhacks)
+		return 1;		/* carhacks' row, and carhacks is not running */
+
+	return 0;
+}
+
+static MENU_HEADER* JerPauseFilteredMenu(MENU_HEADER* menu)
 {
 	MENU_ITEM* it;
-	int i, n, hit = 0;
+	int i, n, hit = 0, carhacks;
 
-	if (!gJerPauseRestartAsRespawn || menu == NULL || menu->MenuItems == NULL)
+	if (menu == NULL || menu->MenuItems == NULL)
 		return menu;
+
+	carhacks = JerPauseCarhacksActive();
 
 	for (i = 0; i < JER_PAUSE_FILTER_MAX; i++)
 		if (gJerFilterSrc[i] != NULL && &gJerFilterHdr[i] == menu)
 			menu = gJerFilterSrc[i];	/* backing into a filtered menu: rebuild from its source */
 
 	for (it = menu->MenuItems; it->Type != PAUSE_TYPE_ENDITEMS; it++)
-		if (JerPauseItemIsRestart(it))
+		if (JerPauseItemHidden(it, carhacks))
 			hit = 1;
 
 	if (!hit)
@@ -956,7 +984,7 @@ static MENU_HEADER* JerPauseOnlineMenu(MENU_HEADER* menu)
 
 	n = 0;
 	for (it = menu->MenuItems; it->Type != PAUSE_TYPE_ENDITEMS && n < JER_PAUSE_FILTER_ITEMS - 1; it++)
-		if (!JerPauseItemIsRestart(it))
+		if (!JerPauseItemHidden(it, carhacks))
 			gJerFilterItems[i][n++] = *it;
 	gJerFilterItems[i][n] = *it;	/* the ENDITEMS terminator */
 	if (gJerFilterItems[i][n].Type != PAUSE_TYPE_ENDITEMS)
@@ -984,7 +1012,7 @@ void SetupMenu(MENU_HEADER *menu, int back)
 		JerPauseApplyRestartOverride();
 
 	{
-		MENU_HEADER* shown = JerPauseOnlineMenu(menu);
+		MENU_HEADER* shown = JerPauseFilteredMenu(menu);
 
 		if (shown != menu)
 		{

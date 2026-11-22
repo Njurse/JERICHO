@@ -40,12 +40,45 @@ run() {	# run <name> <binary> [args...]
 }
 
 # --- runtime tests -----------------------------------------------------------
-for name in test_dispatch; do
+for name in test_dispatch test_joinmods test_nomods; do
     cc -std=c99 -Wall -Wextra -Wno-unused-parameter \
         -I"$src_rebuild/Game/C/JERICHO/include" \
         "$here/$name.c" "$lib" -ldl -o "$work/$name"
-    run "$name ($cfg)" "$work/$name" "$work/root"
 done
+run "test_dispatch ($cfg)" "$work/test_dispatch" "$work/root"
+
+# every mod off must leave the original game: -nomods, and the Mods menu's "off"
+for mode in nomods optional-off; do
+    run "test_nomods $mode ($cfg)" "$work/test_nomods" "$work/root" "$mode"
+done
+
+# test_joinmods downloads for real: a one-mod repo on disk (a data pack, which a
+# restart runs without a build), served by file:// through the store's own test
+# lever. The install is laid out like the game's - the binary and the store's
+# helper script beside a JERICHO/ folder - because the helper insists on that.
+# nolaunch: the relaunch is logged instead of starting a second game.
+mkdir -p "$work/repo" "$work/jm/JERICHO/MODS" "$work/jm/JERICHO/CONFIG"
+cp "$work/root/CONFIG/jericho.ini" "$work/jm/JERICHO/CONFIG/"
+mv "$work/test_joinmods" "$work/jm/"
+python3 - "$work/repo" <<'PY'
+import hashlib, json, os, sys, zipfile
+out = sys.argv[1]
+pkg = os.path.join(out, "packmod-1.0.0.zip")
+with zipfile.ZipFile(pkg, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("JERICHO/MODS/packmod/mod.toml",
+               'id = "packmod"\nname = "Pack Mod"\nversion = "1.0.0"\nauthor = "tests"\n'
+               'description = "a data pack for test_joinmods"\ndefault-enabled = true\n')
+    z.writestr("JERICHO/MODS/packmod/banks/README.txt", "a bank folder makes this a data pack\n")
+data = open(pkg, "rb").read()
+json.dump({"schema": 1, "id": "test", "name": "Join Test Repo", "mods": [{
+    "id": "packmod", "name": "Pack Mod", "version": "1.0.0", "author": "tests",
+    "description": "a data pack for test_joinmods", "file": "packmod-1.0.0.zip",
+    "sha256": hashlib.sha256(data).hexdigest(), "size": len(data), "requires": [],
+    "default_enabled": True}]}, open(os.path.join(out, "mods.json"), "w"), indent=1)
+PY
+cp "$root/JERICHO/CORE/modstore/modstore.sh" "$work/jm/"
+JERICHO_TEST_JOINMODS=nolaunch JERICHO_TEST_MODSTORE_URL="file://$work/repo/mods.json" \
+    run "test_joinmods ($cfg)" "$work/jm/test_joinmods" "$work/jm/JERICHO"
 
 # --- pure tests (C and C++) --------------------------------------------------
 pure() {	# pure <name> <include dir or ""> <sources...>
@@ -65,6 +98,7 @@ pure test_alleycat_path "$mods/Alleycat" \
     "$mods/Alleycat/alleycat_mapgrid.c" "$mods/Alleycat/alleycat_star.c" "$mods/Alleycat/alleycat_local.c"
 pure test_world_reload ""
 pure test_d1cars "$src_rebuild/Game/C/JERICHO/include" "$src_rebuild/Game/C/JERICHO/src/jer_d1cars.c"
+pure test_joinplan "$src_rebuild/Game/C/JERICHO/include" "$src_rebuild/Game/C/JERICHO/src/jer_joinplan.c"
 
 [ "$status" -eq 0 ] && echo "run_tests: all passed" || echo "run_tests: FAILURES"
 exit $status

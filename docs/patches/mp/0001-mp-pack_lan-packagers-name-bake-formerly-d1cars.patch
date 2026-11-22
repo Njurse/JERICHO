@@ -1,7 +1,7 @@
-From 8c8c44848f8374952e820c709789a6a0998a367a Mon Sep 17 00:00:00 2001
+From fe531367463c28eec32593b1062f61304b6a91bd Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Sat, 21 Nov 2026 21:15:05 +0000
-Subject: [PATCH] mp: pack_lan packagers name bake (formerly d1cars)
+Subject: [PATCH 1/2] mp: pack_lan packagers name bake (formerly d1cars)
 
 make_lan_package_micheal.sh hard-failed with 'no d1cars module in the repo'
 since the module became bake; the public packager, sync_lan.bat and the
