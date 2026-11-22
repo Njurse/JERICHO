@@ -243,6 +243,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
 #define CAR_IMPORT_LUMP_SIRENS	202	// JERICHO: per-model cop flags (the D1 bake)
 #define CAR_IMPORT_LUMP_POLICE_VOICES	203	// JERICHO: the city's police radio lines (bake declare.police_voices)
+#define CAR_IMPORT_LUMP_DRIVE	205	// JERICHO: per-model drive-wheel override (bank handling.driveWheels)
 #define CAR_IMPORT_POLICE_VOICE_COUNT	17	// 6 directions + 11 chatter, the order D2's two phrase banks load in
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
@@ -289,6 +290,7 @@ typedef struct
 	char* carSounds;	// LUMP_CAR_SOUNDS body, or NULL (no embedded car sounds)
 	int carSoundsSize;
 	unsigned carSirenMask;	// bit N = model N is a cop car (LUMP_CAR_SIRENS)
+	unsigned char carDrive[CAR_IMPORT_MODEL_SLOTS];	// LUMP_CAR_DRIVE: 0 = stock, else bit0 front / bit1 rear
 	char* policeVoices;	// LUMP_POLICE_VOICES body, or NULL (no baked police lines)
 	int policeVoicesSize;
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
@@ -592,6 +594,27 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 		{
 			if ((unsigned char)sirens[s])
 				imp->carSirenMask |= 1u << s;
+		}
+	}
+
+	// JERICHO: per-model drive-wheel override (bank handling.driveWheels). Optional;
+	// absent or short = 0 for the missing models, and the slot keeps the stock rule
+	// (AddWheelForcesDriver1). FreeCarImport's memset clears it with the bank.
+	{
+		char* drive = NULL;
+		int driveSize = 0;
+		int s;
+
+		memset(imp->carDrive, 0, sizeof(imp->carDrive));
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_DRIVE, &drive, &driveSize);
+
+		for (s = 0; drive != NULL && s < CAR_IMPORT_MODEL_SLOTS && s < driveSize; s++)
+		{
+			imp->carDrive[s] = (unsigned char)drive[s] & 3;
+
+			if (imp->carDrive[s])
+				printInfo("carimport: %s model %d drive override %d (%s)\n", levPath, s, imp->carDrive[s],
+					imp->carDrive[s] == 1 ? "front" : imp->carDrive[s] == 2 ? "rear" : "all");
 		}
 	}
 
@@ -2412,6 +2435,26 @@ int JerCarSlotIsPolice(int slot)
 		return model == 0;
 
 	return JerCarIsPolice(city, model);
+}
+
+// JERICHO: the drive-wheel override (LUMP_CAR_DRIVE, 205) of the car in resident
+// slot `slot`, from that slot's source city: 0 = none (stock rule), else bit0 =
+// front axle driven, bit1 = rear. The level's own cars and unheld cities answer 0.
+// Never loads anything: AddWheelForcesDriver1 calls it once per car per step.
+int JerCarSlotDrive(int slot)
+{
+	int model, city;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	model = residentCarModels[slot];
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || !CarImportCityHeld(city))
+		return 0;
+
+	return gCarImports[city].carDrive[model];
 }
 
 // JERICHO: `city`'s baked police radio lines (LUMP_POLICE_VOICES, 203), or 0 when

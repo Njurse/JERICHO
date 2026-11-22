@@ -203,6 +203,10 @@ unsigned JerCityPoliceModels(int city);
 int JerCarIsPolice(int city, int model);
 int JerCarSlotIsPolice(int slot);
 
+// JERICHO: the bank's drive-wheel override for the car in resident slot `slot`
+// (LUMP_CAR_DRIVE, 205): 0 = stock rule, else bit0 front / bit1 rear axle driven.
+int JerCarSlotDrive(int slot);
+
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).
 char* GetCarImportTextureInfo(int* size);

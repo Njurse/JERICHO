@@ -11,7 +11,7 @@
 #include "camera.h"
 #include "handling.h"
 #include "cosmetic.h"
-#include "models.h"	// JERICHO: GetCarImportCity / GetCarImportPallet (cross-city palettes)
+#include "models.h"	// JERICHO: GetCarImportCity / GetCarImportPallet (cross-city palettes), JerCarSlotDrive
 #include "shadow.h"
 #include "civ_ai.h"
 #include "mc_snd.h"
@@ -2353,8 +2353,18 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 
 	BackWheelIncrement = FrontWheelIncrement = cp->hd.wheel_speed >> 8;
 
+	// JERICHO: a burnout spins the driven axle - the rear in stock, or what the
+	// bank's drive override names (JerCarSlotDrive)
 	if (cp->wheelspin != 0)
-		BackWheelIncrement = 700;
+	{
+		int drive = JerCarSlotDrive(cp->ap.model);
+
+		if (drive == 0 || (drive & 2))
+			BackWheelIncrement = 700;
+
+		if (drive & 1)
+			FrontWheelIncrement = 700;
+	}
 
 	if (cp->hd.wheel[0].locked != 0)
 		FrontWheelIncrement = 0;
