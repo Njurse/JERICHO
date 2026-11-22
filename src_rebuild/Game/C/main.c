@@ -7,6 +7,7 @@
 #include "jer_console.h"	// JERICHO-HOOK: unified status console stream
 #include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload/free)
 #include "jer_car_palette.h"	// JERICHO-HOOK: per-instance car colour (inert table)
+#include "jer_joinmods.h"	// JERICHO-HOOK: a refused join's addon offer (-joinmods relaunch)
 #include "handling_probe.h"	// JERICHO: "my car is way too fast" measurement (env-gated, inert)
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
@@ -2550,6 +2551,9 @@ void PrintCommandLineArguments()
 		"        world + orbit camera on a car or Tanner, for asset testing\n"
 		"  -mod <id> : force one module on for this boot (e.g. -mod d2pl), even if\n"
 		"        JERICHO/CONFIG/modlist.ini does not list it\n"
+		"  -nomod <id> : force one module off for this boot (a core module stays on)\n"
+		"  -joinmods : marks a relaunch for a server's mods (with -join, -mod and\n"
+		"        -nomod): the player is told those changes last this session only\n"
 		"  -onfoot : start the player outside his spawn car instead of in it (a\n"
 		"        module has to act on it - Caine's Crossfire swaps him out)\n";
 
@@ -2748,7 +2752,21 @@ int redriver2_main(int argc, char** argv)
 				jer_force_module(argv[ai + 1], 1);
 				ai++;
 			}
+			/* -nomod <id>: the other direction, force one module OFF for this
+			 * boot. A server's addon offer (jer_joinmods) relaunches with it for
+			 * a mod the server does not run, so the player's own modlist.ini is
+			 * never rewritten for one session. A core module stays on. */
+			else if (!strcmp(argv[ai], "-nomod"))
+			{
+				jer_force_module(argv[ai + 1], 0);
+				ai++;
+			}
 		}
+
+		/* the command line, kept for jer_joinmods' relaunch, and -joinmods (a
+		 * boot that relaunch started) noticed so the player is told which mods
+		 * are on for this session only */
+		jer_joinmods_boot(argc, argv);
 	}
 
 	jer_init("JERICHO");
@@ -3296,12 +3314,16 @@ int redriver2_main(int argc, char** argv)
 			if (i + 1 < argc && argv[i + 1][0] != '-')
 				i++;
 		}
-		else if (!strcmp(argv[i], "-mod"))
+		else if (!strcmp(argv[i], "-mod") || !strcmp(argv[i], "-nomod"))
 		{
-			/* (any module) force this one module on for the boot, even if the
-			 * modlist does not list it - the value is a module id */
+			/* (any module) force this one module on / off for the boot, whatever
+			 * the modlist says - the value is a module id. Applied before jer_init. */
 			if (i + 1 < argc && argv[i + 1][0] != '-')
 				i++;
+		}
+		else if (!strcmp(argv[i], "-joinmods"))
+		{
+			/* (jer_joinmods) a bare marker, read before jer_init */
 		}
 		else if (!strcmp(argv[i], "-ccmenu"))
 		{

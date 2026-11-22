@@ -86,10 +86,12 @@ python tools/fetch_mods.py                          # every mod, or --release
 ```
 
 `--advance` moves clean checkouts to their branch tips and `--pin` records the
-new commits in `mods.json` (review, then commit). `bake` is fetched for release
-builds but its Driver 1 data is excluded from the mirror. `gaildrv2` is
-hibernated at [JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2)
-and is not listed.
+new commits in `mods.json` (review, then commit). The build stops with the exact
+command to run if one of the four required mods (mp, carhacks, crumple, bake) is
+missing. `bake` (the Driver 1 car toolkit, formerly `d1cars`) is a release mod,
+but its Driver 1 data is excluded from the mirror. `gaildrv2` is hibernated at
+[JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2) and is
+not listed.
 
 JERICHO is compiled into the game, so it can see the game's data. An external
 module cannot open `player[]` or `car_data[]` itself, because Windows will not
@@ -117,7 +119,7 @@ These are the numbers and behaviours the headers define.
 
 | Limit | Behaviour |
 |---|---|
-| Event handlers | **256** across every module; registering past that returns without a log |
+| Event handlers | **256** across every module; registering past that drops the hook and logs it once (module and event) in `JERICHO.log` |
 | Override slots | **8**; only `JER_OVERRIDE_SLOT_SIM` (the world step) is named today |
 | Module table | fixed (`JER_MAX_MODULES`, 32 slots) |
 | External loading | Windows and Linux |

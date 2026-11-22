@@ -1,0 +1,91 @@
+From 27d762683608dd8fb1ece12ab17e78e54f43c593 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 08:25:16 +0000
+Subject: [PATCH] carhacks: point tools and docs at bake (formerly d1cars)
+
+bigrig_extract.py looked for the page decoder in MODS/d1cars/tools and silently
+skipped the page PNGs; slotmap.py read LCFs from MODS/d1cars/tools/out/lcf. Both
+folders are gone since the module became bake: the decoder is in
+MODS/bake/tools/car (pages1.py) and the LCFs are written to
+MODS/bake/tools/car/out/lcf (bake/tools/car/README.md). The DRIVER1.md links move
+to bake/docs. d1citymodels.h still names a gen_d1citymodels.py that no longer
+exists in either repo; left as is.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015LjSznjzjHgGhjQaMfW1Mq
+---
+ HANDOFF.md              | 2 +-
+ docs/FORMATS.md         | 2 +-
+ docs/PALETTES.md        | 2 +-
+ tools/bigrig_extract.py | 2 +-
+ tools/slotmap.py        | 2 +-
+ 5 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/HANDOFF.md b/HANDOFF.md
+index e0ae89a..bd5c67d 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -24,7 +24,7 @@ detail lives in the topic docs.
+    NEWCASTLE blob: model 1 = 75 of 135 polys on set 0, model 2 = 78 of 139, model 3 = 20 of 233
+    (only its untextured ones) - the "invisible hood on car 1, cars 1 and 2 half broken, car 3
+    fine" report. The bake now numbers from 1 (`PAGE_SET_BASE`) and drops Driver 1's flat
+-   untextured polys instead of faking them as textured on set 0. See `d1cars/docs/DRIVER1.md`.
++   untextured polys instead of faking them as textured on set 0. See `bake/docs/DRIVER1.md`.
+ 
+ 2. **A palette row the lump cannot fill was FABRICATED** (`cars.c`). The alias copied a
+    neighbouring row's six columns including slot 0 - which the draw then accepted as this
+diff --git a/docs/FORMATS.md b/docs/FORMATS.md
+index 53eaf9b..c1987bd 100644
+--- a/docs/FORMATS.md
++++ b/docs/FORMATS.md
+@@ -351,7 +351,7 @@ print(total, sets)
+   appears once the walk runs *past* `num_polys` (into the next model or other
+   data), so the real caveat is to **bound the walk**, not that the stream is
+   compressed. Driver 1's car models use the same encoding; see
+-  `MODS/d1cars/docs/DRIVER1.md`.
++  `MODS/bake/docs/DRIVER1.md`.
+ - City car sets live in the low numbers (**10..68** across all four cities), so set
+   indices **110+ are free** and safe to re-index an imported page onto.
+ - `LUMP_TEXTUREINFO` (type **34**, DATA1) is **not** "a count then entries". The layout
+diff --git a/docs/PALETTES.md b/docs/PALETTES.md
+index a5a5eab..90d29eb 100644
+--- a/docs/PALETTES.md
++++ b/docs/PALETTES.md
+@@ -531,7 +531,7 @@ The row is now left empty and reported. Empty is already handled end to end:
+ * `CarClutLookup` falls back to the group's slot 0, never to the framebuffer.
+ 
+ This is only reachable because a bake never numbers a car page 0 any more (see
+-`d1cars/docs/DRIVER1.md`): with the sentinel set back, the pin takes every set a model names,
++`bake/docs/DRIVER1.md`): with the sentinel set back, the pin takes every set a model names,
+ so slot 0 is always filled. Verified: a RIO level importing CHICAGO model 8 passes all three
+ `crosscheck.py` invariants, INV3 included (its CLUT rows still MATCH `CHICAGO.LEV`), and
+ `cardump.py` reports those pages as "only the page's own CLUT applies (no leak)".
+diff --git a/tools/bigrig_extract.py b/tools/bigrig_extract.py
+index d88a88f..787b4aa 100644
+--- a/tools/bigrig_extract.py
++++ b/tools/bigrig_extract.py
+@@ -46,7 +46,7 @@ sys.path.insert(0, HERE)
+ # The page decoder (decomp_asm + the CLUT unpacking) lives in the Driver 1 car tools,
+ # where it was written to read exactly these page entries. Optional: without it the
+ # geometry and cosmetics still come out, only the page PNGs are skipped.
+-D1_TOOLS = os.path.abspath(os.path.join(HERE, "..", "..", "d1cars", "tools"))
++D1_TOOLS = os.path.abspath(os.path.join(HERE, "..", "..", "bake", "tools", "car"))
+ if os.path.isdir(D1_TOOLS):
+     sys.path.insert(0, D1_TOOLS)
+ 
+diff --git a/tools/slotmap.py b/tools/slotmap.py
+index 8c478dd..0b8e2de 100644
+--- a/tools/slotmap.py
++++ b/tools/slotmap.py
+@@ -32,7 +32,7 @@ import sys
+ 
+ HERE = os.path.dirname(os.path.abspath(__file__))
+ LCF_DIR = os.path.abspath(os.path.join(
+-    HERE, "..", "..", "..", "MODS", "d1cars", "tools", "out", "lcf"))
++    HERE, "..", "..", "..", "MODS", "bake", "tools", "car", "out", "lcf"))
+ 
+ D2_CITIES = ("CHICAGO", "HAVANA", "VEGAS", "RIO")
+ # Driver 2's own model numbers - the ones its four cities ship and its frontend
+-- 
+2.43.0
+

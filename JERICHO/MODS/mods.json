@@ -15,7 +15,7 @@
       "name": "mp",
       "path": "JERICHO/MODS/mp",
       "repo": "https://github.com/Njurse/JERICHO-Mod-MP.git",
-      "ref": "27beaa7fa43d712b2ad2ce75b0b1ce46d3825810",
+      "ref": "7f8e0ef6e7ae0bf5387130fa69dc71d896cc28cc",
       "branch": "main",
       "required": true,
       "release": true
@@ -44,7 +44,7 @@
       "repo": "https://github.com/Njurse/JERICHO-D1.git",
       "ref": "a68bc810f40cce6c06e93ec767168c069057e71c",
       "branch": "betamiami",
-      "required": false,
+      "required": true,
       "release": true,
       "_note": "Driver 1 bake toolkit. Its folder is excluded from the build mirror (JER_MIRROR_EXCLUDE); CI packages only its tools."
     },
@@ -71,7 +71,7 @@
       "name": "civviecops",
       "path": "JERICHO/MODS/civviecops",
       "repo": "https://github.com/Njurse/JERICHO-Mod-CivvieCops.git",
-      "ref": "2e53b19e1958ec114bf2e06bc64db54463d5b7b7",
+      "ref": "15049c51366defc41c7bccb4d2c285d6ba136263",
       "branch": "main",
       "required": false,
       "release": false

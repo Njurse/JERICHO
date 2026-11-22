@@ -269,8 +269,57 @@ def check_sdk_mirror():
             fail("sdk", "%s has no counterpart in the engine - is it stale?" % path)
 
 
+
+# 6. renamed module ids
+# ---------------------------------------------------------------------------
+# A module that is renamed leaves its old id behind in paths, manifests and
+# configs, and those break things, not just prose: the dedi example config kept
+# requiring `d1cars` after it became `bake`, so it refused every client. Only the
+# forms that a tool or a config would act on are flagged: a MODS/<old> path,
+# <old>/tools or <old>/docs, and the quoted id. History and "formerly <old>"
+# prose are left alone.
+RENAMED_IDS = {"d1cars": "bake"}
+
+
+def renamed_id_patterns(old):
+    return re.compile(r"(MODS[/\\]+%s\b|\b%s[/\\](tools|docs)\b|[\"']%s[\"'])"
+                      % (old, old, old))
+
+
+def check_renames():
+    for old, new in RENAMED_IDS.items():
+        pattern = renamed_id_patterns(old)
+        for path in git_ls("*"):
+            if path.startswith(("libs/", "docs/patches/")) or path in ("CHANGELOG.md", "docs/FIX_PLAN.md", "tools/doccheck.py"):
+                continue
+            full = os.path.join(ROOT, path)
+            if not os.path.isfile(full) or os.path.getsize(full) > 2_000_000:
+                continue
+            try:
+                text = read(path)
+            except OSError:
+                continue
+            for n, line in enumerate(text.splitlines(), 1):
+                if pattern.search(line):
+                    fail("renamed-id", "%s:%d uses the retired id '%s' (now '%s')" % (path, n, old, new))
+
+        # The fetched mod submodules are other repositories: report what they still
+        # carry, but do not fail this tree on it (fix it there, then bump the pin).
+        for sub in submodule_paths():
+            if not os.path.isdir(os.path.join(ROOT, sub, ".git")) and \
+               not os.path.isfile(os.path.join(ROOT, sub, ".git")):
+                continue
+            out = subprocess.run(["git", "-C", os.path.join(ROOT, sub), "grep", "-nIE",
+                                  pattern.pattern], capture_output=True, text=True).stdout
+            hits = [l for l in out.splitlines() if l]
+            if hits:
+                print("doccheck: note: %s still uses '%s' in %d place(s) (fix upstream), e.g. %s"
+                      % (sub, old, len(hits), hits[0][:120]))
+
+
 def main():
-    for check in (check_links, check_events, check_index, check_claims, check_sdk_mirror):
+    for check in (check_links, check_events, check_index, check_claims, check_sdk_mirror,
+                  check_renames):
         check()
 
     if failures:
@@ -280,7 +329,7 @@ def main():
         return 1
 
     print("doccheck: OK - links resolve, every event is documented, every doc is indexed, "
-          "the SDK headers mirror the engine's, and the counted claims match the code")
+          "the SDK headers mirror the engine's, no retired module ids, and the counted claims match the code")
     return 0
 
 

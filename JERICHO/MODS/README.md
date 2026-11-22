@@ -42,7 +42,7 @@ release carries each branch tip. To change what CI ships, run `--pin` and commit
 
 ## A mod that is not there must not build a smaller game
 
-`mp`, `carhacks` and `crumple` are **required**. If one is missing the build
+`mp`, `carhacks`, `crumple` and `bake` are **required**. If one is missing the build
 stops, twice over:
 
 * `premake5.lua` errors at generation — `mp is its own repository and was not
@@ -51,6 +51,8 @@ stops, twice over:
   or a plain `msbuild` run cannot skip it.
 
 `gaildrv2` is not on that list: it is hibernated and is not part of this tree.
+(`bake`, formerly `d1cars`, used to be exempt too; it is a release mod now, so it
+is required.)
 
 ## Conventions
 

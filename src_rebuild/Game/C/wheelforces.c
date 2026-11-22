@@ -16,6 +16,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "handling_probe.h"	// JERICHO: "my car is way too fast" measurement (env-gated, inert)
+#include "models.h"	// JERICHO: JerCarSlotDrive (bank drive-wheel override)
 
 #define GRAVITY_FORCE		(-7456)			// D1 has -10922
 
@@ -135,6 +136,27 @@ void GetFrictionScalesDriver1(CAR_DATA* cp, CAR_LOCALS* cl, int* frontFS, int* r
 	}
 
 	*rearFS = 0x780 - *frontFS;
+
+	// JERICHO: stock wheelspin is a rear-drive burnout - the +600 above moves the
+	// lateral grip to the front and the rear lets go. A bank drive override puts
+	// that on the driven axle instead: front-drive swaps the split, all-wheel
+	// drive undoes the shift. No override = stock.
+	if (cp->wheelspin != 0)
+	{
+		int drive = JerCarSlotDrive(cp->ap.model);
+
+		if (drive == 1)
+		{
+			int fs = *frontFS;
+			*frontFS = *rearFS;
+			*rearFS = fs;
+		}
+		else if (drive == 3)
+		{
+			*frontFS -= 600;
+			*rearFS += 600;
+		}
+	}
 
 	if (cp->wheelspin != 0)
 	{
@@ -262,6 +284,7 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 	CAR_COSMETICS* car_cos;
 	int player_id;
 	int oldCutRoughness;
+	int drive;	// JERICHO: bank drive-wheel override, 0 = stock rule
 
 	oldSpeed = cp->hd.speed * 3 >> 1;
 
@@ -280,6 +303,7 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 
 	player_id = GetPlayerId(cp);
 	car_cos = &car_cosmetics[cp->ap.model];
+	drive = JerCarSlotDrive(cp->ap.model);
 	oldCutRoughness = gInGameCutsceneActive && gCurrentMissionNumber == 23 && gInGameCutsceneID == 0; // [A] hack moved here
 
 	GetFrictionScalesDriver1(cp, cl, &frontFS, &rearFS);
@@ -569,8 +593,13 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 					if (handlingType[cp->hndType].autoBrakeOn != 0 && 0 < sidevel * cp->wheel_angle)
 						cp->hd.autoBrake = -1;
 
-					force.vx = -lfz * cp->thrust;
-					force.vz = lfx * cp->thrust;
+					// JERICHO: stock always drives the rear; a bank override
+					// drives it only when bit1 (rear) is set
+					if (drive == 0 || (drive & 2))
+					{
+						force.vx = -lfz * cp->thrust;
+						force.vz = lfx * cp->thrust;
+					}
 				}
 				else
 				{
@@ -596,7 +625,9 @@ void AddWheelForcesDriver1(CAR_DATA* cp, CAR_LOCALS* cl)
 				}
 				else
 				{
-					if (cp->controlType == CONTROL_TYPE_PURSUER_AI)
+					// JERICHO: stock drives the front only for pursuer AI; a bank
+					// override drives it when bit0 (front) is set, same force
+					if (drive == 0 ? cp->controlType == CONTROL_TYPE_PURSUER_AI : (drive & 1))
 					{
 						force.vx = sdx * cp->thrust;
 						force.vz = sdz * cp->thrust;

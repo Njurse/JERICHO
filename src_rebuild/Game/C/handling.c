@@ -26,6 +26,7 @@
 #include "shadow.h"
 #include "players.h"
 #include "overlay.h"
+#include "models.h"	// JERICHO: JerCarSlotDrive (bank drive-wheel override)
 
 struct BOUND_BOX
 {
@@ -987,6 +988,20 @@ void StepCarPhysics(CAR_DATA* cp)
 	car_id = CAR_INDEX(cp);
 
 	frontWheelSpeed = cp->hd.wheel_speed / 256;
+	backWheelSpeed = frontWheelSpeed;
+
+	// JERICHO: a burnout spins the driven axle - the rear in stock, or what the
+	// bank's drive override names (JerCarSlotDrive)
+	if (cp->wheelspin != 0)
+	{
+		int drive = JerCarSlotDrive(cp->ap.model);
+
+		if (drive == 0 || (drive & 2))
+			backWheelSpeed = 700;
+
+		if (drive & 1)
+			frontWheelSpeed = 700;
+	}
 
 	if (cp->hd.wheel[0].locked == 0)
 	{
@@ -996,11 +1011,6 @@ void StepCarPhysics(CAR_DATA* cp)
 
 	if (cp->hd.wheel[3].locked == 0)
 	{
-		backWheelSpeed = frontWheelSpeed;
-
-		if (cp->wheelspin != 0)
-			backWheelSpeed = 700;
-
 		BackWheelRotation[car_id] += backWheelSpeed;
 		BackWheelRotation[car_id] &= 0xfff;
 	}
@@ -1692,11 +1702,18 @@ void CheckCarEffects(CAR_DATA* cp, int player_id)
 
 		const int front_wh = 0x1 | 0x4;
 		const int rear_wh = 0x2 | 0x8;
-		if ((wheels_on_ground & 10) && (rear_vel > 15000 || cp->wheelspin))
+
+		// JERICHO: burnout tracks/smoke/screech follow the driven axle (stock:
+		// the rear; a bank drive override can name the front, or both)
+		int drive = cp->wheelspin ? JerCarSlotDrive(cp->ap.model) : 0;
+		int spinRear = cp->wheelspin && (drive == 0 || (drive & 2));
+		int spinFront = cp->wheelspin && (drive & 1);
+
+		if ((wheels_on_ground & 10) && (rear_vel > 15000 || spinRear))
 		{
 			lay_down_tracks |= 1;
 
-			if (cp->wheelspin == 0)
+			if (spinRear == 0)
 				skidsound = (rear_vel - 11100) / 2 + 1;
 			else
 				skidsound = 13000;
@@ -1705,9 +1722,12 @@ void CheckCarEffects(CAR_DATA* cp, int player_id)
 				skidsound = 13000;
 		}
 		
-		if ((wheels_on_ground & 5) && front_vel > 15000)
+		if ((wheels_on_ground & 5) && (front_vel > 15000 || spinFront))
 		{
 			lay_down_tracks |= 2;
+
+			if (spinFront)
+				skidsound = 13000;
 		}
 
 		tracks_and_smoke = (player_id < MAX_TYRE_TRACK_PLAYERS) && !(cp->hd.wheel[1].surface & 0x8) && !(cp->hd.wheel[3].surface & 0x8);

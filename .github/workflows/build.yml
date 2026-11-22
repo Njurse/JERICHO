@@ -80,8 +80,33 @@ jobs:
       - name: Docs are consistent (links, events, indexed, counted claims)
         run: python tools/doccheck.py
 
+      # ...and the retired-id check really fails: plant a retired-id path, expect red.
+      - name: Docs check catches a retired module id (planted fault)
+        shell: bash
+        run: |
+          old=d1; old="${old}cars"   # spelled in parts so this file passes the check itself
+          echo "run JERICHO/MODS/$old/tools/bake.py" >> docs/README.md
+          if python tools/doccheck.py; then
+            echo "::error::doccheck passed a planted $old path"; exit 1
+          fi
+          # doccheck exits 1 here by design; under pipefail a plain pipe into grep
+          # would fail the step even when the message is right, so capture first.
+          out=$(python tools/doccheck.py 2>&1 || true)
+          grep -q "retired id '$old'" <<<"$out"
+          git checkout -- docs/README.md
+
       # The Release configuration compiles from the generated registry. A release
       # set that names a mod the registry does not would ship without it.
+      # jer_registry.c is generated, not tracked: generate it the way every build
+      # does (premake needs no PsyCross for this) and check what came out.
+      - name: Generate the module registry (premake gmake2)
+        run: |
+          curl -fL https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-linux.tar.gz -o premake5.tar.gz
+          echo '074fc07be17888ef41ca07eea1c527c390a04ea4550bf7962eeb0bea0cc9d2f5  premake5.tar.gz' | sha256sum -c -
+          tar xf premake5.tar.gz -C src_rebuild
+          chmod +x src_rebuild/premake5
+          (cd src_rebuild && ./premake5 gmake2)
+
       - name: Release mods (set, manifests and generated registry agree)
         run: python3 tools/check_release_mods.py
 
@@ -641,10 +666,17 @@ jobs:
               # the link rule, and the mirror inside it, actually re-runs.
               case "$cfg" in release_dev_x64) bincfg=Release_dev ;; *) bincfg=Release ;; esac
               rm -f "../bin/$bincfg/jericho" "../bin/$bincfg/JERICHO" "../bin/$bincfg/JERICHO_dev"
-              make config=$cfg -j1 2>&1 | grep -v '^==== ' | tail -10 | while IFS= read -r line; do
-                [ -n "$line" ] && echo "::error title=$cfg::${line}"
-              done
-              rc=${PIPESTATUS[0]}
+              make config=$cfg -j1 > "/tmp/make-$cfg-serial.log" 2>&1
+              rc=$?
+              # Annotate only a retry that FAILED: a green retry used to post its
+              # last lines as ::error, painting a successful build red.
+              if [ "$rc" -ne 0 ]; then
+                grep -v '^==== ' "/tmp/make-$cfg-serial.log" | tail -10 | while IFS= read -r line; do
+                  [ -n "$line" ] && echo "::error title=$cfg::${line}"
+                done
+              else
+                tail -3 "/tmp/make-$cfg-serial.log"
+              fi
             fi
             set -e
             if [ "$rc" -ne 0 ]; then
@@ -653,6 +685,13 @@ jobs:
             fi
             echo "::endgroup::"
           done
+
+      # The runtime's own logic, without game data: links the built runtime library
+      # into small test programs (src_rebuild/Game/C/JERICHO/test/).
+      - name: JERICHO runtime tests (Linux)
+        run: |
+          src_rebuild/Game/C/JERICHO/test/run_tests.sh Release
+          src_rebuild/Game/C/JERICHO/test/run_tests.sh Release_dev
 
       - name: Host API export (Linux)
         run: |

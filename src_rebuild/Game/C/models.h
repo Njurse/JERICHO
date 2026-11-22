@@ -92,7 +92,7 @@ void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub);
 int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigned char* colors);
 int CarImportWheelPaletteRow(int city, int cluts);
 int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub);
-void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow);
+void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow);
 void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow);
 
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
@@ -202,6 +202,10 @@ int JerPoliceVoiceCity(int sourceCity);
 unsigned JerCityPoliceModels(int city);
 int JerCarIsPolice(int city, int model);
 int JerCarSlotIsPolice(int slot);
+
+// JERICHO: the bank's drive-wheel override for the car in resident slot `slot`
+// (LUMP_CAR_DRIVE, 205): 0 = stock rule, else bit0 front / bit1 rear axle driven.
+int JerCarSlotDrive(int slot);
 
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).

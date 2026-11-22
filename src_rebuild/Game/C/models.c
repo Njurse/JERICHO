@@ -243,6 +243,7 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
 #define CAR_IMPORT_LUMP_SIRENS	202	// JERICHO: per-model cop flags (the D1 bake)
 #define CAR_IMPORT_LUMP_POLICE_VOICES	203	// JERICHO: the city's police radio lines (bake declare.police_voices)
+#define CAR_IMPORT_LUMP_DRIVE	205	// JERICHO: per-model drive-wheel override (bank handling.driveWheels)
 #define CAR_IMPORT_POLICE_VOICE_COUNT	17	// 6 directions + 11 chatter, the order D2's two phrase banks load in
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
@@ -289,6 +290,7 @@ typedef struct
 	char* carSounds;	// LUMP_CAR_SOUNDS body, or NULL (no embedded car sounds)
 	int carSoundsSize;
 	unsigned carSirenMask;	// bit N = model N is a cop car (LUMP_CAR_SIRENS)
+	unsigned char carDrive[CAR_IMPORT_MODEL_SLOTS];	// LUMP_CAR_DRIVE: 0 = stock, else bit0 front / bit1 rear
 	char* policeVoices;	// LUMP_POLICE_VOICES body, or NULL (no baked police lines)
 	int policeVoicesSize;
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
@@ -592,6 +594,27 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 		{
 			if ((unsigned char)sirens[s])
 				imp->carSirenMask |= 1u << s;
+		}
+	}
+
+	// JERICHO: per-model drive-wheel override (bank handling.driveWheels). Optional;
+	// absent or short = 0 for the missing models, and the slot keeps the stock rule
+	// (AddWheelForcesDriver1). FreeCarImport's memset clears it with the bank.
+	{
+		char* drive = NULL;
+		int driveSize = 0;
+		int s;
+
+		memset(imp->carDrive, 0, sizeof(imp->carDrive));
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_DRIVE, &drive, &driveSize);
+
+		for (s = 0; drive != NULL && s < CAR_IMPORT_MODEL_SLOTS && s < driveSize; s++)
+		{
+			imp->carDrive[s] = (unsigned char)drive[s] & 3;
+
+			if (imp->carDrive[s])
+				printInfo("carimport: %s model %d drive override %d (%s)\n", levPath, s, imp->carDrive[s],
+					imp->carDrive[s] == 1 ? "front" : imp->carDrive[s] == 2 ? "rear" : "all");
 		}
 	}
 
@@ -2414,6 +2437,26 @@ int JerCarSlotIsPolice(int slot)
 	return JerCarIsPolice(city, model);
 }
 
+// JERICHO: the drive-wheel override (LUMP_CAR_DRIVE, 205) of the car in resident
+// slot `slot`, from that slot's source city: 0 = none (stock rule), else bit0 =
+// front axle driven, bit1 = rear. The level's own cars and unheld cities answer 0.
+// Never loads anything: AddWheelForcesDriver1 calls it once per car per step.
+int JerCarSlotDrive(int slot)
+{
+	int model, city;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	model = residentCarModels[slot];
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || !CarImportCityHeld(city))
+		return 0;
+
+	return gCarImports[city].carDrive[model];
+}
+
 // JERICHO: `city`'s baked police radio lines (LUMP_POLICE_VOICES, 203), or 0 when
 // the city is not held or has no valid segment. The body is a D2 dynamic bank
 // (int num_samples, SAMPLE_DATA[num_samples], payload) of exactly
@@ -3555,8 +3598,10 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	 * Trust it as authoritative: it is the row the sprite was quantised
 	 * against, and the smoothness search below can disagree (CIVICOPS set 58:
 	 * assigned rows 27/28, search picked 29). A record with no valid assigned
-	 * row falls through to the search. */
-	if (wt->clut >= 0 && wt->clut < npal)
+	 * row falls through to the search. Baked cities only: a vanilla Driver 2
+	 * city's WHLCLEAN/WHLBOTH record (BuildD2WheelTextureRects) leaves clut 0
+	 * as "unset", and trusting it painted the wheel with page row 0. */
+	if (city >= CITY_D2_COUNT && wt->clut >= 0 && wt->clut < npal)
 	{
 		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) uses bake-assigned row %d\n",
 			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, wt->clut);
@@ -3707,13 +3752,14 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 // blur). A host whose FASTWHEEL polys are semi-transparent (CHICAGO) hid it by
 // blending; HAVANA's are opaque and drew it. Give the fast variant a copy of the
 // tyre row with its background cleared to 0x0000 (transparent).
-void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
+void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow)
 {
 	CAR_WHEEL_REC* rec;
+	CAR_WHEEL_REC* dam;
 	JER_WHEEL_TEX* wt;
 	static unsigned char* sUnpacked = NULL;
 	unsigned short row[16];
-	int npal, cu[4], cv[4], votes[16] = { 0 }, i, bg = 0, clut;
+	int npal, cu[4], cv[4], votes[16] = { 0 }, i, bg = 0, clut, srcRow;
 
 	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4)
 		return;
@@ -3750,7 +3796,7 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 
 	wt = &rec->tex;
 
-	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
 		return;
 
 	if (wt->u0 < 0 || wt->v0 < 0 || wt->u1 > 256 || wt->v1 > 256 || wt->u1 <= wt->u0 || wt->v1 <= wt->v0)
@@ -3779,15 +3825,35 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		if (votes[i] > votes[bg])
 			bg = i;
 
-	/* A baked wheel carrier's tex.clut is a texture id, not a page row. Using
-	 * it copied page row 0 - the car's body palette - and is why the VEGAS
-	 * fast wheel came out in body colours. The clean tyre row derived from
-	 * the page is the right base; clear the fast sprite's background in a
-	 * fast-only copy of that row. */
-	memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+	/* The bake writes this island's page row into poly 2's texture id, the
+	 * same field CarImportDeriveWheelPaletteRow trusts for the hubcap and
+	 * tyre. Use it when it is a real page row. A fast sprite that shares the
+	 * damaged island (byte-identical png) has no assigned row of its own:
+	 * its pixels were quantised for the hubcap row, so use hubRow when the
+	 * fast rect matches the damaged face or hub rect. Fall back to the clean
+	 * tyre row only when neither is available. */
+	srcRow = tyreRow;
+	dam = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_DAMAGED);
+	if (hubRow >= 0 && hubRow < npal && dam != NULL && dam->present &&
+		((wt->u0 == dam->tex.u0 && wt->v0 == dam->tex.v0 &&
+		  wt->u1 == dam->tex.u1 && wt->v1 == dam->tex.v1) ||
+		 (wt->u0 == dam->tex.hubU0 && wt->v0 == dam->tex.hubV0 &&
+		  wt->u1 == dam->tex.hubU1 && wt->v1 == dam->tex.hubV1)))
+	{
+		srcRow = hubRow;
+	}
+	else if (wt->clut >= 0 && wt->clut < npal)
+	{
+		srcRow = wt->clut;
+	}
+
+	if (srcRow < 0 || srcRow >= npal)
+		return;
+
+	memcpy(row, page + 4 + srcRow * 32, sizeof(row));
 
 	printInfo("cross-city: %s fast wheel sprite (%d,%d)-(%d,%d) row %d, background index %d is %04x - cleared in a fast-only row\n",
-		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, tyreRow, bg, row[bg]);
+		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, srcRow, bg, row[bg]);
 
 	row[bg] = 0;
 	clut = CarImportReserveWheelPalette(city, sourceSet, 2, (const unsigned char*)row);
@@ -4033,6 +4099,9 @@ static int BuildD2WheelTextureRects(int city)
 	}
 
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->present = 1;
+	// JERICHO: the draw asks tex.present (GetCarImportWheelTexFor), not the record's
+	// present - left 0, every vanilla D2 car drew the host's wheels
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.present = 1;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.set = cleanSet;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.clut = 0;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.u0 = cleanU0;
@@ -4050,6 +4119,7 @@ static int BuildD2WheelTextureRects(int city)
 	 * poly from WHLBOTH. Using WHLBOTH for the whole wheel is what garbled
 	 * the tyre (a hubcap image stretched over it). */
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->present = 1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.present = 1;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.set = cleanSet;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.clut = 0;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.u0 = cleanU0;

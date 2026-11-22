@@ -83,8 +83,14 @@ def is_runtime_dll(mod):
 
 def main():
     premake = read(PREMAKE)
+    if premake is None:
+        return 1
+    if not os.path.exists(REGISTRY):
+        print("check_release_mods: %s is generated, not tracked; run `./premake5 gmake2` "
+              "(or vs2019) in src_rebuild first" % os.path.relpath(REGISTRY, ROOT), file=sys.stderr)
+        return 1
     registry = read(REGISTRY)
-    if premake is None or registry is None:
+    if registry is None:
         return 1
 
     wanted = release_set(premake)
