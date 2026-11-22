@@ -1944,8 +1944,15 @@ static int CarImportDstSetCore(int set, int city)
 
 	free = FindFreeSetIndex();
 
+	// no room: keep the host's page for this part, as before. The pins refuse an
+	// unremapped host set (CarImportPinIsHostSet), so the host page is never overwritten.
 	if (free == 0 || sRemapCount >= CAR_REMAP_MAX)
-		return set;			// no room: keep the host's page for this part, as before
+	{
+		printInfo("carimport: %s set %d -> no free import index (host reserved: %s) - the part keeps the host page\n",
+			(city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", set,
+			HostUsesTPage(set) ? HostUseReason(set) : "another guest city");
+		return set;
+	}
 
 	sRemapFrom[sRemapCount] = set;
 	sRemapTo[sRemapCount] = free;
@@ -1956,8 +1963,9 @@ static int CarImportDstSetCore(int set, int city)
 	if (sReservedCount < CAR_REMAP_MAX)
 		sReservedSet[sReservedCount++] = free;	// keep the next set out of it
 
-	printInfo("cross-city: set %d (city %d) is the level's or another city's - re-indexed to %d for the imported car (decided once, so the bake and the pin agree)\n",
-		set, city, free);
+	printInfo("carimport: %s set %d -> %d (host reserved: %s; host sets 0..%d; decided once, so the bake and the pin agree)\n",
+		(city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", set, free,
+		HostUsesTPage(set) ? HostUseReason(set) : "another guest city", tpage_amount - 1);
 
 	return free;
 }
@@ -1973,6 +1981,14 @@ int CarImportDstSet(int set)
 int CarImportPinDstSet(int set, int city)
 {
 	return CarImportDstSetCore(set, city);
+}
+
+// JERICHO: the invariant every pin checks before it writes texture_pages[dst]: an
+// import may never land on a set the host draws with. Only true when the remap ran
+// out of room and handed the host's own number back.
+static int CarImportPinIsHostSet(int set, int dst)
+{
+	return dst == set && HostUsesTPage(set);
 }
 
 
@@ -3198,6 +3214,14 @@ int JerPedPinTpages(int city, const int* sets, int count)
 			 * pages. Read that page from Havana's spool and place it now. */
 			dst = CarImportPinDstSet(sets[i], city);
 
+			if (CarImportPinIsHostSet(sets[i], dst))
+			{
+				printInfo("ped import: %s set %d refused - host reserved (%s) and no import index\n",
+					LevelNames[city], sets[i], HostUseReason(sets[i]));
+				sJerPedPinFailed = 1;
+				continue;
+			}
+
 			if (JerPedAreaPage(city, sets[i], dst))
 			{
 				sJerPedPinsRecorded++;
@@ -3211,6 +3235,14 @@ int JerPedPinTpages(int city, const int* sets, int count)
 		}
 
 		dst = CarImportPinDstSet(sets[i], city);
+
+		if (CarImportPinIsHostSet(sets[i], dst))
+		{
+			printInfo("ped import: %s set %d refused - host reserved (%s) and no import index\n",
+				LevelNames[city], sets[i], HostUseReason(sets[i]));
+			sJerPedPinFailed = 1;
+			continue;
+		}
 
 		sPinForcePool = 1;
 		CarPinRecord(sets[i], dst, offset, size, -1, city, CarPinOwnerBit(JER_PED_PIN_OWNER));
@@ -3363,6 +3395,13 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 
 	if (dstSet < 0 || dstSet >= 128)
 		return 0;
+
+	if (CarImportPinIsHostSet(set, dstSet))
+	{
+		printInfo("ped import: baked set %d refused - host reserved (%s) and no import index\n",
+			set, HostUseReason(set));
+		return 0;
+	}
 
 	/* A permanent page from the archive: the engine's own LoadTPageAndCluts
 	 * layout (ncluts, CLUT rows, compressed 64x256 image). */
@@ -5117,6 +5156,13 @@ void LoadImportedTPages(void)
 		// Making the choice twice is what left a special body's third set baked as the
 		// host's index while the pin filled a different one.
 		dstSet = CarImportPinDstSet(set, sc);
+
+		if (CarImportPinIsHostSet(set, dstSet))
+		{
+			printInfo("carimport: %s set %d refused - host reserved (%s) and no import index; the host page is kept\n",
+				LevelNames[sc], set, HostUseReason(set));
+			continue;
+		}
 
 		if (dstSet != set)
 		{

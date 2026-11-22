@@ -1929,7 +1929,14 @@ static void HostWheelRects(void)
 // stretching each poly's own UV box over the whole source sprite - which drew
 // every thin tread strip as the full wheel image squashed (the noisy wedges).
 // A poly outside both host sprites keeps the old per-poly stretch.
-static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4])
+// JERICHO: the host's FAST and DAMAGED wheels sample WHLBOTH (host rect 1), the
+// clean one WHLCLEAN (rect 0). A poly in host rect 1 therefore maps onto the
+// SOURCE WHLBOTH (the record's hub rect), not its WHLCLEAN - mapping every poly
+// onto the clean sprite is why an imported D2 car's fast wheel never blurred.
+// A bake bank's fast/damaged record has hub rect == its own sprite, so nothing
+// changes for it. Returns 2 when the poly went onto a DISTINCT hub rect (the
+// caller then uses the hub CLUT row), else 0, or -1 for the per-poly stretch.
+static int MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4])
 {
 	UV_INFO host[4] = { src->uv0, src->uv1, src->uv3, src->uv2 };
 	int hu0 = host[0].u, hu1 = host[0].u;
@@ -1951,7 +1958,7 @@ static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4
 	for (k = 0; k < 2; k++)
 	{
 		const int* hr = sHostWheelRect[k];
-		int hw, hh, j;
+		int hw, hh, j, onHub;
 
 		if (!sHostWheelHave[k] || hu0 < hr[0] || hv0 < hr[1] || hu1 > hr[2] || hv1 > hr[3])
 			continue;
@@ -1959,16 +1966,30 @@ static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4
 		hw = hr[2] - hr[0];
 		hh = hr[3] - hr[1];
 
-		for (j = 0; j < 4; j++)
 		{
-			int u = r->u0 + (((int)host[j].u - hr[0]) * rw) / (hw ? hw : 1);
-			int v = r->v0 + (((int)host[j].v - hr[1]) * rh) / (hh ? hh : 1);
+			int tu0 = r->u0, tv0 = r->v0, tw = rw, th = rh;
+			onHub = (k == 1 && r->hubU1 > r->hubU0 && r->hubV1 > r->hubV0 &&
+				(r->hubU0 != r->u0 || r->hubV0 != r->v0));
 
-			out[j].u = (u_char)(u > 255 ? 255 : u);
-			out[j].v = (u_char)(v > 255 ? 255 : v);
+			if (onHub)
+			{
+				tu0 = r->hubU0;
+				tv0 = r->hubV0;
+				tw = r->hubU1 - r->hubU0;
+				th = r->hubV1 - r->hubV0;
+			}
+
+			for (j = 0; j < 4; j++)
+			{
+				int u = tu0 + (((int)host[j].u - hr[0]) * tw) / (hw ? hw : 1);
+				int v = tv0 + (((int)host[j].v - hr[1]) * th) / (hh ? hh : 1);
+
+				out[j].u = (u_char)(u > 255 ? 255 : u);
+				out[j].v = (u_char)(v > 255 ? 255 : v);
+			}
 		}
 
-		return;
+		return onHub ? 2 : 0;
 	}
 
 	for (k = 0; k < 4; k++)
@@ -1979,15 +2000,20 @@ static void MapWheelUVToRect(POLYFT4* src, const JER_WHEEL_TEX* r, UV_INFO out[4
 		out[k].u = (u_char)(r->u0 + (((int)host[k].u - hu0) * rw) / (hu ? hu : 1));
 		out[k].v = (u_char)(r->v0 + (((int)host[k].v - hv0) * rh) / (hv ? hv : 1));
 	}
+
+	return -1;
 }
+
+// JERICHO: once-per-level wheel CLUT log masks; file scope so DrawCarWheels can
+// re-arm them when a slot is hot-swapped to a different car
+static int sClutLogLevel = -1;
+static unsigned int sClutLogMask;
+static unsigned int sClutFallbackMask;
 
 // [D] [T]
 void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect, SVECTOR* verts, int transparent, int wheelnum, int importModel, int variant)
 {
 	static const char* sVariantName[CAR_IMPORT_WHEEL_VARIANTS] = { "clean", "damaged", "fast" };
-	static int sClutLogLevel = -1;
-	static unsigned int sClutLogMask;
-	static unsigned int sClutFallbackMask;
 	ushort clut;
 	ushort tpage;
 	int i;
@@ -2186,7 +2212,9 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 					if (clutId > 31)
 						clutId = 0;
 
-					MapWheelUVToRect(src, &use, out);
+					/* a poly mapped onto WHLBOTH (host rect 1) takes the hub row */
+					if (MapWheelUVToRect(src, &use, out) == 2)
+						isD2Hubcap = 1;
 
 					/* WHLCLEAN (tyre) and WHLBOTH (hubcap) are separate sprites
 					 * and need not share a CLUT row; each has its own reserved row. */
@@ -2430,21 +2458,30 @@ void DrawCarWheels(CAR_DATA *cp, MATRIX *RearMatrix, VECTOR *pos, int zclip)
 		 * "wheels - clean/damaged/fast" line records which variants came
 		 * across. */
 
-		/* One line per resident slot per level: host mesh, imported or host
-		 * texture. A D2 city with no named wheel data lands here as "host". */
+		/* One line per resident slot per level and per car in it (a hot-swap
+		 * puts a different city/model in the same slot): host mesh, imported or
+		 * host texture. A D2 city with no named wheel data lands here as "host". */
 		{
 			static int sWheelLogLevel = -1;
-			static unsigned int sWheelLogMask;
+			static int sWheelLogKey[32];
+			// ...and again when the answer changes: a hot-loaded page is pinned at draw
+			// time, so the first frame can still be "host" before it is resident
+			int logKey = ((wheelCity + 1) * 256 + (residentCarModels[cp->ap.model] & 0xff) + 1) * 2 +
+				((WheelTexClean != NULL || WheelTexCleanRect.present) ? 1 : 0);
 
 			if (sWheelLogLevel != GameLevel)
 			{
 				sWheelLogLevel = GameLevel;
-				sWheelLogMask = 0;
+				memset(sWheelLogKey, 0, sizeof(sWheelLogKey));
 			}
 
-			if ((sWheelLogMask & (1u << cp->ap.model)) == 0)
+			if (cp->ap.model < 32 && sWheelLogKey[cp->ap.model] != logKey)
 			{
-				sWheelLogMask |= 1u << cp->ap.model;
+				sWheelLogKey[cp->ap.model] = logKey;
+
+				/* the per-variant CLUT lines (above) describe the new car too */
+				sClutLogMask = 0;
+				sClutFallbackMask = 0;
 
 				if (WheelTexClean != NULL || WheelTexCleanRect.present)
 					printInfo("[car wheels] slot %d (%s): host mesh, imported textures (clean %s, damaged %s, fast %s)\n",

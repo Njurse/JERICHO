@@ -3598,8 +3598,10 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	 * Trust it as authoritative: it is the row the sprite was quantised
 	 * against, and the smoothness search below can disagree (CIVICOPS set 58:
 	 * assigned rows 27/28, search picked 29). A record with no valid assigned
-	 * row falls through to the search. */
-	if (wt->clut >= 0 && wt->clut < npal)
+	 * row falls through to the search. Baked cities only: a vanilla Driver 2
+	 * city's WHLCLEAN/WHLBOTH record (BuildD2WheelTextureRects) leaves clut 0
+	 * as "unset", and trusting it painted the wheel with page row 0. */
+	if (city >= CITY_D2_COUNT && wt->clut >= 0 && wt->clut < npal)
 	{
 		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) uses bake-assigned row %d\n",
 			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, wt->clut);
@@ -4097,6 +4099,9 @@ static int BuildD2WheelTextureRects(int city)
 	}
 
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->present = 1;
+	// JERICHO: the draw asks tex.present (GetCarImportWheelTexFor), not the record's
+	// present - left 0, every vanilla D2 car drew the host's wheels
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.present = 1;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.set = cleanSet;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.clut = 0;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.u0 = cleanU0;
@@ -4114,6 +4119,7 @@ static int BuildD2WheelTextureRects(int city)
 	 * poly from WHLBOTH. Using WHLBOTH for the whole wheel is what garbled
 	 * the tyre (a hubcap image stretched over it). */
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->present = 1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.present = 1;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.set = cleanSet;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.clut = 0;
 	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.u0 = cleanU0;
