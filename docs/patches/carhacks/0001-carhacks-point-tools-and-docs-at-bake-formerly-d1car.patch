@@ -1,5 +1,5 @@
 From 27d762683608dd8fb1ece12ab17e78e54f43c593 Mon Sep 17 00:00:00 2001
-From: Claude <noreply@anthropic.com>
+From: z-Vibes <180806113+z-Vibes@users.noreply.github.com>
 Date: Sat, 21 Nov 2026 08:25:16 +0000
 Subject: [PATCH] carhacks: point tools and docs at bake (formerly d1cars)
 
@@ -11,8 +11,6 @@ MODS/bake/tools/car/out/lcf (bake/tools/car/README.md). The DRIVER1.md links mov
 to bake/docs. d1citymodels.h still names a gen_d1citymodels.py that no longer
 exists in either repo; left as is.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015LjSznjzjHgGhjQaMfW1Mq
 ---
  HANDOFF.md              | 2 +-
  docs/FORMATS.md         | 2 +-

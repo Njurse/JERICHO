@@ -1,5 +1,5 @@
 From fe531367463c28eec32593b1062f61304b6a91bd Mon Sep 17 00:00:00 2001
-From: Claude <noreply@anthropic.com>
+From: z-Vibes <180806113+z-Vibes@users.noreply.github.com>
 Date: Sat, 21 Nov 2026 21:15:05 +0000
 Subject: [PATCH 1/2] mp: pack_lan packagers name bake (formerly d1cars)
 
@@ -8,8 +8,6 @@ since the module became bake; the public packager, sync_lan.bat and the
 pack_lan README described the d1cars folder too. Paths and prose now name bake.
 (mp_lobby.c and the dedi already treat d1cars as bake's old id on purpose.)
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015LjSznjzjHgGhjQaMfW1Mq
 ---
  tools/pack_lan/README.md                   | 18 +++++++--------
  tools/pack_lan/make_lan_package.bat        | 10 ++++-----

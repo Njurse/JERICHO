@@ -1,5 +1,5 @@
 From 74bf380691884caa9ebf1de118b9ea307e1728bc Mon Sep 17 00:00:00 2001
-From: Claude <noreply@anthropic.com>
+From: z-Vibes <180806113+z-Vibes@users.noreply.github.com>
 Date: Sat, 21 Nov 2026 08:25:25 +0000
 Subject: [PATCH] bake: README and comment paths name bake/tools/car (formerly
  d1cars/tools)
@@ -8,8 +8,6 @@ tools/car/README.md set T=JERICHO/MODS/d1cars/tools, so every command in it
 (python $T/cosmetics1.py ...) pointed at a folder that no longer exists. The
 car tools live in JERICHO/MODS/bake/tools/car.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015LjSznjzjHgGhjQaMfW1Mq
 ---
  tools/car/README.md         | 2 +-
  tools/car/add_car_sounds.py | 2 +-

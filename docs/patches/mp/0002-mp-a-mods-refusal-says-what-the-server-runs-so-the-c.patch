@@ -1,5 +1,5 @@
 From 4aefbc184fee1d2a8d658907cfdb84e946753ec2 Mon Sep 17 00:00:00 2001
-From: Claude <noreply@anthropic.com>
+From: z-Vibes <180806113+z-Vibes@users.noreply.github.com>
 Date: Sun, 22 Nov 2026 04:48:04 +0000
 Subject: [PATCH 2/2] mp: a mods refusal says what the server runs, so the
  client can fetch it
@@ -33,8 +33,6 @@ No / Keep Them On).
 
 Needs the JERICHO core with jer_joinmods.h and jer_module_running.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015LjSzoKLhVNCmEbpa8fyfx
 ---
  docs/ARCHITECTURE.md                     |   2 +-
  docs/JERICHO-MP.md                       |   9 ++

@@ -1,5 +1,5 @@
 From cbc1655bbe82bbf7d32554e43d9c54523efd9a05 Mon Sep 17 00:00:00 2001
-From: Claude <noreply@anthropic.com>
+From: z-Vibes <180806113+z-Vibes@users.noreply.github.com>
 Date: Sun, 22 Nov 2026 03:32:34 +0000
 Subject: [PATCH] bake: split pages draw the nearest colour their row holds,
  never confetti
@@ -41,8 +41,6 @@ Measured on the original planner with the new test scenes: 80, 171 and 400
 texels drawn with the wrong palette; after: 0, 0 and 0. tools/car: 234 tests
 pass (18 skipped, as before); tools/common: 31 pass.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_015LjSzoKLhVNCmEbpa8fyfx
 ---
  docs/CAR_BAKE.md           |  25 +-
  tools/car/bake.py          |  49 +++-
