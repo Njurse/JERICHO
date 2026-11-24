@@ -30,6 +30,18 @@ is in [changelog.txt](changelog.txt).
   (rebake the bank to get it). A car imported from a Driver 2 city uses that
   city's table, and a car with none stays undented. Cars over 256 polygons no
   longer pick up random damage from the next car's data.
+- **Imported cars keep their damage table when their bank arrives late or is
+  reloaded.** The table choice was cached per (city, model), so a car whose bank
+  was not loaded yet froze on "no table" (never dented) and a reloaded bank kept
+  stale data. The choice is now keyed on the bank's own block and re-checked at
+  every dent. A car going back to a host slot also keeps a custom-content denting
+  file instead of the stock one.
+- **Cars no longer refuse to spawn, or draw host textures and wheels, after
+  several cities' cars have come and gone.** The 18 page numbers an imported car
+  can take (110-127) were only given back one car at a time; a city released
+  another way kept them, and later cars logged `no free import index`, kept the
+  host's page (broken wheels) or never became ready. Releasing a city now
+  returns every page number it held that no live page still uses.
 - **Each cop car can speak its own city's police radio.** A car's
   `handling.json` can set `"policeVoice": "CHICAGO"` (or `HAVANA`, `VEGAS`,
   `RIO`, `HOST`). The Cops 'n Robbers pack uses it, so its cars from all four

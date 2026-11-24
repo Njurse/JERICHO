@@ -4817,6 +4817,71 @@ void CarImportForgetCity(int city)
 		sPinDroppedKept = n - 1;
 	}
 
+	/* JERICHO: give back the page INDICES this city held. The per-slot release frees an
+	 * index only when nothing else names it; a city whose last car went by another route
+	 * (menu swap, failed build, hot-load that never placed) kept its remap entries and
+	 * sIndexCity claims for good. The 18-index pool (110..127) filled and later cars logged
+	 * "no free import index" and drew host pages (refused cars, wrong textures). The caller
+	 * has proved no resident slot names the city, so each claim is dead unless a pin still
+	 * draws from that index. */
+	for (i = 0; i < sRemapCount; )
+	{
+		int to = sRemapTo[i], k, pinned = 0;
+
+		for (k = 0; k < sPinCount; k++)
+		{
+			if (sPinIndex[k] == to)
+				pinned = 1;
+		}
+
+		if (sRemapCity[i] != city || pinned)
+		{
+			i++;
+			continue;
+		}
+
+		for (k = 0; k < sReservedCount; k++)
+		{
+			if (sReservedSet[k] != to)
+				continue;
+
+			for (; k < sReservedCount - 1; k++)
+				sReservedSet[k] = sReservedSet[k + 1];
+
+			sReservedCount--;
+			break;
+		}
+
+		if (to >= 0 && to < 128 && sIndexCity[to] == city + 1)
+			sIndexCity[to] = 0;
+
+		for (k = i; k < sRemapCount - 1; k++)
+		{
+			sRemapFrom[k] = sRemapFrom[k + 1];
+			sRemapTo[k] = sRemapTo[k + 1];
+			sRemapCity[k] = sRemapCity[k + 1];
+		}
+
+		sRemapCount--;
+	}
+
+	for (i = 0; i < 128; i++)
+	{
+		int k, pinned = 0;
+
+		if (sIndexCity[i] != city + 1)
+			continue;
+
+		for (k = 0; k < sPinCount; k++)
+		{
+			if (sPinIndex[k] == i)
+				pinned = 1;
+		}
+
+		if (!pinned)
+			sIndexCity[i] = 0;
+	}
+
 	CarImportForgetCityPalette(city);
 
 	printInfo("cross-city: %s city state forgotten - page lists, deferred palette lump, pin-dropped records and palette rows released; reloadable on demand\n",
