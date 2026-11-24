@@ -10,7 +10,8 @@
  * ready and drawable, and the import-handle census.
  *
  * Arm it: citycycle = 1 in JERICHO/CONFIG/modlist.ini. Read the log (and the in-game
- * console) for "[citycycle]" lines. JERICHO_CYCLE_SEED=<n> makes a run repeatable.
+ * console) for "[citycycle]" lines. JERICHO_CYCLE_SEED=<n> makes a run repeatable;
+ * JERICHO_CYCLE_INTERVAL=<frames> sets the round length (default 60, ~2 s; minimum 20).
  */
 #include "jericho.h"
 #include "jer_events.h"
@@ -35,8 +36,8 @@
 /* Generally you want it at a slower pace but this is massively accelerated for stress testing. */
 #define CYC_CARS		4
 #define CYC_START_FRAME		120	/* let the level settle first */
-#define CYC_INTERVAL		60	/* frames between rounds - slightly quicker iteration */
-#define CYC_CHECK_DELAY		40	/* frames after a spawn until the check */
+#define CYC_INTERVAL		60	/* default frames between rounds (JERICHO_CYCLE_INTERVAL) */
+#define CYC_INTERVAL_MIN	20	/* below this a round cannot load, check and unload */
 #define CYC_MAX_CITIES		16
 #define CYC_LANE_PITCH		600	/* gap between neighbouring cars */
 #define CYC_AHEAD		800	/* how far in front of the player the row sits */
@@ -56,6 +57,8 @@ static CYC_CAR gCar[CYC_CARS];
  * session - a sandbox run has none, so the retry is ours */
 static CYC_CAR gOld[CYC_CARS];
 static int gOldAt;
+static int gInterval = CYC_INTERVAL;	/* frames between rounds */
+static int gCheckDelay;			/* 2/3 of a round: the check */
 static int gFrame, gRound, gCheckAt, gPlacedRound;
 static unsigned int gRng = 1;
 static int gCities[CYC_MAX_CITIES], gCityCount;
@@ -164,7 +167,7 @@ static void CycRemoveCars(void)
 			ua.model = gCar[i].model;
 			jer_fire(JER_CARQ_UNLOAD, &ua);	/* give the slot, block and handles back */
 			gOld[i] = gCar[i];
-			gOldAt = gFrame + 30;
+			gOldAt = gFrame + gInterval / 2;
 		}
 
 		gCar[i].id = -1;
@@ -277,7 +280,7 @@ static void CycStartRound(void)
 	}
 
 	gPlacedRound = gRound;
-	gCheckAt = gFrame + CYC_CHECK_DELAY;
+	gCheckAt = gFrame + gCheckDelay;
 	gRound++;
 }
 
@@ -344,7 +347,7 @@ static int CycOnFrame(void* userdata, void* args)
 	if (gCheckAt != 0 && gFrame >= gCheckAt)
 		CycCheckRound();
 
-	if (((gFrame - CYC_START_FRAME) % CYC_INTERVAL) == 0)
+	if (((gFrame - CYC_START_FRAME) % gInterval) == 0)
 		CycStartRound();
 
 	return JER_RESULT_CONTINUE;
@@ -355,7 +358,17 @@ JER_MODULE_ENTRY(jer_module_citycycle_entry)(JERICHO_CONTEXT* ctx)
 	const char* seed = getenv("JERICHO_CYCLE_SEED");
 	int i;
 
+	const char* every = getenv("JERICHO_CYCLE_INTERVAL");
+
 	gRng = (seed != NULL && atoi(seed) != 0) ? (unsigned int)atoi(seed) : 2463534242u;
+
+	if (every != NULL && atoi(every) > 0)
+		gInterval = atoi(every);
+
+	if (gInterval < CYC_INTERVAL_MIN)
+		gInterval = CYC_INTERVAL_MIN;
+
+	gCheckDelay = gInterval * 2 / 3;
 
 	for (i = 0; i < CYC_CARS; i++)
 		gCar[i].id = gCar[i].slot = gOld[i].slot = -1;
@@ -366,5 +379,5 @@ JER_MODULE_ENTRY(jer_module_citycycle_entry)(JERICHO_CONTEXT* ctx)
 
 	ctx->jer_register_hook(ctx, JER_EVENT_FRAME, CycOnFrame, NULL, 0);
 
-	jer_log("[citycycle] armed: %d cars, new round every %d frames (seed %u)\n", CYC_CARS, CYC_INTERVAL, gRng);
+	jer_log("[citycycle] armed: %d cars, new round every %d frames (seed %u)\n", CYC_CARS, gInterval, gRng);
 }

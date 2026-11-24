@@ -16,6 +16,20 @@ is in [changelog.txt](changelog.txt).
   from the world, the engine measured zero bytes to re-read, said "could not
   re-read the level's texture pages", and left the car's pixels on the world.
   The lists are now kept in their own storage for the life of the level.
+- **Imported cars and the original game no longer share texture pages.** When the
+  lower-half pool (30 pages) was full, an imported car's page fell back to space
+  the game owns: a free resident slot, the replaced car's rectangle, or a host car
+  page "no car model names". That test only knows car models, but the sun flare,
+  the map dot, car undersides and pedestrians are drawn from those pages by name -
+  which is how wheel art ended up on the sun glare. Every import page now lives in
+  the pool. A full pool hands an imported page with no car on it to the import
+  that needs one (it comes back when a car is on it again); with nothing idle, the
+  car waits rather than drawing on the game's pages.
+- **World pages repair themselves.** A resident slot that an import wrote into and
+  no longer holds is re-read from the level file, with the level's palette CLUTs,
+  as soon as it is noticed (at most once a second; logged as `self-repair`). Only
+  slots JERICHO touched are restored - the game swaps some resident pages itself
+  (special cars), and those are left alone.
 - **One hot-load block per resident car slot.** The pool held eight, which is
   fewer than the number of slots that can want one at the same time, so a run
   that cycled cars eventually refused every import with "8 of 8 in use" and

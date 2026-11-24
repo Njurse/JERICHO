@@ -1046,6 +1046,8 @@ static int sCarPageUploading;			// set while WE upload, so ours is not refused
 extern int FrameCnt;			// JERICHO: frame clock for the imported-page claim pool
 
 static int sCarPageClaimFrame[19];
+static unsigned int sJerTookSlotMask;		// JERICHO: resident slots an import ever wrote a page into
+						// (JerWorldSelfRepair puts the level's page back)
 static int sCarPageGiveBacks;		// world uploads that reclaimed a stale claim
 
 /* JERICHO: what LoadPermanentTPages put in the world, so it can be put back.
@@ -2337,6 +2339,10 @@ static int sPinClutRows[CAR_PIN_MAX];		// its height in whole rows
 static int sPinPoolOnly[CAR_PIN_MAX];		// JERICHO: this pin must live in the lower half pool;
 						// no world-page fallback
 static int sPinForcePool;			// set while recording a pool-only pin
+static int sPinEvicted[CAR_PIN_MAX];		// JERICHO: its pool page was given to another import
+						// (CarPinEvictIdlePool); placed again only once a car
+						// is on one of its owner slots, so idle pins do not
+						// take turns evicting each other every frame
 static int sJerPedPinsRecorded;
 static int sJerPedPinFailed;
 static int sPinClutStarted;			// the first band has been taken this level (for the log)
@@ -2521,8 +2527,122 @@ static void CarPinRecord(int set, int index, int offset, int size, int preferred
 	sPinPreferred[sPinCount] = preferred;
 	sPinClutY[sPinCount] = -1;		// no CLUT band until it is placed
 	sPinClutRows[sPinCount] = 0;
-	sPinPoolOnly[sPinCount] = sPinForcePool;
+	/* JERICHO: EVERY import pin lives in the lower half pool now, cars as well as peds
+	 * (sPinForcePool used to make this the ped-only rule). A car pin that found the pool
+	 * full used to fall back to space the original game owns: the rectangle of the car it
+	 * replaced, a free resident slot, or a host car page "named by no model". That last
+	 * test only knows car MODELS - the sun flare, the map dot, car undersides and the
+	 * pedestrians are drawn from those pages BY TEXTURE NAME, so an "unused" page was in
+	 * use, and an imported page uploaded over it is what drew wheel art on the sun glare.
+	 * Imports and the original game no longer share texture pages: a full pool evicts an
+	 * idle import page (CarPinEvictIdlePool) and otherwise leaves the pin unplaced, which
+	 * the readiness check reports - a car that cannot be drawn instead of a world that is
+	 * drawn wrong. */
+	sPinPoolOnly[sPinCount] = 1;
+	sPinEvicted[sPinCount] = 0;
+	(void)sPinForcePool;
 	sPinCount++;
+}
+
+/* JERICHO: how many live cars are drawn from resident `slot` this frame. */
+static int CarPinSlotCars(int slot)
+{
+	int i, n = 0;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		if (car_data[i].controlType != CONTROL_TYPE_NONE && car_data[i].ap.model == slot)
+			n++;
+	}
+
+	return n;
+}
+
+/* JERICHO: does any resident slot in `owners` have a car on it? */
+static int CarPinOwnersLive(int owners)
+{
+	int s;
+
+	for (s = 0; s < MAX_CAR_RESIDENT_MODELS; s++)
+	{
+		if (CarPinOwnersHas(owners, s) && CarPinSlotCars(s) > 0)
+			return 1;
+	}
+
+	return 0;
+}
+
+static int CarPinOwnersOverlap(int a, int b)
+{
+	int s;
+
+	for (s = 0; s < MAX_CAR_RESIDENT_MODELS; s++)
+	{
+		if (CarPinOwnersHas(a, s) && CarPinOwnersHas(b, s))
+			return 1;
+	}
+
+	return 0;
+}
+
+static int sPinPoolEvictions;			/* JERICHO: idle import pages pushed out of the pool */
+
+/* JERICHO: the lower half pool is full and pin `want` needs a page. Take one from an
+ * import pin whose cars are all gone (no live car on any owner slot), so the pool cycles
+ * between imports instead of anything spilling into the original game's pages.
+ *
+ * Skipped: a pin of the same car (placing it would just push its sibling out next frame),
+ * and a pin whose handle another pin shares (the handle's page would go with it). The
+ * evicted pin keeps its CLUT band and its handle; it reads the checker page until a car
+ * is on it again, when the pin walk places it once more - evicting some other idle page
+ * if it must. Returns the pool page now free for `want`, or -1. */
+static int CarPinEvictIdlePool(int want)
+{
+	int p, q, j, page;
+
+	for (p = 0; p < sPinCount; p++)
+	{
+		int idx, shared = 0;
+
+		if (p == want || sPinPool[p] < 0)
+			continue;
+
+		if (CarPinOwnersOverlap(sPinOwners[p], sPinOwners[want]))
+			continue;
+
+		if (CarPinOwnersLive(sPinOwners[p]))
+			continue;
+
+		idx = sPinIndex[p];
+
+		for (q = 0; q < sPinCount; q++)
+		{
+			if (q != p && sPinIndex[q] == idx)
+				shared = 1;
+		}
+
+		if (shared)
+			continue;
+
+		page = sPinPool[p];
+		sPinPool[p] = -1;
+		sPinEvicted[p] = 1;
+
+		texture_pages[idx] = (sJerCheckerTpage != 0) ? sJerCheckerTpage : GetTPage(0, 0, 960, 0);
+
+		for (j = 0; j < 32; j++)
+			texture_cluts[idx][j] = (sJerCheckerClut != 0) ? sJerCheckerClut : GetClut(960, 16);
+
+		sPinPoolEvictions++;
+
+		if (sPinPoolEvictions <= 8 || (sPinPoolEvictions % 50) == 0)
+			printInfo("cross-city: pool full - %s set %d (index %d) has no car on it; its page goes to %s set %d (%d eviction(s) so far)\n",
+				LevelNames[sPinCity[p]], sPinSet[p], idx, LevelNames[sPinCity[want]], sPinSet[want], sPinPoolEvictions);
+
+		return page;
+	}
+
+	return -1;
 }
 
 // Called from the game loop. Cheap when nothing is wrong - a handful of compares -
@@ -3019,6 +3139,10 @@ void CarImportPin(void)
 		if (sPinPool[i] >= 0)
 			continue;
 
+		/* JERICHO: an evicted page comes back when a car needs it, not before. */
+		if (sPinEvicted[i] && !CarPinOwnersLive(sPinOwners[i]))
+			continue;
+
 		if (sPinTexSlot[i] >= 0 && tpageslots[sPinTexSlot[i]] == sPinIndex[i] && tpageloaded[sPinIndex[i]] != 0)
 		{
 			// Still ours: refresh the claim so a car that keeps being drawn keeps its
@@ -3041,11 +3165,19 @@ void CarImportPin(void)
 		// index to return.
 		pool = JerLowerPoolPageAlloc();
 
+		if (pool < 0)
+			pool = CarPinEvictIdlePool(i);
+
 		if (pool < 0 && sPinPoolOnly[i])
 		{
-			/* JERICHO: a ped pin is not allowed to take a world rectangle. Leave it
-			 * unplaced; the import readiness check refuses the character. */
+			/* JERICHO: no import pin takes a world or host rectangle (see the pin record).
+			 * Pool full and nothing idle to evict: leave it unplaced; the readiness check
+			 * refuses the car or character rather than drawing it on the game's pages. */
 			sJerPinPoolFull++;
+
+			if (sJerPinPoolFull <= 4 || (sJerPinPoolFull % 200) == 0)
+				printInfo("cross-city: pin - lower half pool FULL (%d of %d pages) and every page has a car on it; %s set %d stays unplaced (%d time(s))\n",
+					sJerLowerPoolPagesUsed, JER_POOL_PAGES, LevelNames[sPinCity[i]], sPinSet[i], sJerPinPoolFull);
 			continue;
 		}
 
@@ -3284,12 +3416,14 @@ void CarImportPin(void)
 			// rows 512..1023 is not one of its slots. CarPageRectOwned knows the lower half pool
 			// separately, so the engine's own uploads are still refused.
 			sPinPool[i] = pool;
+			sPinEvicted[i] = 0;
 		}
 		else
 		{
 			sCarPageClaimFrame[slot] = FrameCnt;
 
 			tpageslots[slot] = (u_char)sPinIndex[i];
+			sJerTookSlotMask |= 1u << slot;
 			tpageloaded[sPinIndex[i]] = (u_char)slot;
 
 			sPinTexSlot[i] = slot;
@@ -4539,6 +4673,7 @@ static void CarPinRemoveAt(int i)
 	CarPinArrayRemove(sPinClutY, n, i);
 	CarPinArrayRemove(sPinClutRows, n, i);
 	CarPinArrayRemove(sPinPoolOnly, n, i);
+	CarPinArrayRemove(sPinEvicted, n, i);
 
 	sPinCount = n - 1;
 }
@@ -5791,6 +5926,7 @@ void LoadPermanentTPages(int *sector)
 	sWorldDirtyLogged = 0;
 	sWorldSlotTaken = 0;
 	sWorldStreamPending = 0;
+	sJerTookSlotMask = 0;		// a new level: nothing of ours is in its slots yet
 	sWorldPageSector = (sector != NULL) ? *sector : -1;
 	sWorldOrigCount = 0;
 
@@ -6265,12 +6401,90 @@ static int WorldResidentMismatches(void)
 	return n;
 }
 
+/* JERICHO: SELF-REPAIR, limited to what JERICHO itself broke.
+ *
+ * A blanket "re-read every resident page" is not safe to run unasked: the game swaps
+ * resident pages on its own (the special-car spool), and reverting those would be the
+ * corruption. So only a slot JERICHO wrote into - recorded when a pin took it, or now
+ * holding an import handle - and that no pin holds any more is put back from the level
+ * file, together with the level's own palette CLUTs. New imports no longer take world
+ * slots at all (every pin is pool-only), so this is the net for a level that was dirtied
+ * before that, or by a path not yet found: the log line says which slots it restored.
+ * At most once a second. */
+static int sJerSelfRepairFrame = -100000;
+static int sJerSelfRepairs;
+static void WorldReplayHostPalettes(void);
+
+static void JerWorldSelfRepair(void)
+{
+	int slots[TPAGE_SLOTS];
+	int i, p, n = 0;
+
+	if (!sWorldReloadReady || sWorldReloading)
+		return;
+
+	if (FrameCnt >= sJerSelfRepairFrame && FrameCnt - sJerSelfRepairFrame < 60)
+		return;
+
+	for (i = 0; i < sWorldOrigCount && i < TPAGE_SLOTS && i < 19; i++)
+	{
+		int held = tpageslots[i];
+		int ours = ((sJerTookSlotMask >> i) & 1) || (held != 0xFF && held >= JER_IMPORT_PAGE_FIRST);
+
+		if (!ours || held == sWorldOrigSet[i])
+			continue;
+
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinTexSlot[p] == i)
+				break;
+		}
+
+		if (p < sPinCount)
+			continue;		// an import still lives there; its release restores it
+
+		slots[n++] = i;
+	}
+
+	if (n == 0)
+		return;
+
+	sJerSelfRepairFrame = FrameCnt;
+	sJerSelfRepairs++;
+
+	for (i = 0; i < n; i++)
+	{
+		int slot = slots[i];
+		int held = tpageslots[slot];
+
+		if (held != 0xFF && held >= JER_IMPORT_PAGE_FIRST && held < JER_TPAGE_SLOTS)
+		{
+			tpageslots[slot] = 0xFF;
+			tpageloaded[held] = 0;
+		}
+
+		sCarPageClaimFrame[slot] = 0;
+		sJerTookSlotMask &= ~(1u << slot);
+
+		printInfo("JERICHO-VRAM: self-repair - resident slot %d held %d, the level put set %d there; restoring it (repair #%d)\n",
+			slot, held, sWorldOrigSet[slot], sJerSelfRepairs);
+	}
+
+	WorldRestoreSlotsAfterRelease(slots, n);
+	WorldReplayHostPalettes();
+
+	if (sJerSelfRepairs <= 3)
+		jer_console_log("world textures repaired (%d page(s))", n);
+}
+
 static void WorldVramNoteIfDirty(void)
 {
 	int n;
 
 	if (sWorldReloading || !sWorldReloadReady)
 		return;
+
+	JerWorldSelfRepair();
 
 	n = WorldResidentMismatches();
 
