@@ -79,6 +79,7 @@ static char sHostDen[JER_DEN_FILE_SIZE];
 static int sHostDenValid;
 static char* sCityDen[CITY_D2_COUNT];	// a Driver 2 source city's .DEN, loaded once when an import needs it
 static int sSlotDenKey[MAX_CAR_RESIDENT_MODELS];	// what the slot's tables were filled from (0 = not yet)
+static const u_char* sSlotDenBlk[MAX_CAR_RESIDENT_MODELS];	// ...and WHICH block: a bank freed and reloaded, or one that arrives after the slot named it, is a new block
 
 static void JerDentApplyBlock(int slot, const u_char* blk)
 {
@@ -153,24 +154,41 @@ void JerDentSyncSlot(int slot)
 			}
 
 			hb = JerDenModelBlock(sHostDen, hm);
+#if USE_PC_FILESYSTEM
+			if (gContentOverride)
+			{
+				const u_char* cb = (const u_char*)LoadCustomCarDentingFromFile(NULL, hm);
+
+				if (cb != NULL)
+					hb = cb;
+			}
+#endif
 
 			if (hb != NULL)
 				JerDentApplyBlock(slot, hb);
 		}
 
 		sSlotDenKey[slot] = 0;
+		sSlotDenBlk[slot] = NULL;
 		return;
 	}
 
 	key = (src + 1) * 64 + model + 1;
 
-	if (sSlotDenKey[slot] == key)
+	blk = GetCarImportDenting(src, model);
+	how = "its bank's own table";
+
+	// Keyed on the block too: a slot can name an import before its bank is held (hot
+	// import), or the bank can be released and reloaded elsewhere. Caching only
+	// (city, model) froze the empty table chosen in that window - the car never dented.
+	if (blk == NULL && src < CITY_D2_COUNT && sCityDen[src] != NULL)
+		blk = JerDenModelBlock(sCityDen[src], model);
+
+	if (sSlotDenKey[slot] == key && sSlotDenBlk[slot] == blk && (blk != NULL || CarImportCityHeld(src) || src < CITY_D2_COUNT))
 		return;
 
 	sSlotDenKey[slot] = key;
-
 	blk = GetCarImportDenting(src, model);
-	how = "its bank's own table";
 
 	if (blk == NULL && src < CITY_D2_COUNT)
 	{
@@ -189,6 +207,8 @@ void JerDentSyncSlot(int slot)
 		how = DentingFiles[src];
 	}
 
+	sSlotDenBlk[slot] = blk;
+
 	if (blk != NULL)
 	{
 		JerDentApplyBlock(slot, blk);
@@ -199,8 +219,9 @@ void JerDentSyncSlot(int slot)
 		how = "no table (left undented rather than wearing the host's)";
 	}
 
-	printInfo("[denting] slot %d (%s model %d): damage zones from %s\n",
-		slot, (src < CITY_COUNT && LevelNames[src]) ? LevelNames[src] : "?", model, how);
+	if (blk != NULL || CarImportCityHeld(src) || src < CITY_D2_COUNT)	// not-yet-held bank: retried quietly each call
+		printInfo("[denting] slot %d (%s model %d): damage zones from %s\n",
+			slot, (src < CITY_COUNT && LevelNames[src]) ? LevelNames[src] : "?", model, how);
 }
 
 // [D] [T]
@@ -232,6 +253,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 
 	MaxDamage = 0;
 	model = cp->ap.model;
+	JerDentSyncSlot(model);	// the slot may have changed hands since this car was made
 	cp->lowDetail = -1;
 	cp->ap.qy = 0;
 	cp->ap.qw = 0;
@@ -714,6 +736,7 @@ void ProcessDentLump(char *lump_ptr, int lump_size)
 
 			// JERICHO: an imported car in this slot takes its own table instead
 			sSlotDenKey[i] = 0;
+			sSlotDenBlk[i] = NULL;
 			JerDentSyncSlot(i);
 		}
 	}
