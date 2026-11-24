@@ -347,7 +347,7 @@ JER_MODULE_ENTRY(jer_module_citycycle_entry)(JERICHO_CONTEXT* ctx)
 	gRng = (seed != NULL && atoi(seed) != 0) ? (unsigned int)atoi(seed) : 2463534242u;
 
 	for (i = 0; i < CYC_CARS; i++)
-		gCar[i].id = gCar[i].slot = -1;
+		gCar[i].id = gCar[i].slot = gOld[i].slot = -1;
 
 	ctx->jer_register_module(ctx, "citycycle", "City Cycle", "0.1.0", "JERICHO",
 		"Cross-city car stress test: four cars, 1-4 cities at a time, random cities each round.",
