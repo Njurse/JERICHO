@@ -5642,9 +5642,35 @@ int JerFrontendMenuScreen(int bSetup)
 	}
 	else
 	{
+		int i;
+
 		n = menu->item_count;
 		if (n > JER_FE_MAX_ITEMS)
 			n = JER_FE_MAX_ITEMS;
+
+		/* LIVE LABELS: a get_label row was only read when the screen was set up,
+		 * so a value that changes while the menu is open (a field being typed in,
+		 * a counter) stayed frozen until something forced a full refresh -- the
+		 * manual-address row showed none of the keys typed into it. Re-read every
+		 * dynamic row each frame and repaint when one changed. Cheap (a snprintf
+		 * per row) and it leaves the cursor and layout alone, unlike a refresh. */
+		for (i = 0; i < n; i++)
+		{
+			const JER_FE_ITEM* it = &menu->items[i];
+			char now[sizeof(pCurrScreen->buttons[0].Name)];
+
+			if (it->get_label == NULL)
+				continue;
+
+			now[0] = '\0';
+			it->get_label(it->userdata, now, sizeof(now));
+
+			if (strcmp(now, pCurrScreen->buttons[i].Name) != 0)
+			{
+				memcpy(pCurrScreen->buttons[i].Name, now, sizeof(now));
+				bRedrawFrontend = 1;
+			}
+		}
 	}
 
 	if (gFeMenuEnterFrame)
