@@ -780,7 +780,7 @@ void LoadDenting(int level)
 
 	// JERICHO: keep the host's table - _other_buffer is reused - so a slot that goes back
 	// from an imported car to a host one can be refilled (JerDentSyncSlot).
-	memcpy(sHostDen, _other_buffer, JER_DEN_FILE_SIZE);
+	memcpy(sHostDen, (const void*)_other_buffer, JER_DEN_FILE_SIZE);
 	sHostDenValid = 1;
 
 	ProcessDentLump((char*)_other_buffer, 0);
