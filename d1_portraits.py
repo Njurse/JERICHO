@@ -41,6 +41,8 @@ def _tools_car(carhacks):
     candidates = [
         os.path.join(os.path.dirname(carhacks), "bake", "tools", "car"),
         os.path.join(here, "JERICHO", "MODS", "bake", "tools", "car"),
+        # dev tree: src_rebuild/bin/<config>/ -> repo root -> JERICHO/MODS/bake/tools/car
+        os.path.join(here, "..", "..", "..", "JERICHO", "MODS", "bake", "tools", "car"),
     ]
     for path in candidates:
         if os.path.isfile(os.path.join(path, "portrait.py")):
