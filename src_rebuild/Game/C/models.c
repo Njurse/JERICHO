@@ -244,6 +244,8 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_SIRENS	202	// JERICHO: per-model cop flags (the D1 bake)
 #define CAR_IMPORT_LUMP_POLICE_VOICES	203	// JERICHO: the city's police radio lines (bake declare.police_voices)
 #define CAR_IMPORT_LUMP_DRIVE	205	// JERICHO: per-model drive-wheel override (bank handling.driveWheels)
+#define CAR_IMPORT_LUMP_LIGHTS	206	// JERICHO: per-model police light layout (bank handling.policeLights)
+#define CAR_IMPORT_LUMP_VOICE	207	// JERICHO: per-model police radio voice (bank handling.policeVoice)
 #define CAR_IMPORT_POLICE_VOICE_COUNT	17	// 6 directions + 11 chatter, the order D2's two phrase banks load in
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
@@ -291,6 +293,8 @@ typedef struct
 	int carSoundsSize;
 	unsigned carSirenMask;	// bit N = model N is a cop car (LUMP_CAR_SIRENS)
 	unsigned char carDrive[CAR_IMPORT_MODEL_SLOTS];	// LUMP_CAR_DRIVE: 0 = stock, else bit0 front / bit1 rear
+	unsigned char carVoice[CAR_IMPORT_MODEL_SLOTS];	// LUMP_CAR_VOICE: 0 = source-city rule, 1..4 = D2 city + 1, 255 = host
+	JER_COP_LIGHTS carLights[CAR_IMPORT_MODEL_SLOTS];	// LUMP_CAR_LIGHTS: mode 0 = the stock light bar
 	char* policeVoices;	// LUMP_POLICE_VOICES body, or NULL (no baked police lines)
 	int policeVoicesSize;
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
@@ -357,6 +361,115 @@ static int FindLumpSegment(char* body, int size, int want, char** out, int* outS
 	}
 
 	return 0;
+}
+
+
+// JERICHO: LUMP_CAR_LIGHTS (206), the per-model police light layout.
+//
+//   i32 version (1)   i32 numModels   i32 offset[numModels]   blocks...
+//   block (at `offset` bytes into the body; 0 = this model has none):
+//     u8 mode (1 style, 2 custom)  u8 style  u8 count  u8 speed
+//     then `count` lights of 12 bytes: i16 x, y, z   u8 r, g, b, phase, flags, size
+//
+// Everything is bounds-checked and clamped here, once, so AddCopCarLight can trust
+// what JerCarSlotCopLights hands it every frame. A bad block is dropped (that model
+// keeps the stock light bar) with a warning; it never takes the rest of the bank
+// down, and a bank with no segment at all is the normal case.
+#define CAR_IMPORT_LIGHT_BYTES	12
+
+static short CarLightS16(const unsigned char* p)
+{
+	return (short)(p[0] | (p[1] << 8));
+}
+
+static void ParseCarImportLights(CAR_IMPORT* imp, const char* body, int size, const char* levPath)
+{
+	const unsigned char* b = (const unsigned char*)body;
+	int version, numModels, m;
+
+	memset(imp->carLights, 0, sizeof(imp->carLights));
+
+	if (b == NULL || size < 8)
+		return;
+
+	version = *(const int*)(b + 0);
+	numModels = *(const int*)(b + 4);
+
+	if (version != 1 || numModels < 1 || numModels > CAR_IMPORT_MODEL_SLOTS ||
+		size < 8 + numModels * 4)
+	{
+		printWarning("carimport: %s police light segment is not a v1 table (version %d, %d models, %d bytes) - ignored\n",
+			levPath, version, numModels, size);
+		return;
+	}
+
+	for (m = 0; m < numModels; m++)
+	{
+		int off = *(const int*)(b + 8 + m * 4);
+		const unsigned char* blk;
+		JER_COP_LIGHTS* out = &imp->carLights[m];
+		int mode, style, count, i;
+
+		if (off == 0)
+			continue;
+
+		if (off < 8 + numModels * 4 || off + 4 > size)
+		{
+			printWarning("carimport: %s model %d police lights: block offset %d is outside the segment - ignored\n",
+				levPath, m, off);
+			continue;
+		}
+
+		blk = b + off;
+		mode = blk[0];
+		style = blk[1];
+		count = blk[2];
+
+		if (mode == JER_COPLIGHTS_STYLE)
+		{
+			if (style > 3 && style != JER_COPLIGHT_HOST)
+			{
+				printWarning("carimport: %s model %d police lights: style %d is not a Driver 2 city - ignored\n",
+					levPath, m, style);
+				continue;
+			}
+
+			out->mode = JER_COPLIGHTS_STYLE;
+			out->style = (unsigned char)style;
+			printInfo("carimport: %s model %d police lights: %s light bar\n", levPath, m,
+				style == JER_COPLIGHT_HOST ? "the host city's" : LevelNames[style]);
+			continue;
+		}
+
+		if (mode != JER_COPLIGHTS_CUSTOM || count < 1 || count > JER_COP_LIGHTS_MAX ||
+			off + 4 + count * CAR_IMPORT_LIGHT_BYTES > size)
+		{
+			printWarning("carimport: %s model %d police lights: mode %d with %d lights does not fit - ignored\n",
+				levPath, m, mode, count);
+			continue;
+		}
+
+		out->mode = JER_COPLIGHTS_CUSTOM;
+		out->count = (unsigned char)count;
+		out->speed = blk[3];
+
+		for (i = 0; i < count; i++)
+		{
+			const unsigned char* p = blk + 4 + i * CAR_IMPORT_LIGHT_BYTES;
+
+			out->light[i].x = CarLightS16(p + 0);
+			out->light[i].y = CarLightS16(p + 2);
+			out->light[i].z = CarLightS16(p + 4);
+			out->light[i].r = p[6];
+			out->light[i].g = p[7];
+			out->light[i].b = p[8];
+			out->light[i].phase = p[9];
+			out->light[i].flags = p[10];
+			out->light[i].size = p[11];
+		}
+
+		printInfo("carimport: %s model %d police lights: %d custom light%s\n", levPath, m, count, count == 1 ? "" : "s");
+	}
 }
 
 static void FreeCarImport(CAR_IMPORT* imp)
@@ -615,6 +728,46 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 			if (imp->carDrive[s])
 				printInfo("carimport: %s model %d drive override %d (%s)\n", levPath, s, imp->carDrive[s],
 					imp->carDrive[s] == 1 ? "front" : imp->carDrive[s] == 2 ? "rear" : "all");
+		}
+	}
+
+	// JERICHO: per-model police light layout (bank handling.policeLights). Optional;
+	// no segment, or a model with no entry, keeps the source-city light bar.
+	{
+		char* lights = NULL;
+		int lightsSize = 0;
+
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_LIGHTS, &lights, &lightsSize);
+		ParseCarImportLights(imp, lights, lightsSize, levPath);
+	}
+
+	// JERICHO: per-model police radio voice (bank handling.policeVoice). Optional; no
+	// segment, or 0 for a model, keeps the source-city rule (JerPoliceVoiceCity). A
+	// value that is not a Driver 2 city or HOST is dropped with a warning.
+	{
+		char* voice = NULL;
+		int voiceSize = 0;
+		int s;
+
+		memset(imp->carVoice, 0, sizeof(imp->carVoice));
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_VOICE, &voice, &voiceSize);
+
+		for (s = 0; voice != NULL && s < CAR_IMPORT_MODEL_SLOTS && s < voiceSize; s++)
+		{
+			unsigned char v = (unsigned char)voice[s];
+
+			if (v == 0)
+				continue;
+
+			if (v != JER_POLICE_VOICE_HOST && (v < 1 || v > CITY_D2_COUNT))
+			{
+				printWarning("carimport: %s model %d police voice %d is not a Driver 2 city - ignored\n", levPath, s, v);
+				continue;
+			}
+
+			imp->carVoice[s] = v;
+			printInfo("carimport: %s model %d police radio: %s\n", levPath, s,
+				v == JER_POLICE_VOICE_HOST ? "the host city's" : LevelNames[v - 1]);
 		}
 	}
 
@@ -899,6 +1052,16 @@ static void JerPedCollectModelSets(MODEL* m)
  * and wheel imports use. A host-owned set number gets a free destination index
  * and the pin fills that index; leaving the source number would sample the
  * host's page. */
+// JERICHO: the remap key a BAKED ped page is filed under. A baked ped bank (JMPPED.LEV)
+// numbers its re-baked pages with the city's own set numbers (Chicago's suit page is
+// "set 4"), and the remap is keyed by (set, city) - so a Chicago CAR's real set 4 and the
+// baked ped page "set 4" resolved to ONE destination index. Whichever pinned last
+// overwrote the other's texture_pages/texture_cluts, and releasing the car freed the
+// index the pedestrians still drew from. Filing baked pages under city + CITY_COUNT
+// gives them their own indices. The real-page ped path (JerPedPinTpages) keeps the
+// plain city key: those ARE the city's pages, and sharing them is correct.
+#define JER_PED_BAKED_KEY(city)	((city) + CITY_COUNT)
+
 static void JerPedRemapModelSets(MODEL* m, int city)
 {
 	char* p;
@@ -1453,11 +1616,11 @@ static int JerPedImportBakedV5(unsigned char* file, long len, int city)
 
 	for (e = 0; e < entryCount; e++)
 		for (slot = 0; slot < nm[e]; slot++)
-			JerPedRemapModelSets(built[e][slot], city);
+			JerPedRemapModelSets(built[e][slot], JER_PED_BAKED_KEY(city));
 
 	for (i = 0; i < pageTotal; i++)
 	{
-		int dst = CarImportPinDstSet(pages[i].set, city);
+		int dst = CarImportPinDstSet(pages[i].set, JER_PED_BAKED_KEY(city));
 
 		if (!JerPedUploadBakedPage(pages[i].set, dst, pages[i].npal,
 			pages[i].clut, pages[i].clutLen, pages[i].image, pages[i].imageLen, pages[i].flags & 1))
@@ -1733,7 +1896,7 @@ int JerPedImportBaked(int city)
 	}
 
 	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
-		JerPedRemapModelSets(built[i], city);
+		JerPedRemapModelSets(built[i], JER_PED_BAKED_KEY(city));
 
 	for (i = 0; i < (int)pageCount; i++)
 	{
@@ -1756,7 +1919,7 @@ int JerPedImportBaked(int city)
 
 		cluts = p;
 		image = p + clutLen;
-		dst = CarImportPinDstSet((int)set, city);
+		dst = CarImportPinDstSet((int)set, JER_PED_BAKED_KEY(city));
 
 		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, (int)clutLen, image, (int)imageLen, (int)(flags & 1)))
 		{
@@ -2455,6 +2618,54 @@ int JerCarSlotDrive(int slot)
 		return 0;
 
 	return gCarImports[city].carDrive[model];
+}
+
+// JERICHO: the police light layout (LUMP_CAR_LIGHTS, 206) of the car in resident
+// slot `slot`, from that slot's source city, or NULL when the bank says nothing
+// (the level's own cars, an unheld city, a bank without the segment): the caller
+// then keeps its source-city style. Never loads anything: AddCopCarLight calls it
+// once per lit cop car per frame.
+// JERICHO: the police radio voice the bank gives the car in resident slot `slot`
+// (LUMP_CAR_VOICE, 207): a Driver 2 city index 0..3, JER_POLICE_VOICE_HOST, or -1
+// when the bank says nothing and the source-city rule applies. Never loads anything.
+int JerCarSlotPoliceVoice(int slot)
+{
+	int model, city, v;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return -1;
+
+	model = residentCarModels[slot];
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || city >= CITY_COUNT || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || !CarImportCityHeld(city))
+		return -1;
+
+	v = gCarImports[city].carVoice[model];
+
+	if (v == 0)
+		return -1;
+
+	return (v == JER_POLICE_VOICE_HOST) ? JER_POLICE_VOICE_HOST : v - 1;
+}
+
+const JER_COP_LIGHTS* JerCarSlotCopLights(int slot)
+{
+	int model, city;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return NULL;
+
+	model = residentCarModels[slot];
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || !CarImportCityHeld(city))
+		return NULL;
+
+	if (gCarImports[city].carLights[model].mode == 0)
+		return NULL;
+
+	return &gCarImports[city].carLights[model];
 }
 
 // JERICHO: `city`'s baked police radio lines (LUMP_POLICE_VOICES, 203), or 0 when
@@ -3916,6 +4127,108 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 
 		printInfo("cross-city: %s damaged wheel palette fell back to tyre row %d (clut %04x)\n",
 			LevelNames[city], tyreRow, clut);
+	}
+}
+
+// JERICHO: every wheel RECORD of a baked bank gets the palette of its OWN page row.
+//
+// The set-level pass above derives one tyre/hubcap/damaged/fast palette per page set
+// from the first record that names the set, then stamps it on every record naming the
+// set (CarImportSetWheelPaletteClut). That is right for a Driver 2 page, which carries
+// one wheel design. A baked page can carry several: COPSNRBRS set 1 held the Rio
+// Benz/pickup wheels at x 0..128 and the Chicago GSX/armour-truck wheels at 128..256,
+// each quantised against its own row (9/10 and 11/12) - and the Chicago cars drew with
+// the Rio rows. The bake writes each island's page row into the record's `tex.clut`
+// (texture id == CLUT row), so here each record reserves that row for itself; the
+// palette cache is keyed by content, so records that share a row share one CLUT.
+// Driver 2 cities keep the set-level behaviour (their tex.clut is not a page row).
+void CarImportReserveRecordWheelPalettes(int city, int sourceSet, const unsigned char* page, int size)
+{
+	static unsigned char* sUnpacked = NULL;
+	CAR_WHEEL_REF ref;
+	int npal, i, unpacked = 0;
+
+	if (city < CITY_D2_COUNT || city >= CITY_COUNT || page == NULL || size < 4)
+		return;
+
+	npal = *(const int*)page;
+
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
+		return;
+
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
+	{
+		JER_WHEEL_TEX* wt;
+		unsigned short row[16];
+		int srcRow, hub, clut;
+
+		if (ref.rec == NULL || !ref.rec->present || !CarImportWheelRefNamesSet(&ref, sourceSet))
+			continue;
+
+		wt = &ref.rec->tex;
+		srcRow = wt->clut;
+
+		if (srcRow < 0 || srcRow >= npal)
+			continue;
+
+		memcpy(row, page + 4 + srcRow * 32, sizeof(row));
+
+		hub = (ref.kind == CAR_IMPORT_WHEEL_FAST) ? 2 :
+			(ref.kind == CAR_IMPORT_WHEEL_DAMAGED) ? 3 : 0;
+
+		/* the fast sprite's backdrop must be see-through even where the row keeps
+		 * that index opaque (CarImportReserveFastWheelPalette explains why) */
+		if (ref.kind == CAR_IMPORT_WHEEL_FAST &&
+			wt->u0 >= 0 && wt->v0 >= 0 && wt->u1 <= 256 && wt->v1 <= 256 &&
+			wt->u1 > wt->u0 && wt->v1 > wt->v0)
+		{
+			int cu[4], cv[4], votes[16] = { 0 }, c, bg = 0;
+
+			if (!unpacked)
+			{
+				if (sUnpacked == NULL)
+					sUnpacked = (unsigned char*)malloc(0x10000);
+
+				if (sUnpacked == NULL)
+					continue;
+
+				memset(sUnpacked, 0, 0x10000);
+
+				if (decomp_asm_n((char*)sUnpacked, (char*)page + 4 + npal * 32, size - 4 - npal * 32) == NULL)
+					continue;
+
+				unpacked = 1;
+			}
+
+			cu[0] = wt->u0; cu[1] = wt->u1 - 1; cu[2] = wt->u0; cu[3] = wt->u1 - 1;
+			cv[0] = wt->v0; cv[1] = wt->v0; cv[2] = wt->v1 - 1; cv[3] = wt->v1 - 1;
+
+			for (c = 0; c < 4; c++)
+			{
+				unsigned char cb = sUnpacked[cv[c] * 128 + (cu[c] >> 1)];
+				votes[(cu[c] & 1) ? (cb >> 4) : (cb & 15)]++;
+			}
+
+			for (c = 1; c < 16; c++)
+				if (votes[c] > votes[bg])
+					bg = c;
+
+			row[bg] = 0;
+		}
+
+		clut = CarImportReserveWheelPalette(city, sourceSet, hub, (const unsigned char*)row);
+
+		if (clut == 0)
+			continue;
+
+		wt->reservedClut = clut;
+
+		/* a baked wheel's face IS its tread sprite: the hubcap poly reads the same row */
+		if (wt->hubU0 == wt->u0 && wt->hubV0 == wt->v0 && wt->hubU1 == wt->u1 && wt->hubV1 == wt->v1)
+			wt->reservedHubClut = clut;
+
+		printInfo("cross-city: %s model %d wheel %d (set %d, (%d,%d)-(%d,%d)) owns page row %d -> clut %04x\n",
+			LevelNames[city], ref.model, ref.kind, sourceSet, wt->u0, wt->v0, wt->u1, wt->v1, srcRow, clut);
 	}
 }
 

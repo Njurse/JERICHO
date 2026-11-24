@@ -204,8 +204,17 @@ static int sClutClampCount;
 // for another); the palette is derived from the page, so a city-wide cache would
 // hand car 1 the first car's wheel colours. [city][source set][hub], hub being
 // 0 = tyre/whole wheel, 1 = hubcap, 2 = fast, 3 = damaged.
-static u_short sWheelPalClut[CITY_COUNT][128][4];
-static int sWheelPalRow[CITY_COUNT][128][4];	// the lower-pool row each cached id lives in, -1 = base strip
+//
+// JERICHO: and per PALETTE CONTENT within a set. One page can carry two different
+// wheel sprites (a Rio pair and a Chicago pair on set 1), each quantised against its
+// own page row. Keyed by (city, set, hub) alone, the second design got the first one's
+// cached CLUT back and drew in the first design's colours - the "Chicago wheels import
+// with the wrong palette" report. Each (city, set, hub) now holds up to
+// WHEEL_PAL_KEYS palettes, told apart by a hash of their 16 colours.
+#define WHEEL_PAL_KEYS 4
+static u_short sWheelPalClut[CITY_COUNT][128][4][WHEEL_PAL_KEYS];
+static int sWheelPalRow[CITY_COUNT][128][4][WHEEL_PAL_KEYS];	// the lower-pool row each cached id lives in, -1 = base strip
+static u_int sWheelPalKey[CITY_COUNT][128][4][WHEEL_PAL_KEYS];	// FNV-1a of the 32 colour bytes, 0 = empty
 
 /* JERICHO: the lower-pool CLUT band a city's palette TABLE owns (rows 512..), and its
  * size. One band per held city, reused for every re-upload of that city's rows and given
@@ -239,6 +248,7 @@ static void CarPalRowClear(void)
 
 	memset(sWheelPalClut, 0, sizeof(sWheelPalClut));
 	memset(sWheelPalRow, 0xFF, sizeof(sWheelPalRow));	/* all -1: nothing reserved */
+	memset(sWheelPalKey, 0, sizeof(sWheelPalKey));
 	memset(sWheelDirectRow, 0, sizeof(sWheelDirectRow));
 
 	// The colour-column coverage goes with the writers: a new level re-uploads the rows it
@@ -438,7 +448,7 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 {
 	int row;
 	u_short clut;
-	int i;
+	int i, k;
 
 	if (city < 0 || city >= CITY_COUNT || colors == NULL)
 		return 0;
@@ -459,8 +469,42 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 	// state (CarImportPaletteRowForget), which it does; this id stays valid for the next
 	// car of the same city. The SET is part of the key because two cars in one bank may
 	// wear wheels from different pages, and their palettes are derived from those pages.
-	if (sWheelPalClut[city][sourceSet][hub] != 0)
-		return sWheelPalClut[city][sourceSet][hub];
+	{
+		u_int key = 2166136261u;
+
+		for (i = 0; i < 32; i++)
+			key = (key ^ colors[i]) * 16777619u;
+
+		key |= 1;	// 0 marks an empty entry
+
+		for (k = 0; k < WHEEL_PAL_KEYS; k++)
+		{
+			if (sWheelPalClut[city][sourceSet][hub][k] != 0 && sWheelPalKey[city][sourceSet][hub][k] == key)
+				return sWheelPalClut[city][sourceSet][hub][k];
+		}
+
+		for (k = 0; k < WHEEL_PAL_KEYS; k++)
+		{
+			if (sWheelPalClut[city][sourceSet][hub][k] == 0)
+				break;
+		}
+
+		if (k == WHEEL_PAL_KEYS)
+		{
+			// more distinct palettes on one page than the cache holds: reuse the last
+			// entry, giving its lower-pool row back first so nothing leaks
+			k = WHEEL_PAL_KEYS - 1;
+
+			if (sWheelPalRow[city][sourceSet][hub][k] >= 0)
+				JerLowerPoolClutRelease(sWheelPalRow[city][sourceSet][hub][k], 1);
+
+			sWheelPalRow[city][sourceSet][hub][k] = -1;
+			printWarning("cross-city: %s wheel palettes on set %d exceed %d per kind - the oldest extra is replaced\n",
+				LevelNames[city], sourceSet, WHEEL_PAL_KEYS);
+		}
+
+		sWheelPalKey[city][sourceSet][hub][k] = key;
+	}
 
 	// The civ_clut ROW stays one per (city, hub): it is bookkeeping for the reclaim,
 	// while the VRAM row above is what a draw samples. Allocating per set instead would
@@ -488,7 +532,10 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 	 * city unload can hand it back; the cached id is cleared with the city. */
 	{
 		RECT16 pc;
-		int y = JerLowerPoolClutReserve(1, NULL);
+		int y;
+
+		JerClutLedgerTag(JER_CLUT_OWN_WHEEL, city * 128 + sourceSet);
+		y = JerLowerPoolClutReserve(1, NULL);
 
 		if (y >= 0)
 		{
@@ -498,14 +545,14 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 			pc.h = 1;
 			LoadImage(&pc, (u_long*)colors);
 			clut = GetClut(pc.x, pc.y);
-			sWheelPalRow[city][sourceSet][hub] = y;
+			sWheelPalRow[city][sourceSet][hub][k] = y;
 		}
 		else
 		{
 			LoadImage(&clutpos, (u_long*)colors);
 			clut = GetClut(clutpos.x, clutpos.y);
 			IncrementClutNum(&clutpos);
-			sWheelPalRow[city][sourceSet][hub] = -1;
+			sWheelPalRow[city][sourceSet][hub][k] = -1;
 		}
 	}
 
@@ -513,7 +560,7 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 		civ_clut[row][0][i] = clut;
 
 	CarPalRowNote(row, city);
-	sWheelPalClut[city][sourceSet][hub] = clut;
+	sWheelPalClut[city][sourceSet][hub][k] = clut;
 
 	printInfo("cross-city: %s wheel %s palette (page set %d) reserved in civ_clut row %d (clut %04x)\n",
 		LevelNames[city], hub == 3 ? "damaged tyre" : hub == 2 ? "fast tyre" : hub ? "hubcap" : "tyre",
@@ -719,8 +766,10 @@ void CarApplyHubcapState(int slot, int lost)
 			{
 				// JERICHO: the hubcap CLUT of THIS page's wheel palette - each car's
 				// wheels may live on their own page, so the cache is per set
-				if (sets[k] >= 0 && sets[k] < 128 && sWheelPalClut[city][sets[k]][1] != 0)
-					CarImportSetWheelPaletteClut(city, sets[k], sWheelPalClut[city][sets[k]][1], 1);
+				// (entry 0: a Driver 2 city has one wheel design per page; a baked bank's
+				// per-record palettes are not hubcap-keyed and draw from reservedClut)
+				if (city < CITY_D2_COUNT && sets[k] >= 0 && sets[k] < 128 && sWheelPalClut[city][sets[k]][1][0] != 0)
+					CarImportSetWheelPaletteClut(city, sets[k], sWheelPalClut[city][sets[k]][1][0], 1);
 			}
 		}
 	}
@@ -3413,6 +3462,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 			if (sImpPalClutY[city] >= 0)
 				JerLowerPoolClutRelease(sImpPalClutY[city], sImpPalClutRows[city]);
 
+			JerClutLedgerTag(JER_CLUT_OWN_CARPAL, city);
 			sImpPalClutY[city] = JerLowerPoolClutReserve(wantRows, NULL);
 			sImpPalClutRows[city] = (sImpPalClutY[city] >= 0) ? wantRows : 0;
 		}
@@ -3777,6 +3827,7 @@ static void ProcessPalletLumpForRows(char *lump_ptr, int lump_size, int city, co
 		}
 		else
 		{
+			JerClutLedgerTag(JER_CLUT_OWN_CARPAL, city);
 			JerLowerPoolClutAdvance(used);
 		}
 	}
@@ -3806,7 +3857,7 @@ static int sImpPalSize[CITY_COUNT];
  * this city; CarImportReclaimRows' live-slot test would just be true-for-nothing here. */
 void CarImportForgetCityPalette(int city)
 {
-	int s, hub, rows = 0;
+	int s, hub, k, rows = 0;
 
 	if (city < 0 || city >= CITY_COUNT)
 		return;
@@ -3835,11 +3886,15 @@ void CarImportForgetCityPalette(int city)
 	{
 		for (hub = 0; hub < 4; hub++)
 		{
-			if (sWheelPalRow[city][s][hub] >= 0)
-				JerLowerPoolClutRelease(sWheelPalRow[city][s][hub], 1);
+			for (k = 0; k < WHEEL_PAL_KEYS; k++)
+			{
+				if (sWheelPalRow[city][s][hub][k] >= 0)
+					JerLowerPoolClutRelease(sWheelPalRow[city][s][hub][k], 1);
 
-			sWheelPalRow[city][s][hub] = -1;
-			sWheelPalClut[city][s][hub] = 0;
+				sWheelPalRow[city][s][hub][k] = -1;
+				sWheelPalClut[city][s][hub][k] = 0;
+				sWheelPalKey[city][s][hub][k] = 0;
+			}
 		}
 	}
 

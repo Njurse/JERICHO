@@ -93,6 +93,9 @@ int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigne
 int CarImportWheelPaletteRow(int city, int cluts);
 int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub);
 void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow);
+// JERICHO: a baked bank's wheel records each take the palette of their own page row
+// (several wheel designs can share one page). Runs after the set-level pass; D2 no-op.
+void CarImportReserveRecordWheelPalettes(int city, int sourceSet, const unsigned char* page, int size);
 void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow);
 
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
@@ -206,6 +209,47 @@ int JerCarSlotIsPolice(int slot);
 // JERICHO: the bank's drive-wheel override for the car in resident slot `slot`
 // (LUMP_CAR_DRIVE, 205): 0 = stock rule, else bit0 front / bit1 rear axle driven.
 int JerCarSlotDrive(int slot);
+
+// JERICHO: the bank's police light layout for the car in resident slot `slot`
+// (LUMP_CAR_LIGHTS, 206; bank handling.policeLights). NULL = the bank says
+// nothing and AddCopCarLight keeps its source-city style, so every existing car
+// is untouched. Otherwise `mode` is one of:
+//   JER_COPLIGHTS_STYLE  - wear a stock Driver 2 pattern: `style` is the city
+//                          0..3 (CHICAGO HAVANA VEGAS RIO) or JER_COPLIGHT_HOST
+//                          for "whichever city the level is".
+//   JER_COPLIGHTS_CUSTOM - draw exactly `light[0..count-1]`, one lamp each.
+// Light positions are relative to the car's COG, in the same engine units as
+// CAR_COSMETICS.policeLight.
+#define JER_COP_LIGHTS_MAX		8
+#define JER_COPLIGHTS_STYLE		1
+#define JER_COPLIGHTS_CUSTOM	2
+#define JER_COPLIGHT_HOST		255
+#define JER_COPLIGHT_MIRROR		1	// light.flags: also draw it at -x
+
+typedef struct JER_COP_LIGHT
+{
+	short x, y, z;					// relative to the COG
+	unsigned char r, g, b;			// colour at full flash
+	unsigned char phase;			// 0..255 offset into the flash cycle (128 = opposite)
+	unsigned char flags;			// JER_COPLIGHT_MIRROR
+	unsigned char size;				// percent of the stock lamp size, 0 = 100
+} JER_COP_LIGHT;
+
+typedef struct JER_COP_LIGHTS
+{
+	unsigned char mode;				// 0 = none, else JER_COPLIGHTS_*
+	unsigned char style;			// STYLE: city 0..3 or JER_COPLIGHT_HOST
+	unsigned char count;			// CUSTOM: lights in use
+	unsigned char speed;			// CUSTOM: flash cycle advance per frame, 0 = 16
+	JER_COP_LIGHT light[JER_COP_LIGHTS_MAX];
+} JER_COP_LIGHTS;
+
+const JER_COP_LIGHTS* JerCarSlotCopLights(int slot);
+// JERICHO: per-car police radio (bank handling.policeVoice, LUMP_CAR_VOICE): the
+// Driver 2 city 0..3 whose stock lines the car speaks, JER_POLICE_VOICE_HOST, or -1
+// for the source-city rule (JerPoliceVoiceCity).
+#define JER_POLICE_VOICE_HOST	255
+int JerCarSlotPoliceVoice(int slot);
 
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).

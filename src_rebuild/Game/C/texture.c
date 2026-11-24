@@ -195,6 +195,93 @@ static int sJerLowerPoolClutDropped;				// asks that found no room
  * both kinds of claim meet. (carpinref.h: first fit, split/merge, whole rows.) */
 static CAR_CLUT_FREE sPinClutFree;
 
+// ---------------------------------------------------------------------------
+// JERICHO: the CLUT column ledger - who owns each lower-pool CLUT row (512..1023).
+//
+// Car palette bands, wheel palettes, pedestrian pages, page pins and the checker
+// fallback all take rows from this one column, through the watermark (Advance) or the
+// free list (Reserve / Release). Every take is CLAIMED here under the owner the caller
+// tagged it with (JerClutLedgerTag), every give-back UNCLAIMS it. A claim on a row that
+// is still owned, or a give-back of a row nobody owns, is a COLLISION: two owners would
+// write one palette and the second draws in the first one's colours. Those print once
+// each; JerClutLedgerReport lists the owners as runs (exit / VRAM report).
+static unsigned char sClutOwnKind[JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y];
+static short sClutOwnKey[JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y];
+static int sClutLedgerKind = JER_CLUT_OWN_OTHER, sClutLedgerKey = -1, sClutLedgerCollisions;
+static const char* const sClutOwnName[] = { "free", "car palette", "wheel palette", "ped page", "page pin", "checker", "other" };
+
+void JerClutLedgerTag(int kind, int key)
+{
+	sClutLedgerKind = (kind > 0 && kind <= JER_CLUT_OWN_OTHER) ? kind : JER_CLUT_OWN_OTHER;
+	sClutLedgerKey = key;
+}
+
+static void JerClutLedgerClaim(int y, int rows)
+{
+	int r;
+
+	for (r = y; r < y + rows; r++)
+	{
+		int i = r - JER_VRAM_HALF_Y;
+
+		if (i < 0 || i >= JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y)
+			continue;
+
+		if (sClutOwnKind[i] != 0 && sClutLedgerCollisions++ < 32)
+			printWarning("JERICHO-CLUT COLLISION: row %d owned by %s (key %d) is taken again by %s (key %d)\n",
+				r, sClutOwnName[sClutOwnKind[i]], sClutOwnKey[i], sClutOwnName[sClutLedgerKind], sClutLedgerKey);
+
+		sClutOwnKind[i] = (unsigned char)sClutLedgerKind;
+		sClutOwnKey[i] = (short)sClutLedgerKey;
+	}
+
+	// one tag, one take: the next untagged caller is reported as "other"
+	sClutLedgerKind = JER_CLUT_OWN_OTHER;
+	sClutLedgerKey = -1;
+}
+
+static int JerClutLedgerGive(CAR_CLUT_FREE* fl, int y, int rows)
+{
+	int r;
+
+	for (r = y; r < y + rows; r++)
+	{
+		int i = r - JER_VRAM_HALF_Y;
+
+		if (i < 0 || i >= JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y)
+			continue;
+
+		if (sClutOwnKind[i] == 0 && sClutLedgerCollisions++ < 32)
+			printWarning("JERICHO-CLUT COLLISION: row %d given back twice (nobody owns it)\n", r);
+
+		sClutOwnKind[i] = 0;
+		sClutOwnKey[i] = -1;
+	}
+
+	return CarClutFreeGive(fl, y, rows);
+}
+
+void JerClutLedgerReport(void)
+{
+	int i = 0, n = JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y;
+
+	printInfo("JERICHO-CLUT: lower-pool CLUT owners (%d collision(s) this level)\n", sClutLedgerCollisions);
+
+	while (i < n)
+	{
+		int j = i;
+
+		while (j + 1 < n && sClutOwnKind[j + 1] == sClutOwnKind[i] && sClutOwnKey[j + 1] == sClutOwnKey[i])
+			j++;
+
+		if (sClutOwnKind[i] != 0)
+			printInfo("JERICHO-CLUT:   rows %d..%d %s (key %d)\n",
+				i + JER_VRAM_HALF_Y, j + JER_VRAM_HALF_Y, sClutOwnName[sClutOwnKind[i]], sClutOwnKey[i]);
+
+		i = j + 1;
+	}
+}
+
 // Drop every pool claim. A level load calls this, so one level's imports cannot make
 // the next level's look pre-used.
 void JerLowerPoolReset(void)
@@ -207,6 +294,9 @@ void JerLowerPoolReset(void)
 
 	/* The bands were rows of the column this reset just emptied. */
 	CarClutFreeReset(&sPinClutFree);
+	memset(sClutOwnKind, 0, sizeof(sClutOwnKind));
+	memset(sClutOwnKey, 0xFF, sizeof(sClutOwnKey));
+	sClutLedgerCollisions = 0;
 }
 
 // Where lower half pool page `slot` lives. This is the rectangle a caller uploads into, and what
@@ -344,6 +434,7 @@ void JerLowerPoolClutAdvance(int rows)
 		return;
 	}
 
+	JerClutLedgerClaim(sJerLowerPoolClutY, rows);
 	sJerLowerPoolClutY += rows;
 	sJerLowerPoolClutUsed += rows;
 }
@@ -367,6 +458,8 @@ int JerLowerPoolClutReserve(int rows, int* limitY)
 
 	if (y >= 0)
 	{
+		JerClutLedgerClaim(y, rows);
+
 		if (limitY != NULL)
 			*limitY = y + rows;
 
@@ -394,7 +487,7 @@ void JerLowerPoolClutRelease(int y, int rows)
 	if (y < JER_VRAM_HALF_Y || rows <= 0 || y + rows > JER_VRAM_TOTAL_ROWS)
 		return;
 
-	CarClutFreeGive(&sPinClutFree, y, rows);
+	JerClutLedgerGive(&sPinClutFree, y, rows);
 }
 
 /* Rows that are really free = the untouched tail above the watermark PLUS every band
@@ -445,6 +538,7 @@ static void JerUploadCheckerFallback(void)
 	JerLowerPoolPageRect(slot, &pageRect);
 
 	JerLowerPoolClutCursor(&clutRect);
+	JerClutLedgerTag(JER_CLUT_OWN_CHECKER, 0);
 	JerLowerPoolClutAdvance(1);
 
 	// 16-entry CLUT: 0 = white, 1 = light grey; the rest stay white.
@@ -1963,8 +2057,10 @@ static int CarImportDstSetCore(int set, int city)
 	if (sReservedCount < CAR_REMAP_MAX)
 		sReservedSet[sReservedCount++] = free;	// keep the next set out of it
 
-	printInfo("carimport: %s set %d -> %d (host reserved: %s; host sets 0..%d; decided once, so the bake and the pin agree)\n",
-		(city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", set, free,
+	printInfo("carimport: %s%s set %d -> %d (host reserved: %s; host sets 0..%d; decided once, so the bake and the pin agree)\n",
+		(city >= CITY_COUNT && city < 2 * CITY_COUNT) ? "baked peds of " : "",
+		(city >= 0 && city < CITY_COUNT) ? LevelNames[city] :
+		(city >= CITY_COUNT && city < 2 * CITY_COUNT) ? LevelNames[city - CITY_COUNT] : "?", set, free,
 		HostUsesTPage(set) ? HostUseReason(set) : "another guest city", tpage_amount - 1);
 
 	return free;
@@ -2956,7 +3052,7 @@ void CarImportPin(void)
 				{
 					// too small for what the entry now says (cannot happen for one set's
 					// entry, but never write past a band): give it back and take another
-					CarClutFreeGive(&sPinClutFree, sPinClutY[i], sPinClutRows[i]);
+					JerClutLedgerGive(&sPinClutFree, sPinClutY[i], sPinClutRows[i]);
 					sPinClutY[i] = -1;
 					sPinClutRows[i] = 0;
 				}
@@ -2965,6 +3061,8 @@ void CarImportPin(void)
 
 				if (bandY >= 0)
 				{
+					JerClutLedgerTag(JER_CLUT_OWN_PIN, sPinIndex[i]);
+					JerClutLedgerClaim(bandY, rows);
 					sPinClutReused++;
 				}
 				else
@@ -3021,7 +3119,10 @@ void CarImportPin(void)
 			}
 
 			if (fromPool)
+			{
+				JerClutLedgerTag(JER_CLUT_OWN_PIN, sPinIndex[i]);
 				JerLowerPoolClutAdvance((used > rows) ? used : rows);
+			}
 		}
 
 		if (pool >= 0)
@@ -3370,6 +3471,7 @@ int JerPedUploadAreaPage(int set, int dstSet, char* buf)
 
 	sCarPageUploading = 0;
 	used = CarClutRowsUsed(960, startY, clut.x, clut.y);
+	JerClutLedgerTag(JER_CLUT_OWN_PED, dstSet);
 	JerLowerPoolClutAdvance((used > rows) ? used : rows);
 
 	if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
@@ -3469,6 +3571,7 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 		if (used > rows)
 			rows = used;
 
+		JerClutLedgerTag(JER_CLUT_OWN_PED, dstSet);
 		JerLowerPoolClutAdvance(rows);
 
 		if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
@@ -3538,6 +3641,7 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 		clut.y++;
 	}
 
+	JerClutLedgerTag(JER_CLUT_OWN_PED, dstSet);
 	JerLowerPoolClutAdvance(rows);
 
 	if (sJerPedAreaPoolCount < JER_PED_AREA_MAX)
@@ -3611,7 +3715,7 @@ void JerPedReleasePins(void)
 		JerLowerPoolPageFree(sJerPedAreaPool[i]);
 
 		if (sJerPedAreaClutRows[i] > 0)
-			CarClutFreeGive(&sPinClutFree, sJerPedAreaClutY[i], sJerPedAreaClutRows[i]);
+			JerClutLedgerGive(&sPinClutFree, sJerPedAreaClutY[i], sJerPedAreaClutRows[i]);
 
 		{
 			int dst = sJerPedAreaDst[i];
@@ -3637,7 +3741,7 @@ void JerPedReleasePins(void)
 			JerLowerPoolPageFree(sPinPool[i]);
 
 		if (sPinClutY[i] >= 0 && sPinClutRows[i] > 0)
-			CarClutFreeGive(&sPinClutFree, sPinClutY[i], sPinClutRows[i]);
+			JerClutLedgerGive(&sPinClutFree, sPinClutY[i], sPinClutRows[i]);
 
 		{
 			int idx = sPinIndex[i];
@@ -4491,7 +4595,7 @@ int JerReleaseCarSlot(int slot)
 
 		if (sPinClutY[i] >= 0 && sPinClutRows[i] > 0)
 		{
-			CarClutFreeGive(&sPinClutFree, sPinClutY[i], sPinClutRows[i]);
+			JerClutLedgerGive(&sPinClutFree, sPinClutY[i], sPinClutRows[i]);
 			sPinClutReclaimed += sPinClutRows[i];
 			bandRows += sPinClutRows[i];
 		}
@@ -5286,6 +5390,9 @@ void LoadImportedTPages(void)
 				CarImportReserveDamagedWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow, hubRow);
 				CarImportReserveFastWheelPalette(sc, set, (const unsigned char*)buf, size, wheelRow, hubRow);
 			}
+
+			// last, so a page carrying several wheel designs gives each its own row
+			CarImportReserveRecordWheelPalettes(sc, set, (const unsigned char*)buf, size);
 		}
 
 		free(buf);
@@ -5474,6 +5581,8 @@ static void VramAccountReport(void)
 			JerLowerPoolPagesFree(),
 			JerLowerPoolClutRowsUsed(), JerLowerPoolClutRowsFree(),
 			(JerLowerPoolClutDropped() > 0) ? " - DROPPED asks" : "");
+
+		JerClutLedgerReport();
 	}
 
 	// JERICHO: how many CLUT rows ONE streamed slot can need -- the max over the

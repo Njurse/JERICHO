@@ -10,6 +10,7 @@
 #include "camera.h"
 #include "director.h"
 #include "main.h"
+#include "glaunch.h"	// JERICHO: ActiveCheats (the mini-car cheat scales custom police lights)
 
 char* CosmeticFiles[CITY_COUNT] = {
 	"LEVELS\\CHICAGO.LCF",
@@ -497,6 +498,66 @@ static const COPLIGHT_STYLE copLightStyles[] =
 	{ 2, 2, 16, 0, 1, 1, 0 },	// 3 Driver 1 / custom: 2 lights, red/blue
 };
 
+
+// JERICHO: a bank car's own light layout (handling.policeLights, LUMP_CAR_LIGHTS).
+// One lamp per entry, exactly where the bank put it: no city pattern, no implied
+// mirror, so a single beacon, a lopsided bar or a bus with a light at each corner
+// are all just a list. The flash is the stock one, size = coplife >> 1 on a signed
+// char, so a lamp is lit for half of its cycle and ramps up; `phase` shifts a lamp
+// along that cycle (128 = exactly opposite), which is what makes a pair alternate.
+// coplife advances once per call by the car's `speed`, not once per lamp as the
+// stock bar does, so adding a light never changes how fast the others flash.
+static void AddCustomCopLights(CAR_DATA *cp, const JER_COP_LIGHTS *cl)
+{
+	CAR_COSMETICS *car_cos = cp->ap.carCos;
+	char *coplife = &cp->ap.coplife;
+	int shift = ActiveCheats.cheat13 ? 1 : 0;	// super mini cars halve every anchor
+	int i, pass, passes;
+	SVECTOR v1;
+	CVECTOR col;
+
+	for (i = 0; i < cl->count; i++)
+	{
+		const JER_COP_LIGHT *l = &cl->light[i];
+		int size = ((char)(*coplife + l->phase)) >> 1;
+		int peak;
+
+		if (l->size)
+			size = size * l->size / 100;
+
+		col.r = l->r;
+		col.g = l->g;
+		col.b = l->b;
+
+		// at night the stock bar drops the off-colour channels (90 -> 50); do the
+		// same for whatever colour this lamp is, so red and blue match the stock
+		// look and an amber lamp stays amber
+		if (gNight != 0)
+		{
+			peak = col.r > col.g ? col.r : col.g;
+			peak = peak > col.b ? peak : col.b;
+
+			if (col.r < peak) col.r = col.r * 5 / 9;
+			if (col.g < peak) col.g = col.g * 5 / 9;
+			if (col.b < peak) col.b = col.b * 5 / 9;
+		}
+
+		passes = (l->flags & JER_COPLIGHT_MIRROR) ? 2 : 1;
+
+		for (pass = 0; pass < passes; pass++)
+		{
+			v1.vx = car_cos->cog.vx + ((pass ? -l->x : l->x) >> shift);
+			v1.vy = car_cos->cog.vy + (l->y >> shift);
+			v1.vz = car_cos->cog.vz + (l->z >> shift);
+
+			ShowCarlight(&v1, cp, &col, size, size * 3, &light_texture, 0xff);
+		}
+	}
+
+	if (pauseflag == 0)
+		*coplife += cl->speed ? cl->speed : 16;
+}
+
 // [D] [T]
 void AddCopCarLight(CAR_DATA *cp)
 {
@@ -517,6 +578,7 @@ void AddCopCarLight(CAR_DATA *cp)
 	CVECTOR col;
 	int srcCity;
 	const COPLIGHT_STYLE *style;
+	const JER_COP_LIGHTS *bankLights;
 
 	coplife = &cp->ap.coplife;
 
@@ -537,6 +599,24 @@ void AddCopCarLight(CAR_DATA *cp)
 	// cross-city loads) flashed in the host city's pattern. Its source city decides now;
 	// a level's own cars report -1 and keep the stock look.
 	srcCity = GetCarModelSourceCity(cp->ap.model);
+
+	// JERICHO: a bank can say how its car's lights look (handling.policeLights): its
+	// own list of lamps, or a named Driver 2 city's bar in place of the source-city
+	// default. NULL for every car that does not, which is all of the stock ones.
+	bankLights = JerCarSlotCopLights(cp->ap.model);
+
+	if (bankLights != NULL)
+	{
+		if (bankLights->mode == JER_COPLIGHTS_CUSTOM)
+		{
+			AddCustomCopLights(cp, bankLights);
+			return;
+		}
+
+		// style: a city 0..3, or HOST = whichever city the level is (-1 here)
+		srcCity = (bankLights->style == JER_COPLIGHT_HOST) ? -1 : bankLights->style;
+	}
+
 	style = &copLightStyles[CopLightStyleForCity(srcCity)];
 
 	// configure (from the car's own source-city style, never the host level's)

@@ -485,6 +485,21 @@ static void LoadImportedCopPhrases(int city)
 /* JERICHO: make sure the cop car in resident `slot` has its own city's radio
  * lines resident. A host-city car, a civilian, or a level that loaded no cop
  * speech of its own needs nothing. */
+// JERICHO: the voice city for the car in `slot`: the bank's per-car choice
+// (handling.policeVoice) when it made one, else the source-city rule. -1 = none.
+static int PoliceVoiceCityForSlot(int slot, int src)
+{
+	int v = JerCarSlotPoliceVoice(slot);
+
+	if (v == JER_POLICE_VOICE_HOST)
+		return GameLevel;
+
+	if (v >= 0 && v < CITY_D2_COUNT)
+		return v;
+
+	return JerPoliceVoiceCity(src);
+}
+
 static void LoadCopPhrasesForSlot(int slot)
 {
 	int src, city;
@@ -500,7 +515,7 @@ static void LoadCopPhrasesForSlot(int slot)
 	if (src < 0 || src == GameLevel || !JerCarSlotIsPolice(slot))
 		return;
 
-	city = JerPoliceVoiceCity(src);
+	city = PoliceVoiceCityForSlot(slot, src);
 
 	if (city < 0)
 	{
@@ -526,7 +541,7 @@ static int CopPhraseCityForSlot(int slot)
 
 		if (src >= 0 && src != GameLevel)
 		{
-			int city = JerPoliceVoiceCity(src);
+			int city = PoliceVoiceCityForSlot(slot, src);
 
 			if (city >= 0 && city < CITY_COUNT && cop_phrase_base[city] >= 0)
 				return city;
