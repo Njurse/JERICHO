@@ -46,6 +46,11 @@ typedef struct CYC_CAR
 } CYC_CAR;
 
 static CYC_CAR gCar[CYC_CARS];
+/* the last round's cars, asked to unload again a little later: the first request can come
+ * back "a car is still on it", and carhacks only retries a deferred release inside an mp
+ * session - a sandbox run has none, so the retry is ours */
+static CYC_CAR gOld[CYC_CARS];
+static int gOldAt;
 static int gFrame, gRound, gCheckAt, gPlacedRound;
 static unsigned int gRng = 1;
 static int gCities[CYC_MAX_CITIES], gCityCount;
@@ -153,6 +158,8 @@ static void CycRemoveCars(void)
 			ua.city = gCar[i].city;
 			ua.model = gCar[i].model;
 			jer_fire(JER_CARQ_UNLOAD, &ua);	/* give the slot, block and handles back */
+			gOld[i] = gCar[i];
+			gOldAt = gFrame + 30;
 		}
 
 		gCar[i].id = -1;
@@ -302,6 +309,26 @@ static int CycOnFrame(void* userdata, void* args)
 	if (gFrame < CYC_START_FRAME || player[0].playerCarId < 0 ||
 		car_data[player[0].playerCarId].controlType == CONTROL_TYPE_NONE)
 		return JER_RESULT_CONTINUE;
+
+	if (gOldAt != 0 && gFrame >= gOldAt)
+	{
+		int i;
+
+		gOldAt = 0;
+
+		for (i = 0; i < CYC_CARS; i++)
+		{
+			JER_CARQ_UNLOAD_ARGS ua;
+
+			if (gOld[i].slot < 0)
+				continue;
+
+			ua.city = gOld[i].city;
+			ua.model = gOld[i].model;
+			jer_fire(JER_CARQ_UNLOAD, &ua);
+			gOld[i].slot = -1;
+		}
+	}
 
 	if (gCheckAt != 0 && gFrame >= gCheckAt)
 		CycCheckRound();
