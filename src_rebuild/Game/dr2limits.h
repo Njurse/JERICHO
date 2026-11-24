@@ -91,6 +91,19 @@
 #define MAX_CAR_RESIDENT_MODELS	5
 #endif
 
+/* JERICHO: texture page numbers ("sets"). The host (levels, frontend, streamed scenery)
+ * lives in 0..JER_TPAGE_HOST_SLOTS-1. Imported car and pedestrian pages get a HANDLE in
+ * JER_IMPORT_PAGE_FIRST..JER_IMPORT_PAGE_LAST, a range nothing else ever names, so guest
+ * pages can no longer collide with a host page or run a small shared pool dry (it was 18
+ * numbers, 110..127). 255 is NOT a handle: it is the "empty" marker of tpageslots[] and
+ * the host's "first poly's page" set on collapsed tread quads. Polys store a set in a
+ * byte, so 255 is also the ceiling. */
+#define JER_TPAGE_HOST_SLOTS	128
+#define JER_TPAGE_SLOTS		256
+#define JER_IMPORT_PAGE_FIRST	128
+#define JER_IMPORT_PAGE_LAST	254
+#define JER_IMPORT_PAGE_COUNT	(JER_IMPORT_PAGE_LAST - JER_IMPORT_PAGE_FIRST + 1)
+
 /* Deliberately NOT (MAX_CAR_RESIDENT_MODELS-1). This is a MODEL number, not "the
  * last slot": it is compared against cp->ap.model (the Vegas ambulance in cars.c,
  * mission 33's limo in civ_ai.c), it names the slot levelSpecCosmetics indexes,

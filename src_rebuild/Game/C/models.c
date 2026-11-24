@@ -3437,7 +3437,7 @@ static int CarImportWheelBlock(int city, char* body, int size, int off,
 
 	wt->clut = p[2].texture_id;
 	wt->hubClut = p[4].texture_id;	// the page loader puts the wheel row here
-	wt->present = (wt->set > 0 && wt->set < 128);
+	wt->present = (wt->set > 0 && wt->set < JER_TPAGE_SLOTS - 1);
 
 	printInfo("cross-city: %s %s texture: source set %d -> %d, face (%d,%d)-(%d,%d), tread (%d,%d)-(%d,%d)\n",
 		LevelNames[city], what, p[2].texture_set, wt->set,
@@ -3634,7 +3634,7 @@ static void BuildCarImportWheels(int city)
 
 		wt->clut = p[2].texture_id;
 		wt->hubClut = p[4].texture_id;	// the page loader puts the wheel row here
-		wt->present = (wt->set > 0 && wt->set < 128);
+		wt->present = (wt->set > 0 && wt->set < JER_TPAGE_SLOTS - 1);
 		CAR_WHEEL(imp, -1, i)->present = (unsigned char)wt->present;
 
 		printInfo("cross-city: %s wheel %d texture: source set %d -> %d, face (%d,%d)-(%d,%d), tread (%d,%d)-(%d,%d)\n",

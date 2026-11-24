@@ -10,3 +10,4 @@ This document is canonical in the mod's own folder.
 - Not compiled here (PsyCross submodule empty); rebuild and re-test: swap between 3+ cities' cars, check log for `no free import index` and `JERICHO-CLUT COLLISION`.
 - Level-load VRAM report now also prints `JERICHO-INDEX:` (page numbers held/free/leaked) and warns in the console if a city with no cars still owns any.
 - Tidy: `CarRemapDropAt` replaces three copies of the remap+reservation removal; the dead `remapFrom/remapTo` pin code is gone.
+- denting.c now includes models.h (CarImportCityHeld / GetCarImportDenting were undeclared; found by a g++ -fsyntax-only pass: `g++ -x c++ -fpermissive -std=gnu++17 -I. -I.. -I../../PsyCross/include -I../../PsyCross/include/psx ...` from Game/C works as a quick compile check).

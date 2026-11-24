@@ -34,3 +34,14 @@ Approach: an import-only handle space 128..255, never touched by host/frontend.
    peds; Python selftests for both bakes.
 
 Order: 1 -> 2 -> 3 (cars verify) -> 4 (peds) -> 5,8 -> 6 -> 7,9. Each step its own commit.
+
+## Status (2026-11-24)
+- Steps 1-3 done in code: tables are 256 wide (`JER_TPAGE_SLOTS`, dr2limits.h), handles are
+  128..254 (255 is the tpageslots/"first poly" sentinel), `CarImportDstSetCore` always allocates a
+  handle (no more identity numbers), remap table 32 -> 96, diagnostics/report updated.
+  Source-set tables (`sSetRow`, wheel palettes, carTpages, sModelSet) stay 128: they are keyed by
+  the SOURCE city's set number, not the handle.
+- Step 2 as built: the allocator is still `FindFreeSetIndex` + `sIndexCity` + remap list, now over
+  the handle range, not a separate module. The refcounted allocator is only worth doing if
+  something else needs it.
+- Not yet: ped verification in game (peds share the allocator already), steps 5-9.

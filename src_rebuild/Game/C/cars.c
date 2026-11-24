@@ -2335,7 +2335,7 @@ void DrawWheelObject(MODEL* model, MODEL* texModel, const JER_WHEEL_TEX* texRect
 				 * poly's page", which is how the stock code resolved it, once. */
 				int set = texSrc->texture_set, id = texSrc->texture_id;
 
-				if (set >= 128 || id >= 32)
+				if (set >= JER_TPAGE_SLOTS - 1 || id >= 32)	// 255 = "first poly's page"; import handles (128..254) are real
 				{
 					set = primarySet;
 					id = primaryId;
@@ -2423,7 +2423,7 @@ static int JerWheelTextureReady(MODEL* m)
 
 static int JerWheelTextureReadyRect(const JER_WHEEL_TEX* r)
 {
-	return r != NULL && r->present && r->set > 0 && r->set < 128 &&
+	return r != NULL && r->present && r->set > 0 && r->set < JER_TPAGE_SLOTS - 1 &&
 		texture_pages[r->set] != 0;
 }
 

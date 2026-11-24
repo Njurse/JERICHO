@@ -42,6 +42,11 @@ is in [changelog.txt](changelog.txt).
   another way kept them, and later cars logged `no free import index`, kept the
   host's page (broken wheels) or never became ready. Releasing a city now
   returns every page number it held that no live page still uses.
+- **Imported cars and pedestrians no longer share 18 page numbers with each other
+  and the host.** Every imported page now gets a number of its own in a range
+  (128-254) that the level, the frontend and scenery never use, so two cities'
+  cars can no longer collide, and a city that is not using the host's numbers
+  no longer takes them. (Step 1-3 of the page-handle plan, `docs/JERICHO/vram-handles-plan.md`.)
 - **A car that cannot load now says so in the console.** "No free page number"
   and "not ready" failures print a console line naming the car and the reason,
   like multiplayer's car-change failure, and the log reports each missing set

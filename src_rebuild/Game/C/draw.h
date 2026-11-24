@@ -23,8 +23,8 @@ struct _pct
 	u_int planeColours[8];
 	u_int flatColour;		/* JERICHO: the colour a PLOT_FLAT_COLOUR draw must use */
 	int scribble[8];
-	u_short(*ptexture_pages)[128];
-	u_short(*ptexture_cluts)[128][32];
+	u_short(*ptexture_pages)[JER_TPAGE_SLOTS];
+	u_short(*ptexture_cluts)[JER_TPAGE_SLOTS][32];
 	struct DB* current;
 	SVECTOR* verts;
 	int* polySizes;

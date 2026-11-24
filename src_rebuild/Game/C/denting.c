@@ -5,6 +5,7 @@
 #include "system.h"
 #include "mission.h"
 #include "cars.h"
+#include "models.h"	// JERICHO: GetCarImportDenting, CarImportCityHeld
 #include "convert.h"
 #include "pause.h"
 #include "camera.h"

@@ -12,15 +12,15 @@ extern int palette_lump_size;	// JERICHO: the LUMP_PALLET segment's byte size (s
 
 extern SXYPAIR tpagepos[20];
 
-extern unsigned short texture_pages[128];
-extern unsigned short texture_cluts[128][32];
-extern int tpage_texamts[128];
+extern unsigned short texture_pages[JER_TPAGE_SLOTS];
+extern unsigned short texture_cluts[JER_TPAGE_SLOTS][32];
+extern int tpage_texamts[JER_TPAGE_SLOTS];
 
 extern RECT16 clutpos;
 extern RECT16 fontclutpos;
 extern RECT16 mapclutpos;
 
-extern unsigned char tpageloaded[128];
+extern unsigned char tpageloaded[JER_TPAGE_SLOTS];
 // JERICHO: the base half's SLOT table. 19 entries is the ENGINE's own bound, not a policy
 // tuned here: LoadPermanentTPages writes one entry per permanent page, so a level with
 // more would already have overrun this array. That is why the slot scans stop at 19 - it

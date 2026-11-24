@@ -112,9 +112,9 @@ int palette_lump_size;
 char* texturename_buffer = NULL;
 int NoTextureMemory = 0;
 
-u_short texture_pages[128];
-u_short texture_cluts[128][32];
-u_char tpageloaded[128];
+u_short texture_pages[JER_TPAGE_SLOTS];
+u_short texture_cluts[JER_TPAGE_SLOTS][32];
+u_char tpageloaded[JER_TPAGE_SLOTS];
 
 int MaxSpecCluts;
 int slotsused;
@@ -131,10 +131,10 @@ DVECTOR slot_tpagepos[19];
 u_char tpageslots[TPAGE_SLOTS];
 
 TP *tpage_position = NULL;
-TEXINF* tpage_ids[128] = { 0 };
+TEXINF* tpage_ids[JER_TPAGE_SLOTS] = { 0 };
 int texamount = 0;
 int tpage_amount = 0;
-int tpage_texamts[128];
+int tpage_texamts[JER_TPAGE_SLOTS];
 
 int nspecpages = 0;
 int nperms = 0;
@@ -1888,7 +1888,7 @@ static int HostUsesTPage(int tpage)
 // Enough for BOTH imported cities: each contributes its own sets that the level
 // already resolved, so one city's six was the old ceiling and a second city
 // overflows 8. These are small int arrays - the cost is a few hundred bytes.
-#define CAR_REMAP_MAX 32
+#define CAR_REMAP_MAX 96	/* one entry per (city, set) now that every import set gets its own handle */
 
 static int sRemapFrom[CAR_REMAP_MAX];
 static int sRemapTo[CAR_REMAP_MAX];
@@ -1899,7 +1899,7 @@ static int sRemapCount;
 // holds it, so the zero-initialised table is already "all free").
 // A set number means one page per CITY, so two guest cities that both name set 20 must not
 // both write texture_pages[20]: the second one is given an index of its own.
-static int sIndexCity[128];
+static int sIndexCity[JER_TPAGE_SLOTS];
 
 // Set while an imported vehicle's polys are being converted, so CarSetRemap only
 // applies to THAT car. It has to be per-car: the remap maps e.g. 54 -> 110 because
@@ -2001,9 +2001,9 @@ static void CarRemapDropAt(int r)
  * console, once per report, instead of letting later cars fail. */
 static void JerImportIndexReport(void)
 {
-	int i, held = 0, leaked = 0;
+	int i, held = 0, leaked = 0, peds = 0;
 
-	for (i = 110; i < 128; i++)
+	for (i = JER_IMPORT_PAGE_FIRST; i <= JER_IMPORT_PAGE_LAST; i++)
 	{
 		int c = sIndexCity[i] - 1;
 
@@ -2012,25 +2012,33 @@ static void JerImportIndexReport(void)
 
 		held++;
 
-		if (c < 0 || c >= CITY_COUNT || !CarImportCityHeld(c))
+		if (c >= CITY_COUNT)		/* a baked-ped key (models.c JER_PED_BAKED_KEY) */
+		{
+			peds++;
+			continue;
+		}
+
+		if (c < 0 || !CarImportCityHeld(c))
 		{
 			leaked++;
-			printInfo("JERICHO-INDEX: page number %d is claimed by %s, which holds no car data - leaked\n",
-				i, (c >= 0 && c < CITY_COUNT) ? LevelNames[c] : "?");
+			printInfo("JERICHO-INDEX: handle %d is claimed by %s, which holds no car data - leaked\n",
+				i, (c >= 0) ? LevelNames[c] : "?");
 		}
 	}
 
-	printInfo("JERICHO-INDEX: import page numbers 110..127: %d held, %d free, %d leaked\n", held, 18 - held, leaked);
+	printInfo("JERICHO-INDEX: import handles %d..%d: %d held (%d by baked peds), %d free, %d leaked\n",
+		JER_IMPORT_PAGE_FIRST, JER_IMPORT_PAGE_LAST, held, peds, JER_IMPORT_PAGE_COUNT - held, leaked);
 
 	if (leaked > 0)
-		jer_console_log("[carimport] warning: %d import page number(s) are held by cities with no cars (%d of 18 free)", leaked, 18 - held);
+		jer_console_log("[carimport] warning: %d import handle(s) are held by cities with no cars (%d of %d free)",
+			leaked, JER_IMPORT_PAGE_COUNT - held, JER_IMPORT_PAGE_COUNT);
 }
 
 static int FindFreeSetIndex(void)
 {
 	int i;
 
-	for (i = 110; i < 128; i++)
+	for (i = JER_IMPORT_PAGE_FIRST; i <= JER_IMPORT_PAGE_LAST; i++)
 	{
 		if (tpageloaded[i] != 0 || SetIndexReserved(i) || sIndexCity[i] != 0)
 			continue;
@@ -2096,12 +2104,11 @@ static int CarImportDstSetCore(int set, int city)
 	if (set < 0 || set >= 128)
 		return set;
 
-	if (!HostUsesTPage(set) && (sIndexCity[set] == 0 || sIndexCity[set] == city + 1))
-	{
-		sIndexCity[set] = city + 1;
-		return set;
-	}
-
+	/* JERICHO: EVERY import set takes a handle of its own (JER_IMPORT_PAGE_FIRST..LAST), even one
+	 * the host does not use. It used to keep its own number when the host left it free, which
+	 * made the import a tenant of the host's number space: a later level page, a frontend page or
+	 * another guest city naming the same number was a conflict to resolve after the fact. A
+	 * handle range nothing else names cannot conflict. */
 	free = FindFreeSetIndex();
 
 	// no room: keep the host's page for this part, as before. The pins refuse an
@@ -2114,8 +2121,8 @@ static int CarImportDstSetCore(int set, int city)
 
 			printInfo("carimport: %s set %d -> no free import index (host reserved: %s) - the part keeps the host page\n",
 				LevelNames[city], set, HostUsesTPage(set) ? HostUseReason(set) : "another guest city");
-			jer_console_log("[carimport] %s set %d: no free page number (all 18 are held by other cities' cars) - cars needing it will not load until one is released",
-				LevelNames[city], set);
+			jer_console_log("[carimport] %s set %d: no free page number (all %d import handles are held by other cities' cars) - cars needing it will not load until one is released",
+				LevelNames[city], set, JER_IMPORT_PAGE_COUNT);
 		}
 		else if (city < 0 || city >= CITY_COUNT)
 			printInfo("carimport: ? set %d -> no free import index\n", set);
@@ -3570,7 +3577,7 @@ int JerPedUploadBakedPage(int set, int dstSet, int npalettes, const unsigned cha
 	int pool, rows, i;
 	unsigned int* clutptr;
 
-	if (dstSet < 0 || dstSet >= 128)
+	if (dstSet < 0 || dstSet >= JER_TPAGE_SLOTS)
 		return 0;
 
 	if (CarImportPinIsHostSet(set, dstSet))
@@ -3741,7 +3748,7 @@ static void JerPedIndexGiveBack(int idx, int city)
 {
 	int k, r;
 
-	if (idx < 0 || idx >= 128 || city < 0 || sIndexCity[idx] != city + 1)
+	if (idx < 0 || idx >= JER_TPAGE_SLOTS || city < 0 || sIndexCity[idx] != city + 1)
 		return;
 
 	for (k = 0; k < sPinCount; k++)
@@ -3776,7 +3783,7 @@ void JerPedReleasePins(void)
 		{
 			int dst = sJerPedAreaDst[i];
 
-			if (dst >= 0 && dst < 128)
+			if (dst >= 0 && dst < JER_TPAGE_SLOTS)
 				JerPedIndexGiveBack(dst, sIndexCity[dst] - 1);
 		}
 	}
@@ -3981,24 +3988,13 @@ void CarImportDumpState(void)
 	// keeps sampling the coordinates. That is what 'the UVs look off' actually is.
 	for (i = 0; i < slotsused; i++)
 	{
-		if (tpageloaded[tpageslots[i]] != 0 && tpageslots[i] >= 110)
+		if (tpageloaded[tpageslots[i]] != 0 && tpageslots[i] >= JER_IMPORT_PAGE_FIRST)
 			printInfo("cross-city:   slot %d still holds imported set %d - intact\n", i, tpageslots[i]);
 	}
 
 	for (i = 0; i < sRemapCount; i++)
-	{
-		int k = sRemapTo[i] - 100;
-
-		// tpagepos has 20 entries; re-indexes run to 127
-		if (k < 0 || k >= (int)(sizeof(tpagepos) / sizeof(tpagepos[0])))
-		{
-			printInfo("cross-city:   imported index %d has no slot rect\n", sRemapTo[i]);
-			continue;
-		}
-
-		printInfo("cross-city:   imported index %d sits at slot rect (%d,%d) - shared with slot %d\n",
-			sRemapTo[i], tpagepos[k].x, tpagepos[k].y, k);
-	}
+		printInfo("cross-city:   imported index %d <- set %d of %s\n", sRemapTo[i], sRemapFrom[i],
+			(sRemapCity[i] >= 0 && sRemapCity[i] < CITY_COUNT) ? LevelNames[sRemapCity[i]] : "baked peds");
 
 	// JERICHO: the per-slot set -> row -> page map, at exit. This is the gate's audit:
 	// every imported slot that still has a body set without a live pin, a mapped row, a
@@ -4420,7 +4416,7 @@ static void CarImportDumpPageRefs(void)
 	{
 		int px, py;
 
-		if (sPinIndex[n] < 0 || sPinIndex[n] >= 128 || sPinSet[n] < 0)
+		if (sPinIndex[n] < 0 || sPinIndex[n] >= JER_TPAGE_SLOTS || sPinSet[n] < 0)
 			continue;
 
 		CarImportPageRect(texture_pages[sPinIndex[n]], &px, &py);
@@ -4549,7 +4545,7 @@ static void CarPinIndexFreed(int idx)
 {
 	int p, j, shared = 0;
 
-	if (idx < 0 || idx >= 128)
+	if (idx < 0 || idx >= JER_TPAGE_SLOTS)
 		return;
 
 	for (p = 0; p < sPinCount; p++)
@@ -4874,7 +4870,7 @@ void CarImportForgetCity(int city)
 			continue;
 		}
 
-		if (to >= 0 && to < 128 && sIndexCity[to] == city + 1)
+		if (to >= 0 && to < JER_TPAGE_SLOTS && sIndexCity[to] == city + 1)
 			sIndexCity[to] = 0;
 
 		CarRemapDropAt(i);
@@ -4882,7 +4878,7 @@ void CarImportForgetCity(int city)
 
 	memset(sNoIndexLogged[city], 0, sizeof(sNoIndexLogged[city]));
 
-	for (i = 0; i < 128; i++)
+	for (i = 0; i < JER_TPAGE_SLOTS; i++)
 	{
 		int k, pinned = 0;
 
@@ -5735,10 +5731,10 @@ void LoadPermanentTPages(int *sector)
 	// JERICHO: a set that never gets pinned reads these init-time dummy values, so make
 	// the dummy the checker fallback when one was uploaded (a dropped/unplaced page, or a
 	// car with no texture at all, then shows the checker instead of a live host page's pixels).
-	for (tloop = 0; tloop < 128; tloop++)
+	for (tloop = 0; tloop < JER_TPAGE_SLOTS; tloop++)
 		texture_pages[tloop] = (sJerCheckerTpage != 0) ? sJerCheckerTpage : GetTPage(0, 0, 960, 0);
 
-	for (tloop = 0; tloop < 128; tloop++)
+	for (tloop = 0; tloop < JER_TPAGE_SLOTS; tloop++)
 	{
 		for (tset = 0; tset < 32; tset++)
 			texture_cluts[tloop][tset] = (sJerCheckerClut != 0) ? sJerCheckerClut : GetClut(960, 16);
@@ -6241,7 +6237,7 @@ static int WorldDetachSlotPins(void)
 		sCarPageClaimFrame[slot] = 0;
 		sPinTexSlot[i] = -1;
 
-		if (idx >= 0 && idx < 128)
+		if (idx >= 0 && idx < JER_TPAGE_SLOTS)
 			tpageloaded[idx] = 0;
 
 		n++;
@@ -6255,7 +6251,7 @@ static int WorldDetachSlotPins(void)
 		int idx = sPinIndex[i];
 		int p, placed = 0;
 
-		if (idx < 0 || idx >= 128)
+		if (idx < 0 || idx >= JER_TPAGE_SLOTS)
 			continue;
 
 		for (p = 0; p < sPinCount; p++)
@@ -6302,7 +6298,7 @@ static int WorldQueueStreamed(void)
 
 		held = tpageslots[slot];
 
-		if (held != 0xFF && held < 128)
+		if (held != 0xFF && held < JER_TPAGE_SLOTS)
 			tpageloaded[held] = 0;
 
 		tpageslots[slot] = 0xFF;
