@@ -4786,7 +4786,7 @@ char* GetCarImportCosmetics(int slot)
 // live with its own allocations. JerHotLoadCarModel builds one such slot from its
 // IMPORT data into this pool instead, which lives until the next level load
 // (ProcessCarModelLump resets it). See models.h.
-#define JER_HOT_CAR_POOL_BYTES	(512 * 1024)
+#define JER_HOT_CAR_POOL_BYTES	(MAX_CAR_RESIDENT_MODELS * 64 * 1024)	/* one block per resident slot */
 
 // One car's worth of pool. Deliberately far above the level loader's specMemReq
 // figure for the same model: that figure is the SPOOL requirement (the largest single
@@ -4805,11 +4805,14 @@ char* GetCarImportCosmetics(int slot)
 // must hand its resources back. JER_HOT_CAR_BLOCKS blocks fit the pool by construction.
 #define JER_HOT_CAR_BLOCKS		(JER_HOT_CAR_POOL_BYTES / JER_HOT_CAR_BLOCK_BYTES)
 
-/* The eight-player guest-import budget: 16 resident models - 5 domestic - 2 mp spares
- * (5/6) - 1 special (11) = 8 hot-load blocks. A player whose car cannot get a block is
- * left drawn as the level's own car, so this is a build error, not a runtime surprise. */
-#if JER_HOT_CAR_BLOCKS < 8
-#error "the hot-load pool must cover the eight guest import slots"
+/* One block per resident slot, so no slot that can be hot-loaded is ever left without one.
+ * The old budget (16 - 5 domestic - 2 mp spares - 1 special = 8) undercounted: a level-built
+ * spare released and rebuilt in place, plus the slots above it, wanted 9-10 at once, and a
+ * spawner cycling cars ran the pool dry ("8 of 8 in use"). A player whose car cannot get a
+ * block is left drawn as the level's own car, so this is a build error, not a runtime
+ * surprise. */
+#if JER_HOT_CAR_BLOCKS < MAX_CAR_RESIDENT_MODELS
+#error "the hot-load pool must cover every resident slot"
 #endif
 
 static char* gJerHotCarPool;

@@ -1084,12 +1084,12 @@ CAR_POLY carPolyBuffer[MAX_CAR_POLYS + 1];
 CAR_POLY* gJerCarPolyBase = carPolyBuffer;
 int gJerCarPolyCap = MAX_CAR_POLYS;
 
-#define JER_HOT_POLY_BLOCKS		8
-/* Same eight-slot budget as models.c's JER_HOT_CAR_BLOCKS: a hot load needs both a
+#define JER_HOT_POLY_BLOCKS		MAX_CAR_RESIDENT_MODELS
+/* Same one-block-per-slot budget as models.c's JER_HOT_CAR_BLOCKS: a hot load needs both a
  * geometry block and a poly block, so a shortfall here is just as invisible as the
  * other (the car builds 0 polys and is not drawn). */
-#if JER_HOT_POLY_BLOCKS < 8
-#error "the hot-load poly arena must cover the eight guest import slots"
+#if JER_HOT_POLY_BLOCKS < MAX_CAR_RESIDENT_MODELS
+#error "the hot-load poly arena must cover every resident slot"
 #endif
 #define JER_HOT_POLY_PER_BLOCK	((MAX_CAR_POLYS / 4))	/* 1200: three builds of a ~250-poly car */
 /* One spare entry per block, exactly as the level arena has (carPolyBuffer[MAX_CAR_POLYS + 1]):
