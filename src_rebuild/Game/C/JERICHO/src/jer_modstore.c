@@ -3225,20 +3225,20 @@ static void ModsDrawTable(void)
 			(mod.version != NULL) ? mod.version : "?", 200, 200, 200);
 
 		if (mod.refusal != NULL)
-			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "BLOCKED", 255, 128, 128);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "Blocked", 255, 128, 128);
 		else if (mod.core)
-			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "CORE", 255, 200, 64);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "Required", 255, 200, 64);
 		else if (mod.enabled)
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "ON", 128, 255, 128);
 		else
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "OFF", 150, 150, 150);
 
 		if (mod.replaced)
-			snprintf(buf, sizeof(buf), "store %s (replaced)", (mod.storeVersion != NULL) ? mod.storeVersion : "?");
+			snprintf(buf, sizeof(buf), "downloaded %s (replaced)", (mod.storeVersion != NULL) ? mod.storeVersion : "?");
 		else if (mod.fromStore)
-			snprintf(buf, sizeof(buf), "store %s", (mod.storeVersion != NULL) ? mod.storeVersion : "");
+			snprintf(buf, sizeof(buf), "downloaded %s", (mod.storeVersion != NULL) ? mod.storeVersion : "");
 		else
-			snprintf(buf, sizeof(buf), "bundled");
+			snprintf(buf, sizeof(buf), "included");
 
 		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 80), ry + 4, buf, 170, 190, 210);
 	}
@@ -3368,7 +3368,7 @@ static const char* StoreStateText(int state)
 		case JER_MODSTORE_ST_INSTALLED:		return "installed";
 		case JER_MODSTORE_ST_UPDATE:		return "update";
 		case JER_MODSTORE_ST_REPLACED:		return "replaced";
-		case JER_MODSTORE_ST_BUNDLED_NEWER:	return "newer here";
+		case JER_MODSTORE_ST_BUNDLED_NEWER:	return "up to date";
 		case JER_MODSTORE_ST_NEEDS_CORE:	return "needs newer";
 		case JER_MODSTORE_ST_NEEDS_DEP:		return "needs a mod";
 		default:							return "available";
