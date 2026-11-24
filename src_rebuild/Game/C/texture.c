@@ -2586,6 +2586,7 @@ static int CarPinOwnersOverlap(int a, int b)
 }
 
 static int sPinPoolEvictions;			/* JERICHO: idle import pages pushed out of the pool */
+static int CarPinEvictable(int p);
 
 /* JERICHO: the lower half pool is full and pin `want` needs a page. Take one from an
  * import pin whose cars are all gone (no live car on any owner slot), so the pool cycles
@@ -2596,33 +2597,95 @@ static int sPinPoolEvictions;			/* JERICHO: idle import pages pushed out of the 
  * evicted pin keeps its CLUT band and its handle; it reads the checker page until a car
  * is on it again, when the pin walk places it once more - evicting some other idle page
  * if it must. Returns the pool page now free for `want`, or -1. */
-static int CarPinEvictIdlePool(int want)
+/* JERICHO: may pin `p`'s pool page be handed to another import right now? It has a page,
+ * no car is on any of its owner slots, and no other pin shares its handle. (The "not the
+ * same car as the asker" rule is the caller's: CarPinEvictIdlePool knows the asker.) */
+static int CarPinEvictable(int p)
 {
-	int p, q, j, page;
+	int q;
+
+	if (p < 0 || p >= sPinCount || sPinPool[p] < 0)
+		return 0;
+
+	if (CarPinOwnersLive(sPinOwners[p]))
+		return 0;
+
+	for (q = 0; q < sPinCount; q++)
+	{
+		if (q != p && sPinIndex[q] == sPinIndex[p])
+			return 0;
+	}
+
+	return 1;
+}
+
+/* JERICHO: STEP 6 - can an import from `city` that names `sets` get a pool page for each of
+ * them, before anything is built for it?
+ *
+ *   need  = its sets with no pin of that city yet (a set another car of the city already
+ *           pinned is shared, not paid for again)
+ *   avail = free pool pages
+ *         + pages of import pins with no car on them (evictable)
+ *         - pins already recorded but not yet placed (cars loaded this frame and not drawn
+ *           yet; they are owed a page first)
+ *
+ * Returns 1 when need <= avail. *needOut / *availOut get the numbers for the message.
+ * The answer is a forecast, not a reservation: a car that passes can still find the pool
+ * busier at its first draw, which leaves its pages unplaced (and the car undrawn) rather
+ * than spilling - this is what turns most of those into a refusal with a reason. */
+int JerImportPoolHeadroom(int city, const int* sets, int n, int* needOut, int* availOut)
+{
+	int i, p, need = 0, avail, owed = 0, evictable = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		for (p = 0; p < sPinCount; p++)
+		{
+			if (sPinCity[p] == city && sPinSet[p] == sets[i])
+				break;
+		}
+
+		if (p == sPinCount)
+			need++;
+	}
 
 	for (p = 0; p < sPinCount; p++)
 	{
-		int idx, shared = 0;
+		if (sPinPool[p] < 0 && sPinTexSlot[p] < 0 && !sPinEvicted[p])
+			owed++;
+		else if (CarPinEvictable(p))
+			evictable++;
+	}
 
-		if (p == want || sPinPool[p] < 0)
+	avail = (JER_POOL_PAGES - sJerLowerPoolPagesUsed) + evictable - owed;
+
+	if (avail < 0)
+		avail = 0;
+
+	if (needOut != NULL)
+		*needOut = need;
+
+	if (availOut != NULL)
+		*availOut = avail;
+
+	return need <= avail;
+}
+
+static int CarPinEvictIdlePool(int want)
+{
+	int p, j, page;
+
+	for (p = 0; p < sPinCount; p++)
+	{
+		int idx;
+
+		if (p == want || !CarPinEvictable(p))
 			continue;
 
 		if (CarPinOwnersOverlap(sPinOwners[p], sPinOwners[want]))
 			continue;
 
-		if (CarPinOwnersLive(sPinOwners[p]))
-			continue;
-
 		idx = sPinIndex[p];
-
-		for (q = 0; q < sPinCount; q++)
-		{
-			if (q != p && sPinIndex[q] == idx)
-				shared = 1;
-		}
-
-		if (shared)
-			continue;
 
 		page = sPinPool[p];
 		sPinPool[p] = -1;

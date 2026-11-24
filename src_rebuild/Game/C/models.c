@@ -12,6 +12,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "../ASM/compres.h"	// decomp_asm: the wheel page image, for its CLUT row
+#include "jer_console.h"	// JERICHO: the refusal toast (JerHotLoadCarModel)
 
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
@@ -4819,6 +4820,8 @@ static char* gJerHotCarPool;
 static int   gJerHotCarSize;
 static int   gJerHotCarUsed;					// blocks in use, for the log line
 static int   gJerHotCarBlockOf[MAX_CAR_RESIDENT_MODELS];	// slot -> block, -1 = none
+int          gJerHotRefusedNoPages[MAX_CAR_RESIDENT_MODELS];	// the last hot load of this slot was
+								// refused for texture pool room (step 6)
 
 int ProcessCarModelLump(char *lump_ptr, int lump_size)
 {
@@ -5153,6 +5156,81 @@ int JerHotLoadCarModel(int slot)
 		printInfo("cross-city: %s model %d has no geometry to build for slot %d\n",
 			LevelNames[GetCarModelSourceCity(slot)], model_number, slot);
 		return 0;
+	}
+
+	/* JERICHO: STEP 6 - refuse BEFORE building when the car's texture pages cannot get room
+	 * in the lower-half pool. Built anyway, the car took a slot, a hot-load block and page
+	 * handles and was then simply not drawn (its pages unplaced): a silent failure. Now it
+	 * is turned away up front, with a reason on screen, and holds nothing. */
+	{
+		int sets[64], nsets = 0, needPages = 0, availPages = 0;
+		int ofsList[2], k;
+
+		ofsList[0] = cleanOfs;
+		ofsList[1] = lowOfs;
+
+		for (k = 0; k < 2; k++)
+		{
+			MODEL* sm;
+			char* p;
+			int i;
+
+			if (ofsList[k] == -1)
+				continue;
+
+			sm = (MODEL*)(slot_models_offset + ofsList[k]);
+
+			if (sm->poly_block == 0 || sm->num_polys <= 0)
+				continue;
+
+			p = (char*)sm + sm->poly_block;
+
+			for (i = 0; i < sm->num_polys; i++)
+			{
+				int type = (u_char)*p & 0x1f;
+				int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+				int set, j;
+
+				if (step <= 0)
+					break;
+
+				set = (u_char)p[1];
+
+				if (JerPedIsTexturedPoly(type) && set < 128)
+				{
+					for (j = 0; j < nsets && sets[j] != set; j++)
+						;
+
+					if (j == nsets && nsets < 64)
+						sets[nsets++] = set;
+				}
+
+				p += step;
+			}
+		}
+
+		gJerHotRefusedNoPages[slot] = 0;
+
+		if (!JerImportPoolHeadroom(GetCarModelSourceCity(slot), sets, nsets, &needPages, &availPages))
+		{
+			gJerHotRefusedNoPages[slot] = 1;	// JerCarSlotRefusal names the real reason
+
+			static int sLastRefuseKey = -1, sLastRefuseAvail = -1;
+			int key = GetCarModelSourceCity(slot) * 64 + model_number;
+
+			printInfo("cross-city: %s model %d refused before building - it needs %d new texture page(s) and the lower-half pool can give %d (free + pages of imports with no car on them); slot %d keeps the car it has\n",
+				LevelNames[GetCarModelSourceCity(slot)], model_number, needPages, availPages, slot);
+
+			if (key != sLastRefuseKey || availPages != sLastRefuseAvail)
+			{
+				sLastRefuseKey = key;
+				sLastRefuseAvail = availPages;
+				jer_console_log("[jericho] %s car %d not loaded: needs %d texture page(s), %d free",
+					LevelNames[GetCarModelSourceCity(slot)], model_number, needPages, availPages);
+			}
+
+			return 0;
+		}
 	}
 
 	if (gJerHotCarPool == NULL)

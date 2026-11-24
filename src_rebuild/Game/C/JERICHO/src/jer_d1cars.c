@@ -50,6 +50,7 @@
 #include "../include/jericho.h"
 #include "../include/jer_config.h"
 #include "../include/jer_rebake.h"
+#include "../include/jer_console.h"	/* the "found, not converted" hint */
 
 #define D1_PATH_MAX		1024
 #define D1_SIBLINGS_MAX		64	/* folders beside the install looked at */
@@ -405,6 +406,38 @@ int jer_d1cars_scan(void)
 		sValid = 0;
 		sValidMask = 0;
 		jer_log("[d1cars] no baked Driver 1 cars found (carhacks/D1CARS, d1cars_path, DRIVER/D1CARS, sibling installs)\n");
+
+		/* JERICHO: the levels to convert ARE here, just not converted - say so, once, on
+		 * screen. A converted D1CARS is found on its own wherever it is (above); this is
+		 * the case a player cannot tell from "the Driver 1 cars are missing". */
+		{
+			char probe[1024];
+			FILE* f;
+			int d1 = 0, euro = 0;
+
+			snprintf(probe, sizeof(probe), "%s/../DRIVER/LEVELS/MIAMI.LEV", jer_root_dir());
+			if ((f = fopen(probe, "rb")) != NULL)
+			{
+				fclose(f);
+				d1 = 1;
+			}
+
+			snprintf(probe, sizeof(probe), "%s/../EURO43/LEVELS/MIAMI.LEV", jer_root_dir());
+			if ((f = fopen(probe, "rb")) != NULL)
+			{
+				fclose(f);
+				euro = 1;
+			}
+
+			if (d1 || euro)
+			{
+				jer_log("[d1cars] %s%s%s found but not converted - run BAKE_D1_CARS.bat once and they are offered automatically\n",
+					d1 ? "Driver 1 levels (DRIVER\\LEVELS)" : "", (d1 && euro) ? " and " : "",
+					euro ? "the Euro Demo 43 (EURO43\\LEVELS)" : "");
+				jer_console_log("%s found, not converted yet: run BAKE_D1_CARS.bat",
+					(d1 && euro) ? "Driver 1 + Euro Demo 43 cars" : d1 ? "Driver 1 cars" : "Euro Demo 43 cars");
+			}
+		}
 		return 0;
 	}
 

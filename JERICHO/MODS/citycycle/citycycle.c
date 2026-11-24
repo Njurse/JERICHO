@@ -123,13 +123,26 @@ static int CycPickModel(int city)
 {
 	extern char carNumLookup[CITY_COUNT][10];
 	int models[10], n = 0, i, k;
+	int qslots[10], qmodels[10];
+	JER_CARQ_SLOTS_ARGS q;
 
 	if (city < 0 || city >= CITY_COUNT)
 		return -1;
 
-	for (i = 0; i < 10; i++)
+	/* Ask carhacks which cars this city can actually serve - the same list a player's
+	 * picker gets. The raw carNumLookup row names cars a city's data does not carry
+	 * (CHICAGO model 11, the empty truck slot), and every pick of one was a guaranteed
+	 * "would not load". count 0 means nobody answered: fall back to the raw row. */
+	memset(&q, 0, sizeof(q));
+	q.slots = qslots;
+	q.models = qmodels;
+	q.city = city;
+	q.max = 10;
+	jer_fire(JER_CARQ_SLOTS, &q);
+
+	for (i = 0; i < ((q.count > 0) ? q.count : 10); i++)
 	{
-		int m = (int)(signed char)carNumLookup[city][i];
+		int m = (q.count > 0) ? qmodels[i] : (int)(signed char)carNumLookup[city][i];
 
 		if (m <= 0 || m >= CAR_MODEL_LUMP_ENTRIES)
 			continue;

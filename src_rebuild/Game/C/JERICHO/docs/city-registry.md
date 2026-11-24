@@ -192,6 +192,25 @@ the mod store judge the chosen bake: "not baked" means no valid LEV anywhere,
 and the version check uses the chosen folder's stamp. Nothing is copied, and
 the only folder a re-bake writes is carhacks'.
 
+## Banks found on disk (no `cities.ini` row needed)
+
+carhacks' `packbanks.c` registers every bank it finds under `JERICHO\MODS`, at boot,
+before every car list and at every level load:
+
+* **Which mods:** every mod folder except one switched off (`<id> = 0` in
+  `modlist.ini`). A mod with no line is scanned, because a bank built locally (a
+  rebake, a converted bank copied in) never went through the store.
+* **Where:** `banks\<dir>\`, then the mod's own folder, then one folder below it.
+  `build`, `source`, `donor`, backups, `tools` and the bake's art folders are skipped.
+* **What:** a folder with `bank.json` is that bank. Otherwise every `<NAME>.LEV` with a
+  `<NAME>.LCF` beside it is a bank called `NAME` (no LCF = not a car bank, e.g. a ped LEV).
+* **First name wins:** a stock city, Beta Miami or a `cities.ini` row keeps its name, so
+  a `HAVANA` re-export never shadows Havana. The log says `bank X found in <mod>`.
+
+Converted **Driver 1 / Euro Demo 43** cars (`D1CARS`) are found by the D1 scan below,
+wherever the bake put them. When none is found but `DRIVER\LEVELS\MIAMI.LEV` or
+`EURO43\LEVELS\MIAMI.LEV` is there, the console says to run `BAKE_D1_CARS.bat`.
+
 ## The API
 
 `jer_city.h` (SDK + engine copies, kept identical by `tools/doccheck.py`):

@@ -5315,7 +5315,10 @@ const char* JerCarSlotRefusal(int slot)
 	switch (JerCarSlotState(slot))
 	{
 	case JER_CAR_SLOT_OUT_OF_RANGE:	return "not a car this level can load";
-	case JER_CAR_SLOT_NO_MESH:	return "no model for it in this level";
+	case JER_CAR_SLOT_NO_MESH:
+		if (slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS && gJerHotRefusedNoPages[slot])
+			return "no room for its textures right now (too many imported cars on screen)";
+		return "no model for it in this level";
 	case JER_CAR_SLOT_NOT_READY:	return "its imported palette/page sets are not ready yet";
 	default:			return NULL;
 	}

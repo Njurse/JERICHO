@@ -121,6 +121,7 @@ int JerHotLoadCarModel(int slot);
 // case the caller has nothing to release on this side. Anything still driving that slot must be
 // rebuilt afterwards; mp does that through its own swap path.
 int JerReleaseCarGeometry(int slot);
+extern int gJerHotRefusedNoPages[];	// JERICHO: slot's last hot load refused for texture pool room
 
 // JERICHO cross-city unload, all of it: hand back the imported cities' buffers and the hot-load
 // pool. Called when no map is loaded (the frontend, after leaving a session) - a level load does

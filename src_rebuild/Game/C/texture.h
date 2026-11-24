@@ -229,6 +229,8 @@ void JerLowerPoolClutRelease(int y, int rows);		// give a band back to the free 
 void JerClutLedgerTag(int kind, int key);
 void JerClutLedgerReport(void);
 void JerImportIndexReport(void);	// import page handles: held / free / leaked (also run by the level-load report)
+/* JERICHO: step 6 - can an import of `city` naming `sets` get its pool pages? (texture.c) */
+int JerImportPoolHeadroom(int city, const int* sets, int n, int* needOut, int* availOut);
 int  JerLowerPoolPagesUsed(void);
 int  JerLowerPoolPagesFree(void);
 int  JerLowerPoolClutRowsUsed(void);

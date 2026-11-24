@@ -6,6 +6,26 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### Imported cars: refused up front, banks found on their own, easy colour variants
+
+- **A car that cannot get texture room is turned away before it is built**, with
+  a short on-screen line (`<CITY> car N not loaded: needs X texture page(s), Y
+  free`). It used to take a slot, a hot-load block and page numbers and then not
+  be drawn. Pages of imported cars with nothing on them count as free.
+- **Converted banks are found without a `cities.ini` row.** Every bank under
+  `JERICHO\MODS` - a `bank.json` folder, or a `<NAME>.LEV` + `<NAME>.LCF` pair in a
+  mod's folder, `banks\<dir>\` or one folder down - is registered unless its mod is
+  switched off (`= 0`). A mod with no modlist line is scanned, so a locally built
+  bank needs no setup. Stock cities and existing rows keep their names.
+- **Driver 1 / Euro Demo 43:** a converted `D1CARS` is still found wherever it is.
+  When there is none but the raw levels are there, the console says to run
+  `BAKE_D1_CARS.bat`.
+- **Colour variants:** `"textures": {"paints": ["red", "blue", "silver"]}` in a car's
+  `handling.json` (bake). Named colours, the body is measured from the page instead of
+  assumed blue, and each variant writes a preview PNG.
+- **citycycle** picks only cars carhacks would offer a player, so it no longer asks
+  for Chicago's empty model 11 (the only failure across 359 rounds).
+
 ### World textures stay the level's own after a car is let go
 
 - **Buildings no longer end up wearing a car's texture.** The level's permanent
