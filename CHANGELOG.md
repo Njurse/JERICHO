@@ -6,6 +6,51 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### Imported cars: colours, wheels, damage, radio
+
+- **Traffic spawns in every colour again.** The palette census for the level's
+  own car rows was wiped right after it was filled, so every native traffic car
+  counted one colour and spawned in its first. Imported traffic counts its
+  colours from its own bank, so it is no longer stuck on colour 1 either.
+- **The pause menu and car select show each car's real number of colours.** The
+  count was the maximum over a whole page (shared by several cars), or a guess
+  of 6 before a car was built. It now comes from the car's own texture ids, or
+  for a bank car, from its own model and palette data.
+- **Wheels keep their own palette when two designs share a page.** The engine
+  gave every wheel on a page the palette of the first one it found there (the
+  Chicago GSX and armoured truck wore the Rio wheels' colours). Each wheel now
+  uses its own row.
+- **Pedestrians and imported cars no longer overwrite each other's textures.**
+  A baked pedestrian page and a car page with the same set number shared one
+  texture slot. They now get separate slots. The game log also reports any two
+  owners claiming the same palette row (`JERICHO-CLUT COLLISION`).
+- **Imported cars dent their own panels.** An imported car used the host city's
+  damage table for the same model number, so the wrong panels changed texture,
+  often to art meant for another colour. Each bank car now carries its own table
+  (rebake the bank to get it). A car imported from a Driver 2 city uses that
+  city's table, and a car with none stays undented. Cars over 256 polygons no
+  longer pick up random damage from the next car's data.
+- **Each cop car can speak its own city's police radio.** A car's
+  `handling.json` can set `"policeVoice": "CHICAGO"` (or `HAVANA`, `VEGAS`,
+  `RIO`, `HOST`). The Cops 'n Robbers pack uses it, so its cars from all four
+  cities each keep their own radio.
+
+### Police lights
+
+- **A car bank can say how its police car's lights look.** Until now a cop car
+  imported from a bank always got its city's default bar (two red/blue lamps for
+  anything not Driver 2), so a Havana or Rio cop lost its single blue light and
+  a bus could not put a beacon on each corner. A car's `handling.json` can now
+  name a Driver 2 city's bar (`"style": "HAVANA"`, or `"HOST"` for whichever city
+  the level is) or list its own lamps one by one, each with a position, colour,
+  flash phase, size and optional mirror. Cars that say nothing look exactly as
+  before. Exporting a Driver 2 city's police car records that city's bar for
+  you. See `MODS/bake/tools/car/bank-schema.md`.
+- **Place lamps by putting them in the model.** Add a small object named
+  `COPLIGHT_<name>` where each lamp goes, export the OBJ, and `copmarkers.py`
+  reads the points back and writes them into `handling.json`. The bake leaves
+  the markers out of the car.
+
 ### Caine's Crossfire
 
 - **The weapons sound like weapons.** The guns, Freeze, pickups and weapon
