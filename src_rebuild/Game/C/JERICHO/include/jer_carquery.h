@@ -33,6 +33,7 @@
 #define JER_CARQ_LOAD	(JER_EVENT_MODULE_CUSTOM + 41)	/* "make (city,model) available" */
 #define JER_CARQ_CHOSEN	(JER_EVENT_MODULE_CUSTOM + 42)	/* "this is what we drive now" */
 #define JER_CARQ_SLOTS	(JER_EVENT_MODULE_CUSTOM + 43)	/* "which slots may this city offer?" */
+#define JER_CARQ_UNLOAD	(JER_EVENT_MODULE_CUSTOM + 50)	/* "no car needs (city,model) any more" */
 #define JER_CARQ_STANDIN	(JER_EVENT_MODULE_CUSTOM + 44)	/* "give me a stand-in body slot" */
 #define JER_CARQ_CITYWIRE	(JER_EVENT_MODULE_CUSTOM + 47)	/* "spell this city for the wire / read it back" */
 #define JER_CARQ_ROLES		(JER_EVENT_MODULE_CUSTOM + 48)	/* "which cars does the session want picked?" */
@@ -96,6 +97,16 @@ typedef struct JER_CARQ_LOAD_ARGS
 	int  model;	/* in: model number */
 	int  ok;	/* out: 1 = held (or being loaded) here */
 } JER_CARQ_LOAD_ARGS;
+
+/* JER_CARQ_UNLOAD: a NOTICE that a caller which asked for (city, model) with JER_CARQ_LOAD
+ * is done with it (a spawner removed its cars). The handler runs its normal release
+ * decision: a car still on the slot defers it, a named car keeps it. Without this a slot,
+ * its hot-load block and its page handles stay held until the level ends. */
+typedef struct JER_CARQ_UNLOAD_ARGS
+{
+	int  city;	/* in */
+	int  model;	/* in */
+} JER_CARQ_UNLOAD_ARGS;
 
 /* JER_CARQ_CHOSEN -> nothing to fill in: a NOTICE, fired AFTER a switch attempt (a
  * Change car pick, or the local player getting into a car again after being on

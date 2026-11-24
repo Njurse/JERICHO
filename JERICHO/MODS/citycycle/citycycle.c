@@ -32,8 +32,8 @@
 #include <string.h>
 
 #define CYC_CARS		4
-#define CYC_START_FRAME		240	/* let the level settle first */
-#define CYC_INTERVAL		420	/* frames between rounds */
+#define CYC_START_FRAME		120	/* let the level settle first */
+#define CYC_INTERVAL		200	/* frames between rounds - slightly quicker iteration */
 #define CYC_CHECK_DELAY		150	/* frames after a spawn until the check */
 #define CYC_MAX_CITIES		16
 
@@ -145,6 +145,15 @@ static void CycRemoveCars(void)
 		if (id >= 0 && id < MAX_CARS && car_data[id].controlType == CONTROL_TYPE_CIV_AI &&
 			car_data[id].ap.model == gCar[i].slot)
 			PingOutCar(&car_data[id]);
+
+		if (gCar[i].slot >= 0)
+		{
+			JER_CARQ_UNLOAD_ARGS ua;
+
+			ua.city = gCar[i].city;
+			ua.model = gCar[i].model;
+			jer_fire(JER_CARQ_UNLOAD, &ua);	/* give the slot, block and handles back */
+		}
 
 		gCar[i].id = -1;
 	}
