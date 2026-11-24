@@ -261,7 +261,7 @@ static int JerClutLedgerGive(CAR_CLUT_FREE* fl, int y, int rows)
 	return CarClutFreeGive(fl, y, rows);
 }
 
-static void JerImportIndexReport(void);
+void JerImportIndexReport(void);
 
 void JerClutLedgerReport(void)
 {
@@ -1999,7 +1999,7 @@ static void CarRemapDropAt(int r)
 /* JERICHO: the page-number pool's own check, printed next to the CLUT ledger. A city that is
  * not held but still owns numbers is a leak (the "no free import index" bug): say so in the
  * console, once per report, instead of letting later cars fail. */
-static void JerImportIndexReport(void)
+void JerImportIndexReport(void)
 {
 	int i, held = 0, leaked = 0, peds = 0;
 

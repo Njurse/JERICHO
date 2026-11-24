@@ -228,6 +228,7 @@ void JerLowerPoolClutRelease(int y, int rows);		// give a band back to the free 
 #define JER_CLUT_OWN_OTHER	6
 void JerClutLedgerTag(int kind, int key);
 void JerClutLedgerReport(void);
+void JerImportIndexReport(void);	// import page handles: held / free / leaked (also run by the level-load report)
 int  JerLowerPoolPagesUsed(void);
 int  JerLowerPoolPagesFree(void);
 int  JerLowerPoolClutRowsUsed(void);
