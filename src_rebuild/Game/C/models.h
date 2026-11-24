@@ -253,6 +253,8 @@ const JER_COP_LIGHTS* JerCarSlotCopLights(int slot);
 // for the source-city rule (JerPoliceVoiceCity).
 #define JER_POLICE_VOICE_HOST	255
 int JerCarSlotPoliceVoice(int slot);
+// JERICHO: a held city's per-model damage table (LUMP_CAR_DENTING, .DEN block layout), or NULL.
+const unsigned char* GetCarImportDenting(int city, int model);
 
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).

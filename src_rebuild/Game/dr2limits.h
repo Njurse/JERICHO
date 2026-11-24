@@ -117,13 +117,18 @@
 // denting
 #define MAX_DAMAGE_ZONE_VERTS	50
 #define MAX_DAMAGE_ZONE_POLYS	70
-#define MAX_DAMAGE_LEVELS		256
-
 #ifndef PSX
+// JERICHO: per-POLY tables are sized for imported models, not Driver 2's ~250 polys.
+// The draw reads damageLevel[originalindex] from a ONE-BYTE-per-poly dump
+// (DENTUVS, gTempHDCarUVDump[car]), so a 264-poly bank car's polys 256..263 read the
+// NEXT car's damage bytes and shifted their UVs at random - "the damage UVs are messed
+// up on imported vehicles". Zone tables stay u_char (poly/vertex index < 255).
+#define MAX_DAMAGE_LEVELS		1024
 #define MAX_DENTING_VERTS		256
-#define MAX_DENTING_UVS			256
-#define MAX_DENTING_LOD_UVS		256
+#define MAX_DENTING_UVS			1024
+#define MAX_DENTING_LOD_UVS		1024
 #else
+#define MAX_DAMAGE_LEVELS		256
 #define MAX_DENTING_VERTS		132
 #define MAX_DENTING_UVS			255
 #define MAX_DENTING_LOD_UVS		134
