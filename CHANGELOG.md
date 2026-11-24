@@ -6,6 +6,21 @@ is in [changelog.txt](changelog.txt).
 
 ## Unreleased
 
+### World textures stay the level's own after a car is let go
+
+- **Buildings no longer end up wearing a car's texture.** The level's permanent
+  and special page lists pointed straight into the lump buffer, which is the
+  renderer's own primitive buffer: by the first drawn frame they held whatever
+  the renderer had written over them. Everything that read them later was
+  reading noise, so when an imported car gave back a rectangle it had borrowed
+  from the world, the engine measured zero bytes to re-read, said "could not
+  re-read the level's texture pages", and left the car's pixels on the world.
+  The lists are now kept in their own storage for the life of the level.
+- **One hot-load block per resident car slot.** The pool held eight, which is
+  fewer than the number of slots that can want one at the same time, so a run
+  that cycled cars eventually refused every import with "8 of 8 in use" and
+  left the slot showing the car it already had.
+
 ### Imported cars: colours, wheels, damage, radio
 
 - **Traffic spawns in every colour again.** The palette census for the level's

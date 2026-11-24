@@ -1277,6 +1277,73 @@ void update_slotinfo(int tpage, int slot, RECT16 *pos)
 }
 
 // [D] [T]
+/* JERICHO: the host's permanent/special page lists, KEPT.
+ *
+ * ProcessTextureInfo points permlist/speclist straight into the lump it is handed, and
+ * that lump lives in _primTab1 - the renderer's primitive buffer (main.c reads DATA1
+ * there and calls ProcessLumps on it). The lists are therefore valid only for the rest
+ * of the level load: by the first drawn frame the ordering tables have written over
+ * them. tpage_ids and texturename_buffer are already copied out for exactly this
+ * reason; these two were not.
+ *
+ * Everything that reads them LATER was reading whatever the renderer last left there:
+ *   - WorldPageBlockBytes summed garbage strides, so the re-read after an import let a
+ *     world rectangle go measured zero bytes and printed "could not re-read the level's
+ *     texture pages". The world page was never put back - the corrupted buildings after
+ *     a few car changes.
+ *   - WorldReplayPages walked those same strides and set ids.
+ *   - CarImportHostOwnsSet asked "is this one of the level's own pages?" of noise.
+ *
+ * So snapshot them here, while the lump is still the lump, and point the globals at the
+ * copy. permlist is a fixed 16-entry region in the format; speclist is bounded by the
+ * same cap the level loader uses for spec pages. */
+#define JER_PERMLIST_MAX	16
+#define JER_SPECLIST_MAX	64
+
+static XYPAIR sJerPermList[JER_PERMLIST_MAX];
+static XYPAIR sJerSpecList[JER_SPECLIST_MAX];
+
+static void JerKeepHostPageLists(void)
+{
+	int n;
+
+	if (permlist != NULL && nperms > 0)
+	{
+		n = (nperms > JER_PERMLIST_MAX) ? JER_PERMLIST_MAX : nperms;
+
+		if (n != nperms)
+			printInfo("JERICHO-VRAM: the level names %d permanent pages but the list holds %d - keeping %d\n",
+				nperms, JER_PERMLIST_MAX, n);
+
+		memcpy(sJerPermList, permlist, sizeof(XYPAIR) * n);
+		permlist = sJerPermList;
+		nperms = n;
+	}
+	else
+	{
+		permlist = sJerPermList;
+		nperms = 0;
+	}
+
+	if (speclist != NULL && nspecpages > 0)
+	{
+		n = (nspecpages > JER_SPECLIST_MAX) ? JER_SPECLIST_MAX : nspecpages;
+
+		if (n != nspecpages)
+			printInfo("JERICHO-VRAM: the level names %d special pages but the list holds %d - keeping %d\n",
+				nspecpages, JER_SPECLIST_MAX, n);
+
+		memcpy(sJerSpecList, speclist, sizeof(XYPAIR) * n);
+		speclist = sJerSpecList;
+		nspecpages = n;
+	}
+	else
+	{
+		speclist = sJerSpecList;
+		nspecpages = 0;
+	}
+}
+
 void ProcessTextureInfo(char *lump_ptr)
 {
 	int i;
@@ -1311,6 +1378,9 @@ void ProcessTextureInfo(char *lump_ptr)
 
 	nspecpages = *(int *)ptr;
 	speclist = (XYPAIR *)(ptr + 4);
+
+	/* JERICHO: ...and off the lump, before the renderer reuses it (see above). */
+	JerKeepHostPageLists();
 
 	// initialize here on PSX
 	InitCyclingPals();

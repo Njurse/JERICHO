@@ -31,11 +31,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+
+/* Generally you want it at a slower pace but this is massively accelerated for stress testing. */
 #define CYC_CARS		4
 #define CYC_START_FRAME		120	/* let the level settle first */
-#define CYC_INTERVAL		200	/* frames between rounds - slightly quicker iteration */
-#define CYC_CHECK_DELAY		150	/* frames after a spawn until the check */
+#define CYC_INTERVAL		60	/* frames between rounds - slightly quicker iteration */
+#define CYC_CHECK_DELAY		40	/* frames after a spawn until the check */
 #define CYC_MAX_CITIES		16
+#define CYC_LANE_PITCH		600	/* gap between neighbouring cars */
+#define CYC_AHEAD		800	/* how far in front of the player the row sits */
+#define CYC_ROW_STAGGER		340	/* odd lanes sit this much further ahead */
 
 typedef struct CYC_CAR
 {
@@ -173,7 +178,13 @@ static int CycSpawn(int slot, int palette, int lane)
 	EXTRA_CIV_DATA civ;
 	LONGVECTOR4 pos;
 	int dir = pc->hd.direction, i;
-	int side = (lane * 2 - (CYC_CARS - 1)) * 120;	/* centred row, 240 apart */
+	/* Far enough apart that four cars do not arrive inside one another: a car's
+	 * collision box is around 280 units wide, and the old 240-unit pitch had them
+	 * interpenetrating on spawn - the physics pushed them apart hard and the round
+	 * began with everything cartwheeling. 600 apart, and the odd lanes set further
+	 * ahead so a lateral drift on landing still does not touch a neighbour. */
+	int side = (lane * 2 - (CYC_CARS - 1)) * CYC_LANE_PITCH / 2;
+	int ahead = CYC_AHEAD + ((lane & 1) ? CYC_ROW_STAGGER : 0);
 
 	for (i = 0; i < MAX_CARS; i++)
 	{
@@ -187,9 +198,9 @@ static int CycSpawn(int slot, int palette, int lane)
 	if (cp == NULL)
 		return -1;
 
-	pos[0] = pc->hd.where.t[0] + FIXEDH(RSIN(dir) * 700) + FIXEDH(RCOS(dir) * side);
+	pos[0] = pc->hd.where.t[0] + FIXEDH(RSIN(dir) * ahead) + FIXEDH(RCOS(dir) * side);
 	pos[1] = pc->hd.where.t[1];
-	pos[2] = pc->hd.where.t[2] + FIXEDH(RCOS(dir) * 700) - FIXEDH(RSIN(dir) * side);
+	pos[2] = pc->hd.where.t[2] + FIXEDH(RCOS(dir) * ahead) - FIXEDH(RSIN(dir) * side);
 
 	memset(&civ, 0, sizeof(civ));
 	civ.palette = palette;
