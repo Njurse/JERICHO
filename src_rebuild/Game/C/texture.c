@@ -1960,6 +1960,11 @@ static int SetIndexReserved(int i)
 	return 0;
 }
 
+/* JERICHO: one line per (city,set) when no page number is left - the call repeats on every
+ * spawn attempt (1500+ identical lines in one session). Cleared when the city is forgotten or
+ * the import state resets, so the next failure after a release is reported again. */
+static unsigned char sNoIndexLogged[CITY_COUNT][128];
+
 static int FindFreeSetIndex(void)
 {
 	int i;
@@ -2042,9 +2047,18 @@ static int CarImportDstSetCore(int set, int city)
 	// unremapped host set (CarImportPinIsHostSet), so the host page is never overwritten.
 	if (free == 0 || sRemapCount >= CAR_REMAP_MAX)
 	{
-		printInfo("carimport: %s set %d -> no free import index (host reserved: %s) - the part keeps the host page\n",
-			(city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "?", set,
-			HostUsesTPage(set) ? HostUseReason(set) : "another guest city");
+		if (city >= 0 && city < CITY_COUNT && !sNoIndexLogged[city][set])
+		{
+			sNoIndexLogged[city][set] = 1;
+
+			printInfo("carimport: %s set %d -> no free import index (host reserved: %s) - the part keeps the host page\n",
+				LevelNames[city], set, HostUsesTPage(set) ? HostUseReason(set) : "another guest city");
+			jer_console_log("[carimport] %s set %d: no free page number (all 18 are held by other cities' cars) - cars needing it will not load until one is released",
+				LevelNames[city], set);
+		}
+		else if (city < 0 || city >= CITY_COUNT)
+			printInfo("carimport: ? set %d -> no free import index\n", set);
+
 		return set;
 	}
 
@@ -4865,6 +4879,8 @@ void CarImportForgetCity(int city)
 		sRemapCount--;
 	}
 
+	memset(sNoIndexLogged[city], 0, sizeof(sNoIndexLogged[city]));
+
 	for (i = 0; i < 128; i++)
 	{
 		int k, pinned = 0;
@@ -4928,6 +4944,7 @@ void CarImportResetState(void)
 	sReservedCount = 0;
 
 	memset(sIndexCity, 0, sizeof(sIndexCity));	/* D3: no import index is held by any city */
+	memset(sNoIndexLogged, 0, sizeof(sNoIndexLogged));
 
 	sPinEvictions = 0;
 	sPinUnusedTakes = 0;

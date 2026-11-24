@@ -42,6 +42,10 @@ is in [changelog.txt](changelog.txt).
   another way kept them, and later cars logged `no free import index`, kept the
   host's page (broken wheels) or never became ready. Releasing a city now
   returns every page number it held that no live page still uses.
+- **A car that cannot load now says so in the console.** "No free page number"
+  and "not ready" failures print a console line naming the car and the reason,
+  like multiplayer's car-change failure, and the log reports each missing set
+  once instead of on every spawn attempt (one session logged it 1,500 times).
 - **Each cop car can speak its own city's police radio.** A car's
   `handling.json` can set `"policeVoice": "CHICAGO"` (or `HAVANA`, `VEGAS`,
   `RIO`, `HOST`). The Cops 'n Robbers pack uses it, so its cars from all four

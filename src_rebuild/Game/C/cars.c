@@ -27,6 +27,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_math.h"
+#include "jer_console.h"
 
 struct plotCarGlobals
 {
@@ -5211,6 +5212,13 @@ static void CarSlotLogNotReady(int slot, int city, const int* sets, int n, int f
 		residentCarModels[slot], forDraw ? "drawable yet" : "ready yet", buf,
 		forDraw ? "have no uploaded palette row or placed page yet"
 			: "have no live pin or mapped palette row yet");
+
+	// JERICHO: the player-visible side, the same console line mp prints for a failed load. It
+	// fires once per distinct missing-set signature (the caller dedupes), not per frame.
+	jer_console_log("[cars] %s model %d is not %s: set(s) [%s] %s",
+		(city >= 0 && city < CITY_COUNT) ? LevelNames[city] : "the level", residentCarModels[slot],
+		forDraw ? "drawable" : "ready", buf,
+		forDraw ? "have no uploaded palette row yet" : "have no page number or palette row (see the log's 'no free import index')");
 
 	// JERICHO: the detail behind that line, opt-in with JERICHO_DIAG_SLOT_MAP=1: each set
 	// -> civ_clut row -> pinned page index, with placed/uploaded state. This is the dump
