@@ -5864,7 +5864,7 @@ int MainScreen(int bSetup)
 				b->s_x = last->s_x;
 				b->s_y = b->y;
 
-				sprintf(b->Name, "JERICHO Config Menu");
+				sprintf(b->Name, "JERICHO Mods");
 
 				options->numButtons++;
 				last->d = options->numButtons;			// last button -> JERICHO

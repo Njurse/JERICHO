@@ -709,7 +709,7 @@ static void StoreWriteIniTemplate(void)
 		"; index. See JERICHO/CORE/modstore/ and docs/mod-repo.md for the format.\n"
 		";\n"
 		"; startup_update_prompt: 1 = at startup, ask to update installed mods that\n"
-		"; have an update; 0 = never ask (\"Don't ask again\"). Mods -> Browse Mod Repo\n"
+		"; have an update; 0 = never ask (\"Don't ask again\"). Mods -> Get Mods\n"
 		"; still lists and installs updates.\n"
 		"startup_update_prompt=1\n");
 
@@ -1673,8 +1673,8 @@ static void StoreTestTick(void)
 				gStore.testStage = 2;
 				/* the Mods menu advertises waiting updates on its Mod Repo item, so a
 				 * player notices without opening the browser */
-				jer_log("[modstore][test] Mod Repo item: \"%s\" (updates=%d)\n",
-					gLabelRepoItem[0] != 0 ? gLabelRepoItem : "Browse Mod Repo", StoreCountUpdates());
+				jer_log("[modstore][test] Get Mods item: \"%s\" (updates=%d)\n",
+					gLabelRepoItem[0] != 0 ? gLabelRepoItem : "Get Mods", StoreCountUpdates());
 
 				jer_log("[modstore][test] screen->menu: current=%d jericho.mods=%d repo=%d modules=%d\n",
 					jer_frontend_current_menu(), jer_frontend_find("jericho.mods"),
@@ -2316,7 +2316,7 @@ int jer_modstore_script_mismatch(int* seen, int* expected)
 	return gStore.scriptMismatch;
 }
 
-/* Re-read CONFIG/modstore.ini (the browser's "Reload repos"). */
+/* Re-read CONFIG/modstore.ini (the browser's "Reload repos file"). */
 void jer_modstore_repos_reload(void)
 {
 	StoreReposLoad();
@@ -2973,7 +2973,7 @@ static void RepoMenuEnter(void* ud)
 	/* The row budget: the menu holds JER_FE_MAX_ITEMS, and the repos, the pager
 	 * and the controls all come out of it before the mods get a row. With
 	 * three repos configured that leaves six mod rows, which is still a page. */
-	controls = 3;		/* Refresh, Reload repos, Back */
+	controls = 3;		/* Check for Updates, Reload repos file, Back */
 	budget = JER_FE_MAX_ITEMS - repoN - controls - 1;
 	if (budget > REPO_ROWS_MAX)
 		budget = REPO_ROWS_MAX;
@@ -3045,7 +3045,7 @@ static void RepoMenuEnter(void* ud)
 		JER_FE_ITEM* it = &gRepoItems[n++];
 
 		memset(it, 0, sizeof(*it));
-		it->label = "Refresh";
+		it->label = "Check for Updates";
 		it->on_activate = RepoRefresh;
 		it->submenu = -1;
 	}
@@ -3054,7 +3054,7 @@ static void RepoMenuEnter(void* ud)
 		JER_FE_ITEM* it = &gRepoItems[n++];
 
 		memset(it, 0, sizeof(*it));
-		it->label = "Reload repos";	/* re-read CONFIG/modstore.ini */
+		it->label = "Reload repos file";	/* re-read CONFIG/modstore.ini */
 		it->on_activate = RepoReload;
 		it->submenu = -1;
 	}
@@ -3242,6 +3242,18 @@ static void ModsDrawTable(void)
 
 		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 80), ry + 4, buf, 170, 190, 210);
 	}
+
+	/* How to drive the table: Cross toggles and Left/Right reorders, the two
+	 * interactions that used to be invisible. Pinned just above the Back control
+	 * so it is always on screen and never covers a row. */
+	{
+		int controlsTop = gInstalledMenu.row_bottom - gInstalledMenu.bottom_items * gInstalledMenu.row_step;
+		int hintY = controlsTop - 26;
+
+		if (hintY >= 2)
+			jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), hintY,
+				"Cross = On/Off    Left/Right = move", 150, 150, 150);
+	}
 }
 
 /* How many rows the repo is offering as an update (or as a bundled copy the
@@ -3343,7 +3355,7 @@ static void StoreUpdateNeverAsk(void)
 	if (jer_config_set_line("modstore", "startup_update_prompt", "0"))
 	{
 		jer_log("[modstore] startup update question off (CONFIG/modstore.ini startup_update_prompt=0)\n");
-		jer_notify("Mod update prompt off. Mods -> Browse Mod Repo shows updates.", 1, 6);
+		jer_notify("Mod update prompt off. Mods -> Get Mods shows updates.", 1, 6);
 	}
 	else
 		jer_log("[modstore] could not write startup_update_prompt=0 to CONFIG/modstore.ini\n");
@@ -3516,6 +3528,18 @@ static void StoreDrawRepoTable(void)
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, it->note, 170, 190, 210);
 		else
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, it->author, 170, 190, 210);
+	}
+
+	/* The repo browser's two interactions, spelled out, pinned above the
+	 * Check for Updates / Reload repos file / Back controls, just like the
+	 * installed table's hint. */
+	{
+		int controlsTop = gRepoMenu.row_bottom - gRepoMenu.bottom_items * gRepoMenu.row_step;
+		int hintY = controlsTop - 26;
+
+		if (hintY >= 2)
+			jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), hintY,
+				"Cross = install/update    Left/Right = remove", 150, 150, 150);
 	}
 }
 
