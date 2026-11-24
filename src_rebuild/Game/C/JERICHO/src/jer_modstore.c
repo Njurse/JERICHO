@@ -1676,8 +1676,9 @@ static void StoreTestTick(void)
 				jer_log("[modstore][test] Get Mods item: \"%s\" (updates=%d)\n",
 					gLabelRepoItem[0] != 0 ? gLabelRepoItem : "Get Mods", StoreCountUpdates());
 
-				jer_log("[modstore][test] screen->menu: current=%d jericho.mods=%d repo=%d modules=%d\n",
+				jer_log("[modstore][test] screen->menu: current=%d hub=%d installed=%d repo=%d modules=%d\n",
 					jer_frontend_current_menu(), jer_frontend_find("jericho.mods"),
+					jer_frontend_find("jericho.mods.installed"),
 					jer_frontend_find("jericho.mods.repo"), jer_modstore_module_count());
 
 				rows = jer_modstore_module_count();
@@ -1762,9 +1763,9 @@ static void StoreTestTick(void)
 				JER_MODSTORE_MODULE after;
 
 				if (jer_modstore_module_at(0, &after))
-					jer_log("[modstore][test] after toggle: %s enabled=%d; current menu=%d (mods=%d)\n",
+					jer_log("[modstore][test] after toggle: %s enabled=%d; current menu=%d (installed=%d)\n",
 						after.name, after.enabled, jer_frontend_current_menu(),
-						jer_frontend_find("jericho.mods"));
+						jer_frontend_find("jericho.mods.installed"));
 
 				/* Left/Right on a row: the same callback the menu wires up */
 				jer_log("[modstore][test] moving row 0 down one\n");
@@ -1778,9 +1779,9 @@ static void StoreTestTick(void)
 
 				gStore.testStage = 7;
 				if (jer_modstore_module_at(0, &m0) && jer_modstore_module_at(1, &m1))
-					jer_log("[modstore][test] after move: row0=%s row1=%s; current menu=%d (mods=%d)\n",
+					jer_log("[modstore][test] after move: row0=%s row1=%s; current menu=%d (installed=%d)\n",
 						m0.name, m1.name, jer_frontend_current_menu(),
-						jer_frontend_find("jericho.mods"));
+						jer_frontend_find("jericho.mods.installed"));
 			}
 			break;
 
