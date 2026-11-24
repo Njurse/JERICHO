@@ -261,6 +261,8 @@ static int JerClutLedgerGive(CAR_CLUT_FREE* fl, int y, int rows)
 	return CarClutFreeGive(fl, y, rows);
 }
 
+static void JerImportIndexReport(void);
+
 void JerClutLedgerReport(void)
 {
 	int i = 0, n = JER_VRAM_TOTAL_ROWS - JER_VRAM_HALF_Y;
@@ -1964,6 +1966,65 @@ static int SetIndexReserved(int i)
  * spawn attempt (1500+ identical lines in one session). Cleared when the city is forgotten or
  * the import state resets, so the next failure after a release is reported again. */
 static unsigned char sNoIndexLogged[CITY_COUNT][128];
+
+/* Remove remap entry `r` and the reservation its index holds. The caller decides what
+ * becomes of sIndexCity[index]. (Was copied three times: ped give-back, slot release,
+ * city forget.) */
+static void CarRemapDropAt(int r)
+{
+	int k, to = sRemapTo[r];
+
+	for (k = 0; k < sReservedCount; k++)
+	{
+		if (sReservedSet[k] != to)
+			continue;
+
+		for (; k < sReservedCount - 1; k++)
+			sReservedSet[k] = sReservedSet[k + 1];
+
+		sReservedCount--;
+		break;
+	}
+
+	for (k = r; k < sRemapCount - 1; k++)
+	{
+		sRemapFrom[k] = sRemapFrom[k + 1];
+		sRemapTo[k] = sRemapTo[k + 1];
+		sRemapCity[k] = sRemapCity[k + 1];
+	}
+
+	sRemapCount--;
+}
+
+/* JERICHO: the page-number pool's own check, printed next to the CLUT ledger. A city that is
+ * not held but still owns numbers is a leak (the "no free import index" bug): say so in the
+ * console, once per report, instead of letting later cars fail. */
+static void JerImportIndexReport(void)
+{
+	int i, held = 0, leaked = 0;
+
+	for (i = 110; i < 128; i++)
+	{
+		int c = sIndexCity[i] - 1;
+
+		if (sIndexCity[i] == 0)
+			continue;
+
+		held++;
+
+		if (c < 0 || c >= CITY_COUNT || !CarImportCityHeld(c))
+		{
+			leaked++;
+			printInfo("JERICHO-INDEX: page number %d is claimed by %s, which holds no car data - leaked\n",
+				i, (c >= 0 && c < CITY_COUNT) ? LevelNames[c] : "?");
+		}
+	}
+
+	printInfo("JERICHO-INDEX: import page numbers 110..127: %d held, %d free, %d leaked\n", held, 18 - held, leaked);
+
+	if (leaked > 0)
+		jer_console_log("[carimport] warning: %d import page number(s) are held by cities with no cars (%d of 18 free)", leaked, 18 - held);
+}
 
 static int FindFreeSetIndex(void)
 {
@@ -3694,26 +3755,7 @@ static void JerPedIndexGiveBack(int idx, int city)
 		if (sRemapTo[r] != idx || sRemapCity[r] != city)
 			continue;
 
-		for (k = 0; k < sReservedCount; k++)
-		{
-			if (sReservedSet[k] != idx)
-				continue;
-
-			for (; k < sReservedCount - 1; k++)
-				sReservedSet[k] = sReservedSet[k + 1];
-
-			sReservedCount--;
-			break;
-		}
-
-		for (k = r; k < sRemapCount - 1; k++)
-		{
-			sRemapFrom[k] = sRemapFrom[k + 1];
-			sRemapTo[k] = sRemapTo[k + 1];
-			sRemapCity[k] = sRemapCity[k + 1];
-		}
-
-		sRemapCount--;
+		CarRemapDropAt(r);
 		break;
 	}
 
@@ -4679,35 +4721,13 @@ int JerReleaseCarSlot(int slot)
 
 		for (r = 0; r < sRemapCount; r++)
 		{
-			int t;
-
 			if (sRemapFrom[r] != sets[i] || sRemapCity[r] != setCities[i])
 				continue;
 
 			found = 1;
 			sIndexCity[sRemapTo[r]] = 0;
 
-			/* drop the reservation this set's index holds */
-			for (t = 0; t < sReservedCount; t++)
-			{
-				if (sReservedSet[t] != sRemapTo[r])
-					continue;
-
-				for (k = t; k < sReservedCount - 1; k++)
-					sReservedSet[k] = sReservedSet[k + 1];
-
-				sReservedCount--;
-				break;
-			}
-
-			for (k = r; k < sRemapCount - 1; k++)
-			{
-				sRemapFrom[k] = sRemapFrom[k + 1];
-				sRemapTo[k] = sRemapTo[k + 1];
-				sRemapCity[k] = sRemapCity[k + 1];
-			}
-
-			sRemapCount--;
+			CarRemapDropAt(r);	/* also drops the reservation this set's index holds */
 			indices++;
 			released++;
 			break;
@@ -4854,29 +4874,10 @@ void CarImportForgetCity(int city)
 			continue;
 		}
 
-		for (k = 0; k < sReservedCount; k++)
-		{
-			if (sReservedSet[k] != to)
-				continue;
-
-			for (; k < sReservedCount - 1; k++)
-				sReservedSet[k] = sReservedSet[k + 1];
-
-			sReservedCount--;
-			break;
-		}
-
 		if (to >= 0 && to < 128 && sIndexCity[to] == city + 1)
 			sIndexCity[to] = 0;
 
-		for (k = i; k < sRemapCount - 1; k++)
-		{
-			sRemapFrom[k] = sRemapFrom[k + 1];
-			sRemapTo[k] = sRemapTo[k + 1];
-			sRemapCity[k] = sRemapCity[k + 1];
-		}
-
-		sRemapCount--;
+		CarRemapDropAt(i);
 	}
 
 	memset(sNoIndexLogged[city], 0, sizeof(sNoIndexLogged[city]));
@@ -5312,8 +5313,6 @@ void LoadImportedTPages(void)
 		int set = sets[i];
 		int sc = setCity[i];		// THIS set's city: its page list is THAT city's
 		int dstSet = set;
-		int remapFrom = -1;
-		int remapTo = 0;
 		int offset = 0;
 		int size = 0;
 		int npalettes;
@@ -5352,9 +5351,7 @@ void LoadImportedTPages(void)
 
 		if (dstSet != set)
 		{
-			// CarImportDstSet allocated and recorded it at build time; recording again here
-			// would add a second mapping for the same set.
-			remapFrom = -1;
+			// CarImportDstSet allocated and recorded it at build time; nothing to record here.
 			printInfo("cross-city: %s set %d -> index %d, taken from the build-time remap (the car's polys already point at it)\n",
 				LevelNames[sc], set, dstSet);
 		}
@@ -5489,15 +5486,6 @@ void LoadImportedTPages(void)
 		 * Record it for the wheel structs that name this source set, so the
 		 * renderer can use the hubcap row rather than the tyre row. */
 		CarImportSetWheelPageCluts(sc, set, npalettes);
-
-		// The remap becomes real together with the pin: the page WILL be placed (at draw
-		// time, evicting the world if need be), short of a failed read.
-		if (remapFrom >= 0 && sRemapCount < CAR_REMAP_MAX)
-		{
-			sRemapFrom[sRemapCount] = remapFrom;
-			sRemapTo[sRemapCount] = remapTo;
-			sRemapCount++;
-		}
 
 		CarPinRecord(set, dstSet, offset, size, pref[i], sc, setMask[i]);
 
@@ -5665,6 +5653,7 @@ static void VramAccountReport(void)
 			(JerLowerPoolClutDropped() > 0) ? " - DROPPED asks" : "");
 
 		JerClutLedgerReport();
+		JerImportIndexReport();
 	}
 
 	// JERICHO: how many CLUT rows ONE streamed slot can need -- the max over the
