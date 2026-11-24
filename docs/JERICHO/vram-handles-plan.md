@@ -44,4 +44,13 @@ Order: 1 -> 2 -> 3 (cars verify) -> 4 (peds) -> 5,8 -> 6 -> 7,9. Each step its o
 - Step 2 as built: the allocator is still `FindFreeSetIndex` + `sIndexCity` + remap list, now over
   the handle range, not a separate module. The refcounted allocator is only worth doing if
   something else needs it.
-- Not yet: ped verification in game (peds share the allocator already), steps 5-9.
+- Step 5 done: a released handle, and now an EVICTED one, points at the checker page.
+- Step 6 half done: every import pin (cars too, not only peds) is pool-only, a full pool evicts
+  an import page with no car on it, and an unplaced car is not drawn. Still missing: refusing
+  the car BEFORE it is built when its pages cannot fit at all, with a console line.
+- Also done, outside the numbered steps: the level's page lists are kept off the renderer's
+  buffer (world re-read works), hot-load pool is one block per slot, and a resident slot an
+  import wrote into is restored automatically (`self-repair`). Tested in game 2026-11-24 with
+  citycycle: clean.
+- Not yet: step 4 (peds in game), the step-6 precheck, 7 (bake budget selftest), 8 (per-owner
+  report), 9 (tests).
