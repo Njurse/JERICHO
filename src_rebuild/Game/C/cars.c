@@ -171,23 +171,31 @@ static unsigned char sWheelDirectRow[CIV_CLUT_ROWS];
 // colourless". Recorded at the bake, reported by CarPalRowReport for the empty rows only.
 static int sBakeRowSlot[CIV_CLUT_ROWS][8];
 static int sBakeRowSet[CIV_CLUT_ROWS][8];
+static u_int sBakeRowTex[CIV_CLUT_ROWS][8];	// JERICHO: the texture ids this slot's body polys read in the row
 static int sBakeRowN[CIV_CLUT_ROWS];
 
-static void CarBakeRowNote(int row, int slot, int set)
+static void CarBakeRowNote(int row, int slot, int set, int texid)
 {
 	int i;
+	u_int bit = (texid >= 0 && texid < 32) ? (1u << texid) : 0;
 
 	if (row < 0 || row >= CIV_CLUT_ROWS || slot < 0)
 		return;
 
 	for (i = 0; i < sBakeRowN[row]; i++)
+	{
 		if (sBakeRowSlot[row][i] == slot && sBakeRowSet[row][i] == set)
+		{
+			sBakeRowTex[row][i] |= bit;
 			return;
+		}
+	}
 
 	if (sBakeRowN[row] < 8)
 	{
 		sBakeRowSlot[row][sBakeRowN[row]] = slot;
 		sBakeRowSet[row][sBakeRowN[row]] = set;
+		sBakeRowTex[row][sBakeRowN[row]] = bit;
 		sBakeRowN[row]++;
 	}
 }
@@ -823,8 +831,20 @@ static int CarPaletteCountFromLoadedSlot(int slot)
 
 			noted = 1;
 
-			if (sCivClutRowMaxSlot[r] > maxS)
-				maxS = sCivClutRowMaxSlot[r];
+			// JERICHO: the columns of the texture ids THIS car reads, not the whole row's.
+			// A row is one page, and the page is shared: Driver 2 puts several cars' art
+			// on one, so the row maximum was another car's paint count (the pause menu
+			// and car select showed it), while the draw clamps per texture id
+			// (CarClutVariant) - the selector and the draw disagreed.
+			{
+				int t;
+
+				for (t = 0; t < 32; t++)
+				{
+					if ((sBakeRowTex[r][i] & (1u << t)) && sCivClutTexMaxSlot[r][t] > maxS)
+						maxS = sCivClutTexMaxSlot[r][t];
+				}
+			}
 		}
 	}
 
@@ -874,6 +894,15 @@ int CarModelPaletteCount(int city, int model)
 	if (city < 0 || city >= CITY_COUNT)
 		return 1;
 
+	/* A held import answers from its own model and palette lump (exact, needs no build). */
+	if (city != GameLevel)
+	{
+		n = CarImportModelPaletteCount(city, model);
+
+		if (n > 0)
+			return n;
+	}
+
 	/* A resident slot already built for this (city, model) knows the real columns. */
 	for (slot = 0; slot < MAX_CAR_RESIDENT_MODELS; slot++)
 	{
@@ -898,6 +927,22 @@ int CarSlotPaletteCount(int slot)
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
 		return 1;
+
+	// JERICHO: an imported car answers from its own data first. Its palettes are
+	// uploaded at draw time (the pin), AFTER the build noted its rows, so the census
+	// still says "column 0" for the first traffic spawns - which is what pinned imported
+	// traffic to its first colour.
+	{
+		int city = GetCarModelSourceCity(slot);
+
+		if (city >= 0 && city != GameLevel)
+		{
+			n = CarImportModelPaletteCount(city, residentCarModels[slot]);
+
+			if (n > 0)
+				return n;
+		}
+	}
 
 	n = CarPaletteCountFromLoadedSlot(slot);
 
@@ -1387,15 +1432,18 @@ static u_short CarClutLookup(plotCarGlobals* pg, int ci, int palette)
 	if (pg->pciv_clut[slot] != 0)
 		return pg->pciv_clut[slot];
 
-	/* slots of this texture_id's group are pciv_clut[ci - 1 .. ci + 4] */
-	if (ci >= 1)
+	/* JERICHO: slots of this texture_id's group are pciv_clut[ci .. ci + 5] - ci is the
+	 * group's column 0 (buildNewCarFromModel bakes (row - 1) * 192 + texture_id * 6).
+	 * This walked ci - 1 .. ci + 4, so a missing column could take the PREVIOUS texture
+	 * id's last colour: one panel painted in a neighbour's paint. */
+	if (ci >= 0)
 	{
 		for (j = 0; j < 6; j++)
 		{
-			if (pg->pciv_clut[ci - 1 + j] != 0)
+			if (pg->pciv_clut[ci + j] != 0)
 			{
 				sCarClutFallbackCount++;
-				return pg->pciv_clut[ci - 1 + j];
+				return pg->pciv_clut[ci + j];
 			}
 		}
 	}
@@ -3210,7 +3258,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						CarModelSetsAdd(index, pgt3->texture_set);
 
 						carid = CarPalIndexForBuild(pgt3->texture_set, srcCity);
-						CarBakeRowNote(carid, index, pgt3->texture_set);
+						CarBakeRowNote(carid, index, pgt3->texture_set, pgt3->texture_id);
 						clut = (carid - 1) * 6 * 32 + pgt3->texture_id * 6;
 
 						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
@@ -3238,7 +3286,7 @@ void buildNewCarFromModel(int index, int detail, char* polySrc, MODEL* model)
 						// an import reads its own palettes through exactly the host's formula.
 						// A GT poly's clut_uv0 high word is a civ_clut INDEX, not a CLUT id.
 						carid = CarPalIndexForBuild(pgt4->texture_set, srcCity);
-						CarBakeRowNote(carid, index, pgt4->texture_set);
+						CarBakeRowNote(carid, index, pgt4->texture_set, pgt4->texture_id);
 						clut = (carid - 1) * 6 * 32 + pgt4->texture_id * 6;
 
 						if (!imported || carid >= CIV_CLUT_IMPORT_ROW)	// JERICHO: an import never writes a host row
@@ -4096,10 +4144,29 @@ void CarImportPaletteReset(void)
 void ProcessImportedPalette(void)
 {
 	int city;
+	static int sHostRowMax[CIV_CLUT_IMPORT_ROW];
+	static int sHostTexMax[CIV_CLUT_IMPORT_ROW][32];
+	static int sHostWriters[CIV_CLUT_IMPORT_ROW];
+	static int sHostCity[CIV_CLUT_IMPORT_ROW][CIV_CLUT_ROW_CITIES];
 
 	// JERICHO: a fresh level means a fresh palette map - the row ownership recorded
 	// here is what CarPalRowReport prints at exit.
+	//
+	// ...but this runs AFTER the host's ProcessPalletLump (texture.c), which has just
+	// recorded which colour columns rows 0..7 hold. Wiping that left every native car
+	// with a census of "column 0 only": CarSlotPaletteCount said 1, and the spawner
+	// (civ_ai.c) gave all traffic its first colour. The host rows' coverage is kept.
+	memcpy(sHostRowMax, sCivClutRowMaxSlot, sizeof(sHostRowMax));
+	memcpy(sHostTexMax, sCivClutTexMaxSlot, sizeof(sHostTexMax));
+	memcpy(sHostWriters, sCivClutRowWriters, sizeof(sHostWriters));
+	memcpy(sHostCity, sCivClutRowCity, sizeof(sHostCity));
+
 	CarPalRowClear();
+
+	memcpy(sCivClutRowMaxSlot, sHostRowMax, sizeof(sHostRowMax));
+	memcpy(sCivClutTexMaxSlot, sHostTexMax, sizeof(sHostTexMax));
+	memcpy(sCivClutRowWriters, sHostWriters, sizeof(sHostWriters));
+	memcpy(sCivClutRowCity, sHostCity, sizeof(sHostCity));
 
 	// EVERY held city, not just the first: each has its own deferred LUMP_PALLET to
 	// hand to the pin (ProcessPalletLumpForCity defers it), so a second city's cars

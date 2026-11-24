@@ -40,6 +40,9 @@ void InitCarImport(void);
 // mid-level: see its sibling's comment in models.c.
 void InitCarImportMidLevel(void);
 char* GetCarImportModels(int slot);
+// JERICHO: body colour count of a held city's model, from its own model and palette
+// lump (no census needed); -1 when the city is not held. cars.c CarModelPaletteCount.
+int CarImportModelPaletteCount(int city, int model);
 
 // The wheel models an imported city carries in its own wheel segment (the bake
 // writes it). `kind` is one of CAR_IMPORT_WHEEL_*; NULL means that variant is

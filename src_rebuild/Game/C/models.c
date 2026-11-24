@@ -3053,6 +3053,89 @@ static int CarImportPolysFit(const char* lump, int size, int ofs)
 	return 1;
 }
 
+// JERICHO: how many body colours `model` of a HELD city really has, read from that
+// city's own data and nothing else: the (set, texture id) pairs the clean model paints
+// with, against the palette records its LUMP_PALLET carries for those pairs. Lump
+// palette k fills colour column k + 1 (column 0 is the page's own CLUT), so the count
+// is the highest such k + 2, at most 6; a model the lump gives no records is 1.
+// -1 when the city is not held or the data is unusable - the caller then estimates.
+// This is what a car select and the pause menu ask BEFORE a car is built, when there is
+// no census yet; it used to answer "6 for models 0..4, 1 otherwise" for every bank.
+int CarImportModelPaletteCount(int city, int model)
+{
+	static u_int sUsed[128];
+	CAR_IMPORT* imp;
+	MODEL* m;
+	int* offsets;
+	int* e;
+	int* end;
+	char* p;
+	int i, maxPal = -1, any = 0;
+
+	if (city < 0 || city >= CITY_COUNT || model < 0 || model > 12 || !CarImportCityHeld(city))
+		return -1;
+
+	imp = &gCarImports[city];
+
+	if (imp->carModels == NULL || imp->pallet == NULL || imp->palletSize < 8 ||
+		4 + (model + 1) * 3 * (int)sizeof(int) > imp->carModelsSize)
+		return -1;
+
+	offsets = (int*)(imp->carModels + 4 + model * sizeof(int) * 3);
+
+	if (offsets[0] < 0 || offsets[0] >= imp->carModelsSize ||
+		!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[0]) ||
+		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[0]))
+		return -1;
+
+	m = (MODEL*)(imp->carModels + offsets[0]);
+
+	if (m->poly_block == 0 || m->num_polys <= 0)
+		return 1;
+
+	memset(sUsed, 0, sizeof(sUsed));
+	p = (char*)m + m->poly_block;
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		int type = (u_char)*p & 0x1f;
+		int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+
+		if (step <= 0)
+			break;
+
+		if (JerPedIsTexturedPoly(type) && (u_char)p[1] < 128 && (u_char)p[2] < 32)
+		{
+			sUsed[(u_char)p[1]] |= 1u << (u_char)p[2];
+			any = 1;
+		}
+
+		p += step;
+	}
+
+	if (!any)
+		return 1;
+
+	e = (int*)(imp->pallet + 4);
+	end = (int*)(imp->pallet + imp->palletSize);
+
+	while (e + 1 <= end && *e != -1 && e + 4 <= end)
+	{
+		int pal = e[0], tex = e[1], set = e[2], clutNumber = e[3];
+
+		e += 4;
+
+		if (clutNumber == -1)
+			e += 8;		// an inline 16-colour CLUT follows the record
+
+		if (set >= 0 && set < 128 && tex >= 0 && tex < 32 && (sUsed[set] & (1u << tex)) &&
+			pal > maxPal && pal <= 4)
+			maxPal = pal;
+	}
+
+	return (maxPal < 0) ? 1 : maxPal + 2;
+}
+
 char* GetCarImportModels(int slot)
 {
 	int model;
