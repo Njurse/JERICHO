@@ -3137,7 +3137,12 @@ int CarImportModelPaletteCount(int city, int model)
 		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[0]))
 		return -1;
 
-	m = (MODEL*)(imp->carModels + offsets[0]);
+	/* The table's offsets are relative to the models block that follows the 4-byte count and
+	 * the 160-byte offset table - the same base CarImportModelFits / CarImportPolysFit use
+	 * (4 + 160 + ofs). Without it this read the poly walk from the wrong place: it passed the
+	 * fit checks, then dereferenced garbage (access violation at the first poly byte the
+	 * moment a held city's palette count was asked, e.g. HAVANA model 1 in a Chicago level). */
+	m = (MODEL*)(imp->carModels + 4 + 160 + offsets[0]);
 
 	if (m->poly_block == 0 || m->num_polys <= 0)
 		return 1;
