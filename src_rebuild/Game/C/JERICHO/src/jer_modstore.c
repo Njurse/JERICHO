@@ -2464,16 +2464,18 @@ int jer_modstore_rebake(void)
 /* ================================================================== */
 /* The menus                                                           */
 /*                                                                     */
-/* Two registered frontend menus, in the shape the mp server browser    */
+/* Three registered frontend menus, in the shape the mp server browser  */
 /* uses (mp_ui.c):                                                     */
 /*                                                                     */
-/*   jericho.mods       the installed modules, as a table              */
-/*   jericho.mods.repo  what a repo offers: install, update, remove    */
+/*   jericho.mods            the HUB: a plain list of destinations     */
+/*   jericho.mods.installed  the installed modules, as a table         */
+/*   jericho.mods.repo       what a repo offers: install, update, ...  */
 /*                                                                     */
-/* Rows carry a NULL label and are painted in the draw below: the       */
-/* engine still lays them out, highlights them, navigates them and      */
-/* pages them, it just has nothing of its own to write in them. That    */
-/* is what lets a row be four columns instead of one centred string.    */
+/* The two tables' rows carry a NULL label and are painted in the draw  */
+/* below: the engine still lays them out, highlights them, navigates    */
+/* them and pages them, it just has nothing of its own to write in      */
+/* them. That is what lets a row be four columns instead of one centred */
+/* string. The hub's rows carry labels and the engine draws them.       */
 /* ================================================================== */
 
 #define MODS_ROWS_MAX	7	/* table rows a page of the mods list shows */
@@ -2493,10 +2495,12 @@ static char gPromptText[200];
 static char gLabelMore[48];
 static char gLabelRepo[STORE_ID_MAX + 16];
 
-static JER_FE_ITEM gModsItems[JER_FE_MAX_ITEMS];
-static JER_FE_ITEM gRepoItems[JER_FE_MAX_ITEMS];
-static JER_FE_MENU gModsMenu;
-static JER_FE_MENU gRepoMenu;
+static JER_FE_ITEM gModsItems[JER_FE_MAX_ITEMS];	/* installed-mod table rows */
+static JER_FE_ITEM gRepoItems[JER_FE_MAX_ITEMS];	/* repo browser rows */
+static JER_FE_ITEM gHubItems[JER_FE_MAX_ITEMS];		/* the hub's own rows */
+static JER_FE_MENU gModsMenu;				/* the hub (jericho.mods) */
+static JER_FE_MENU gInstalledMenu;			/* installed table (jericho.mods.installed) */
+static JER_FE_MENU gRepoMenu;				/* repo browser (jericho.mods.repo) */
 static int gMenusBuilt;
 
 /* ------------------------------------------------------------------ */
@@ -2554,11 +2558,8 @@ static int ModsRowAdjust(void* ud, int dir)
  * is overrun. */
 static int ModsFitStride(int count)
 {
-	int fixed = 4;
+	int fixed = 1;	/* just Back: Browse/Compile/Bake/Credits moved up to the hub */
 	int cap = MODS_ROWS_MAX;
-
-	if (jer_mods_compile_available())
-		fixed++;
 
 	while (cap > 1 && cap + (count > cap ? 1 : 0) + fixed > JER_FE_MAX_ITEMS)
 		cap--;
@@ -2818,11 +2819,89 @@ static int RepoPageAdjust(void* ud, int dir)
 /* Building the rows                                                   */
 /* ------------------------------------------------------------------ */
 
-static void ModsMenuEnter(void* ud)
+/* The HUB (jericho.mods): a plain list of destinations, drawn by the engine's
+ * own rows. Its only job is to give the two tables and the maintenance actions a
+ * front door, so a player is never asked to learn that Cross toggles a mod while
+ * "Bake" sits on the same list. The "Get Mods" row carries the update count the
+ * old table pinned to its bottom edge. */
+static void HubMenuEnter(void* ud)
+{
+	int installed = jer_frontend_find("jericho.mods.installed");
+	int repo = jer_frontend_find("jericho.mods.repo");
+	int ups = StoreCountUpdates();
+	int n = 0;
+
+	(void)ud;
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Installed Mods";
+		it->submenu = installed;
+	}
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		if (ups > 0)
+		{
+			snprintf(gLabelRepoItem, sizeof(gLabelRepoItem), "Get Mods (%d update%s)",
+				ups, ups == 1 ? "" : "s");
+			it->label = gLabelRepoItem;
+		}
+		else
+		{
+			it->label = "Get Mods";
+		}
+		it->submenu = repo;
+	}
+
+	if (jer_mods_compile_available())
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Compile Mods";
+		it->on_activate = ModsCompile;
+		it->submenu = -1;
+	}
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Bake Cars & Peds";
+		it->on_activate = ModsBake;
+		it->submenu = -1;
+	}
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Credits";
+		it->on_activate = ModsCredits;
+		it->submenu = -1;
+	}
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Back";
+		it->is_back = 1;
+		it->submenu = -1;
+	}
+
+	gModsMenu.item_count = n;
+}
+
+static void InstalledMenuEnter(void* ud)
 {
 	int count = jer_modstore_module_count();
 	int pages, start, rows, i, n = 0, controls = 0;
-	int repoMenu = jer_frontend_find("jericho.mods.repo");
 
 	(void)ud;
 
@@ -2865,62 +2944,7 @@ static void ModsMenuEnter(void* ud)
 		it->submenu = -1;
 	}
 
-	/* controls, pinned to the bottom edge */
-	{
-		JER_FE_ITEM* it = &gModsItems[n++];
-
-		int ups = StoreCountUpdates();
-
-		memset(it, 0, sizeof(*it));
-
-		/* "Mod Repo (2 updates)" - the store works without anyone opening the
-		 * browser, and a quiet store is a store nobody updates */
-		if (ups > 0)
-		{
-			snprintf(gLabelRepoItem, sizeof(gLabelRepoItem), "Browse Mod Repo (%d update%s)",
-				ups, ups == 1 ? "" : "s");
-			it->label = gLabelRepoItem;
-		}
-		else
-		{
-			it->label = "Browse Mod Repo";
-		}
-
-		it->submenu = repoMenu;			/* engine navigation */
-		controls++;
-	}
-
-	if (jer_mods_compile_available())
-	{
-		JER_FE_ITEM* it = &gModsItems[n++];
-
-		memset(it, 0, sizeof(*it));
-		it->label = "Compile Mods";
-		it->on_activate = ModsCompile;
-		it->submenu = -1;
-		controls++;
-	}
-
-	{
-		JER_FE_ITEM* it = &gModsItems[n++];
-
-		memset(it, 0, sizeof(*it));
-		it->label = "Bake";
-		it->on_activate = ModsBake;
-		it->submenu = -1;
-		controls++;
-	}
-
-	{
-		JER_FE_ITEM* it = &gModsItems[n++];
-
-		memset(it, 0, sizeof(*it));
-		it->label = "Credits";
-		it->on_activate = ModsCredits;
-		it->submenu = -1;
-		controls++;
-	}
-
+	/* one pinned control: Back. Browse/Compile/Bake/Credits live in the hub. */
 	{
 		JER_FE_ITEM* it = &gModsItems[n++];
 
@@ -2931,8 +2955,8 @@ static void ModsMenuEnter(void* ud)
 		controls++;
 	}
 
-	gModsMenu.item_count = n;
-	gModsMenu.bottom_items = controls;
+	gInstalledMenu.item_count = n;
+	gInstalledMenu.bottom_items = controls;
 }
 
 static void RepoMenuEnter(void* ud)
@@ -3059,19 +3083,28 @@ static void StoreEnsureMenus(void)
 {
 	if (!gMenusBuilt)
 	{
+		/* The HUB: a plain list, drawn by the engine. A stock title works here --
+		 * the rows are short and never lift into the heading. */
 		memset(&gModsMenu, 0, sizeof(gModsMenu));
 		gModsMenu.id = "jericho.mods";
-		gModsMenu.items = gModsItems;
-		gModsMenu.on_enter = ModsMenuEnter;
-		/* NO stock title: it is drawn at (100,150) at 1.5x, exactly where a tall
-		 * table's rows get lifted to. The heading is ours, above the header row. */
-		gModsMenu.title = NULL;
-		gModsMenu.row_w = 560;
-		gModsMenu.row_step = 28;
-		gModsMenu.row_top = 130;
-		gModsMenu.row_bottom = 470;
-		gModsMenu.list_align = 0;	/* hang the rows off the top: a table with a
-									 * heading reads wrong centred (mp's reason) */
+		gModsMenu.items = gHubItems;
+		gModsMenu.on_enter = HubMenuEnter;
+		gModsMenu.title = "JERICHO MODS";
+
+		/* The installed-mod table. No stock title: it is drawn at (100,150) at
+		 * 1.5x, exactly where a tall table's rows get lifted to. The heading is
+		 * ours, above the header row. */
+		memset(&gInstalledMenu, 0, sizeof(gInstalledMenu));
+		gInstalledMenu.id = "jericho.mods.installed";
+		gInstalledMenu.items = gModsItems;
+		gInstalledMenu.on_enter = InstalledMenuEnter;
+		gInstalledMenu.title = NULL;
+		gInstalledMenu.row_w = 560;
+		gInstalledMenu.row_step = 28;
+		gInstalledMenu.row_top = 130;
+		gInstalledMenu.row_bottom = 470;
+		gInstalledMenu.list_align = 0;	/* hang the rows off the top: a table with a
+										 * heading reads wrong centred (mp's reason) */
 
 		memset(&gRepoMenu, 0, sizeof(gRepoMenu));
 		gRepoMenu.id = "jericho.mods.repo";
@@ -3089,6 +3122,8 @@ static void StoreEnsureMenus(void)
 
 	if (jer_frontend_find("jericho.mods") < 0)
 		jer_frontend_register_menu(&gModsMenu);
+	if (jer_frontend_find("jericho.mods.installed") < 0)
+		jer_frontend_register_menu(&gInstalledMenu);
 	if (jer_frontend_find("jericho.mods.repo") < 0)
 		jer_frontend_register_menu(&gRepoMenu);
 }
@@ -3551,7 +3586,7 @@ static void StoreDrawWrapped(int x, int y, int width, const char* text, int maxL
 static void StoreDraw(void)
 {
 	int menu = jer_frontend_current_menu();
-	int mods = jer_frontend_find("jericho.mods");
+	int installed = jer_frontend_find("jericho.mods.installed");
 	int repo = jer_frontend_find("jericho.mods.repo");
 
 	if (menu < 0)
@@ -3563,9 +3598,11 @@ static void StoreDraw(void)
 	if (jer_prompt_active())
 		return;
 
-	if (menu == mods)
+	/* The hub is drawn by the engine (its rows carry labels); only the two
+	 * tables paint themselves. */
+	if (menu == installed)
 		ModsDrawTable();
-	else if (menu >= 0 && menu == repo)
+	else if (menu == repo)
 		StoreDrawRepoTable();
 }
 
@@ -3700,7 +3737,9 @@ void jer_modstore_frontend_tick(int onMainMenu)
 		gModsReopen = 0;
 		StoreEnsureMenus();
 
-		idx = jer_frontend_find("jericho.mods");
+		/* re-open the table the player was editing, not the hub: toggling a mod
+		 * from the installed list must land them back on that list */
+		idx = jer_frontend_find("jericho.mods.installed");
 		if (idx >= 0)
 		{
 			gModsReopen = 0;
