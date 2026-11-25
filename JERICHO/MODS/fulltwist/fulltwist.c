@@ -691,6 +691,9 @@ static int ftOnCarStep(void* ud, void* args)
 	return JER_RESULT_CONTINUE;
 }
 
+/* frames after a tumble starts before ground contact may damp it */
+#define FT_TUMBLE_GROUND_GRACE	15
+
 static int ftOnCarTorque(void* ud, void* args)
 {
 	JER_ARGS_CAR_TORQUE* a = (JER_ARGS_CAR_TORQUE*)args;
@@ -806,6 +809,19 @@ static int ftOnCarTorque(void* ud, void* args)
 
 		if (gFullTwist.cfg.spinRetention > 0)
 			applyRetention = 1;
+
+		/* A cartwheel that touches down INSIDE the window bleeds spin too: with
+		 * the window open and window damping at 0, every bounce kept the full
+		 * roll and the car could cartwheel for the whole window (and a bounce
+		 * re-opened the free-spin state, so effectively forever). A short grace
+		 * after the impact keeps the launch itself intact. */
+		if (gFullTwist.cfg.rolloverDamping > 0 && grounded && !st->airborne &&
+			gFullTwist.cfg.window - st->tumbleFrames > FT_TUMBLE_GROUND_GRACE &&
+			k < gFullTwist.cfg.rolloverDamping * 8)
+		{
+			applyDamping = 1;
+			k = gFullTwist.cfg.rolloverDamping * 8;	/* 0..800 */
+		}
 	}
 	else if (st->tumbled)
 	{

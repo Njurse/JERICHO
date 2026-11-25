@@ -79,7 +79,17 @@ typedef struct JER_MODSTORE_ITEM
 	int canInstall;				/* 0 = offer the row, but refuse the action */
 	int canRemove;				/* the store installed it, so it may delete it */
 	int installedVersion;		/* installed somewhere (any version) */
+	const char* runtime;		/* the index's `runtime` ("dll" = a loadable addon);
+								 * "" when the index does not say */
 } JER_MODSTORE_ITEM;
+
+/* What an installed mod folder is (jer_modstore_installed_kind). */
+enum
+{
+	JER_MODSTORE_KIND_NONE = 0,		/* not installed */
+	JER_MODSTORE_KIND_LOADABLE,		/* a DLL addon or a data pack: a restart runs it */
+	JER_MODSTORE_KIND_BUILTIN		/* source to be linked into the exe: needs a rebuild */
+};
 
 /* One row of the Mods table: the engine's module inventory plus what the store
  * knows about it. Strings stay valid until the next call. */
@@ -124,6 +134,12 @@ int jer_modstore_busy(void);
  * re-bake question: an update can carry newer bake tooling. The check raises a
  * prompt ONLY when something installed actually has an update. */
 int jer_modstore_startup_update_pending(void);
+
+/* Non-zero when this run never asks that question at all (a store test run),
+ * so jer_rebake.c's boot hold does not wait for it. The player's "Don't ask
+ * again" (CONFIG/modstore.ini startup_update_prompt=0) is not this: then the
+ * check is simply finished at boot and _pending() reads 0. */
+int jer_modstore_startup_update_off(void);
 
 /* The last thing the store has to say (a job's result, or why it refused). */
 const char* jer_modstore_status(void);
@@ -178,6 +194,10 @@ const JER_MODSTORE_ITEM* jer_modstore_item(int index);
 int jer_modstore_install(const char* id);
 int jer_modstore_remove(const char* id);
 int jer_modstore_rebake(void);
+
+/* JER_MODSTORE_KIND_* for MODS/<id> as it is on disk now: a DLL beside its
+ * mod.toml or a data pack is LOADABLE, anything else is BUILTIN. */
+int jer_modstore_installed_kind(const char* id);
 
 /* ------------------------------------------------------------------ */
 /* The installed side (what THIS install has, from the link table)      */

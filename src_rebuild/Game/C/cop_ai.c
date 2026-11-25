@@ -18,6 +18,7 @@
 #include "pad.h"
 #include "pedest.h"
 #include "pres.h"
+#include "models.h"	// JERICHO: JerCarSlotDrive (bank drive-wheel override)
 
 enum AIZone
 {
@@ -341,6 +342,7 @@ void CopControl1(CAR_DATA *cp)
 	int currentSpeed;
 	int slidevel;
 	int maxPower;
+	int drive;
 	int speedDif;
 	int doBatter;
 	VECTOR pos;
@@ -727,7 +729,10 @@ void CopControl1(CAR_DATA *cp)
 	if (cp->hd.speed < 48) 
 		cp->thrust = (cp->thrust * (cp->hd.speed + 80) >> 7);
 
-	if (handlingType[cp->hndType].fourWheelDrive == 1)
+	// a single-axle drive override (lump 205: 1 front, 2 rear) makes the car two-wheel drive, so it gets full push
+	drive = JerCarSlotDrive(cp->ap.model);
+
+	if (handlingType[cp->hndType].fourWheelDrive == 1 && drive != 1 && drive != 2)
 		cp->thrust /= 2;
 
 	cp->thrust = (cp->thrust * 7) / 10;

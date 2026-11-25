@@ -1,0 +1,1294 @@
+From cbc1655bbe82bbf7d32554e43d9c54523efd9a05 Mon Sep 17 00:00:00 2001
+From: z-Vibes <180806113+z-Vibes@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 03:32:34 +0000
+Subject: [PATCH] bake: split pages draw the nearest colour their row holds,
+ never confetti
+
+A texel's 4-bit index only means something against the CLUT row it is drawn
+with. On a page whose colours do not fit one 16-entry row, three things broke
+that and drew panels as "confetti":
+
+- Out of texture ids: a group past id 31 kept its material's id and
+  OVERWROTE that row, so the material's first group drew with another
+  group's 16 colours. It now takes an id no material names, and only when
+  none is left shares the row that fits it best (_share_row): that row's
+  free slots take the group's costliest missing colours, and the rest map
+  to the nearest colour the row holds.
+- Wrong row for a split poly: the centroid rule let any first-row rect of
+  the same material win, so a poly the splitter moved to a second row was
+  drawn with the first. carbank_page.row_for_poly is now the one rule (a
+  piece whose rect IS the poly's UV bbox wins) and carbank_bake._id_at asks
+  it, so the planner and the bake cannot disagree.
+- Overlapping bboxes: a later group re-indexed texels an earlier group's
+  polys draw. reconcile_rows checks every drawn texel against the row its
+  poly uses and moves a wrong one to its exact colour, a free slot, or the
+  nearest colour (perceptual distance; a texel two rows share gets the slot
+  nearest in both). Visible texels never move onto a slot pack_indexed
+  clears for transparency, and a page with nothing wrong keeps its bytes.
+
+Also:
+- Identical UV bboxes (clean/damaged/low share an unwrap) no longer open a
+  new quantize group each, which burned ids.
+- A material id of 32 or more gets a row the engine holds.
+- PLANNER_VERSION joins each page's source record, so old pages re-bake once.
+- --check hashed pages without their UV islands and called every textured
+  page STALE; it now hashes what the bake hashed.
+- D1 bake: more than 32 flat colours no longer stops the bake; the most-used
+  32 keep rows and the rest draw with the nearest kept colour. A page whose
+  cars use more than 32 texture ids is named in a warning.
+
+Measured on the original planner with the new test scenes: 80, 171 and 400
+texels drawn with the wrong palette; after: 0, 0 and 0. tools/car: 234 tests
+pass (18 skipped, as before); tools/common: 31 pass.
+
+---
+ docs/CAR_BAKE.md           |  25 +-
+ tools/car/bake.py          |  49 +++-
+ tools/car/carbank_bake.py  |  65 ++---
+ tools/car/carbank_page.py  | 559 ++++++++++++++++++++++++++++++++++++-
+ tools/car/test_clut_fit.py | 360 ++++++++++++++++++++++++
+ 5 files changed, 999 insertions(+), 59 deletions(-)
+ create mode 100644 tools/car/test_clut_fit.py
+
+diff --git a/docs/CAR_BAKE.md b/docs/CAR_BAKE.md
+index 78d13dc..6c9934b 100644
+--- a/docs/CAR_BAKE.md
++++ b/docs/CAR_BAKE.md
+@@ -27,6 +27,27 @@ group of a source id keeps that id, so `set65_id13` stays 13. `split: "off"`
+ is the old single-row quantize. `max_error` accepts one row when the quantize
+ is no worse than that many channels.
+ 
++**When the colours still do not fit: nearest colour, never confetti.** A texel's
++4-bit index only means something against the row it is DRAWN with, and three
++things used to break that on a split page, each one the "confetti panel" look:
++a group past texture id 31 overwrote its material's first row; a poly the
++splitter moved to a second row was drawn with the first row (the centroid rule
++let any first-row rect of the same material win); and a later group's bbox
++re-indexed texels an earlier group's polys draw. Now `carbank_page.row_for_poly`
++is the one rule for which row draws a poly (a piece whose rect IS the poly's own
++UV bbox wins; `_id_at` asks it), a group with no id left takes a gap id, then
++shares the row that fits it best (`_share_row`: its free slots take the costliest
++missing colours), and `reconcile_rows` checks every drawn texel against the row
++its poly uses and moves a wrong one to its exact colour, a free slot, or the
++nearest colour that row holds (perceptual distance; a texel shared by two rows
++gets the slot nearest in both). No visible texel is moved onto a slot
++`pack_indexed` clears for transparency, and a page with nothing wrong keeps its
++bytes. The bake warns with the counts. `PLANNER_VERSION` is part of each page's
++source record, so pages baked by the old planner re-bake once. On the D1 side,
++more than 32 flat colours no longer stops the bake (`bake._fit_flat_colours`:
++the most-used 32 keep rows, the rest draw with the nearest kept colour), and a
++page whose cars use more than 32 texture ids is named in a warning.
++
+ **civ_clut row budget** — not a bake that only emits eight rows. `bake.build_pallet`
+ emits every `(set, id)` the geometry names. `CarPalIndexInCity` only searches
+ `carTpages[city][0..7]` (`docs/DRIVER1.md` §7), so a set past the eighth draws
+@@ -128,8 +149,8 @@ the paint to one texture row (Firebird lamps). See `bank-schema.md`.
+ ## Verification
+ 
+ ```text
+-python3 -m unittest test_page_split test_carbank_palette test_preview_scale test_carbank_page \
+-    test_fourbpp_palette test_bankjson test_sound_knobs -q
++python3 -m unittest test_page_split test_clut_fit test_carbank_palette test_preview_scale \
++    test_carbank_page test_fourbpp_palette test_bankjson test_sound_knobs -q
+ python3 -m unittest test_vag test_fourbpp -q          # from tools/common
+ ```
+ 
+diff --git a/tools/car/bake.py b/tools/car/bake.py
+index a311c11..b1de48e 100644
+--- a/tools/car/bake.py
++++ b/tools/car/bake.py
+@@ -1105,6 +1105,42 @@ def _solid_fallback(p, level, remap, grey):
+     return bool(grey and (setid == 0 or (level, setid) not in remap))
+ 
+ 
++def _fit_flat_colours(colours, counts, limit=32):
++    """More flat colours than the engine's CLUT rows -> (kept, {colour: row}).
++
++    The flat page holds one CLUT row per colour and a flat poly's id picks its
++    row, so a 33rd colour has no row - which used to stop the whole bake. The
++    `limit` most-used colours keep a row each (first appearance breaks a tie and
++    sets the row order, so a bake is stable); every other colour draws with the
++    kept colour nearest to it by eye (carbank_page's perceptual distance), and
++    the bake prints which.
++    """
++    import carbank_page
++
++    order = {c: i for i, c in enumerate(colours)}
++    keep = sorted(colours, key=lambda c: (-counts.get(c, 0), order[c]))[:limit]
++    keep.sort(key=lambda c: order[c])
++    index = {c: i for i, c in enumerate(keep)}
++    merged = []
++
++    for c in colours:
++        if c in index:
++            continue
++
++        near = min(range(len(keep)),
++                   key=lambda i: (carbank_page._colour_distance(c, keep[i]), i))
++        index[c] = near
++        merged.append((c, keep[near]))
++
++    shown = ", ".join("%02x%02x%02x->%02x%02x%02x" % (tuple(a) + tuple(b))
++                      for a, b in merged[:6])
++    print("   flat colours: %d distinct, the engine holds %d CLUT rows; %d drawn "
++          "with the nearest kept colour: %s%s"
++          % (len(colours), limit, len(merged), shown,
++             " ..." if len(merged) > 6 else ""))
++    return keep, index
++
++
+ def build_page_plan(items, levels_dir, wheels=None, grey_fallback=False):
+     """Assign every distinct (source level, texture set) a fresh set number.
+ 
+@@ -1165,6 +1201,14 @@ def build_page_plan(items, levels_dir, wheels=None, grey_fallback=False):
+         if max(ids) < 32:
+             continue                    # already fits in the engine's 32 rows
+         tex_remap[key] = {old: new for new, old in enumerate(sorted(ids))}
++        if len(ids) > 32:
++            # Compaction cannot make 33 ids fit 32 rows. Say so here, where the
++            # level and set are known, instead of leaving a poly to read a row
++            # the engine does not have.
++            print("   WARNING: %s set %d: the cars use %d texture ids and the engine "
++                  "holds 32 CLUT rows - id(s) %s have no row of their own"
++                  % (key[0], key[1], len(ids),
++                     ", ".join(str(i) for i in sorted(ids)[32:])))
+ 
+     remap = {}
+     perms = []
+@@ -1219,6 +1263,7 @@ def build_page_plan(items, levels_dir, wheels=None, grey_fallback=False):
+     # to read). Set-255 wheels are not here: build_wheel_record shares their sprite.
+     flat_colours = []
+     flat_index = {}
++    flat_counts = {}
+     for it in items:
+         g = it.get("geom")
+ 
+@@ -1230,6 +1275,7 @@ def build_page_plan(items, levels_dir, wheels=None, grey_fallback=False):
+             if not _solid_fallback(p, level, remap, grey_fallback):
+                 continue
+             c = FLAT_COLOR if grey_fallback else tuple(p.get("color", (0, 0, 0)))
++            flat_counts[c] = flat_counts.get(c, 0) + 1
+             if c not in flat_index:
+                 flat_index[c] = len(flat_colours)
+                 flat_colours.append(c)
+@@ -1237,8 +1283,7 @@ def build_page_plan(items, levels_dir, wheels=None, grey_fallback=False):
+     flat_set = 0
+     if flat_colours:
+         if len(flat_colours) > 32:
+-            raise SystemExit("a city's flat polys use %d distinct colours; the "
+-                             "engine holds 32 CLUT rows" % len(flat_colours))
++            flat_colours, flat_index = _fit_flat_colours(flat_colours, flat_counts)
+         flat_set = PAGE_SET_BASE + len(perms) + len(specs)
+         rows = b"".join(_flat_clut_row(c) for c in flat_colours)
+         page = pages1.encode_literal(b"\x00" * 0x8000)      # 256x256 4bpp, all index 0
+diff --git a/tools/car/carbank_bake.py b/tools/car/carbank_bake.py
+index f55c358..a4eb504 100644
+--- a/tools/car/carbank_bake.py
++++ b/tools/car/carbank_bake.py
+@@ -93,46 +93,13 @@ def _block_for(variant, geom, clean_block, scale, flip_normals=False):
+ 
+ 
+ def _id_at(poly, rects):
+-    """The CLUT row a poly draws: the plan rect its UV centroid lands in.
++    """The CLUT row a poly draws - carbank_page.row_for_poly, the planner's own rule.
+ 
+-    The smallest containing rect wins, and a rect of the poly's own id wins a
+-    tie, so a panel that was not split stays on the id its material named.
+-    A leftover retail sprite (src is None — not a material) does not replace
+-    that id: PAGE_1 stays on row 0 when its centroid only hits the leftover.
++    One implementation on purpose: plan_islands indexes each texel for the row
++    this answers, so a second copy of the rule here could only disagree with it
++    (and every disagreement is a panel drawn with the wrong 16 colours).
+     """
+-    uvs = poly.get("uv") or []
+-    fallback = rects[0]["id"]
+-    own_id = poly.get("id")
+-
+-    def material_row():
+-        if any(r.get("id") == own_id and r.get("src") is not None for r in rects):
+-            return own_id
+-        return None
+-
+-    if not uvs:
+-        return own_id if any(r["id"] == own_id for r in rects) else fallback
+-
+-    u = sum(p[0] for p in uvs) / float(len(uvs))
+-    v = sum(p[1] for p in uvs) / float(len(uvs))
+-    hit = [r for r in rects
+-           if r["rect"][0] <= u < r["rect"][2] and r["rect"][1] <= v < r["rect"][3]]
+-
+-    if not hit:
+-        kept = material_row()
+-        if kept is not None:
+-            return kept
+-        return own_id if any(r["id"] == own_id for r in rects) else fallback
+-
+-    own = [r for r in hit if r["id"] == own_id]
+-
+-    if not own and hit and all(r.get("src") is None for r in hit):
+-        kept = material_row()
+-        if kept is not None:
+-            return kept
+-
+-    chosen = own or hit
+-    chosen.sort(key=lambda r: (r["rect"][2] - r["rect"][0]) * (r["rect"][3] - r["rect"][1]))
+-    return chosen[0]["id"]
++    return carbank_page.row_for_poly(poly.get("uv") or [], poly.get("id"), rects)
+ 
+ 
+ def car_blocks(car, scale, default_page=None, flip_y=False, flip_winding=False, colors=None,
+@@ -1186,6 +1153,7 @@ def _page_source_hash(page, setid, sprites=None, uv_islands=None):
+     CLUT row, so an edited unwrap has to re-bake even when the PNG did not change.
+     """
+     record = {"image": os.path.basename(page.image or ""),
++              "planner": carbank_page.PLANNER_VERSION,
+               "transparent": page.transparent,
+               "tolerance": page.transparent_tolerance,
+               "chroma": page.transparent_chroma,
+@@ -1521,9 +1489,23 @@ def _sync_declared_pages(manifest, bank, bank_dir, warnings, out_dir=None,
+             getattr(page, "split", "auto"), getattr(page, "max_error", None)))
+ 
+         if use_split:
++            fit = {}
+             indices, row_map, pieces = carbank_page.plan_islands(
+                 pixels, fourbpp.PAGE_W, fourbpp.PAGE_H, uv_islands,
+-                split=True, extra_islands=extra_islands)
++                split=True, extra_islands=extra_islands,
++                transparent=mask, key=key, tolerance=page.transparent_tolerance,
++                chroma=page.transparent_chroma, report=fit)
++
++            if fit.get("shared_rows"):
++                warnings.append(
++                    "page set %d: %d colour group(s) found no free texture id "
++                    "and share the row that fits them best" % (setid, fit["shared_rows"]))
++
++            if fit.get("fixed"):
++                warnings.append(
++                    "page set %d: %d texel(s) re-matched to the row they draw with "
++                    "(%d exact, %d nearest colour, worst channel error %d)"
++                    % (setid, fit["fixed"], fit["exact"], fit["nearest"], fit["worst"]))
+             blob, _ordered = carbank_page.pack_indexed(
+                 indices, row_map, mask=mask, key=key,
+                 tolerance=page.transparent_tolerance,
+@@ -1835,7 +1817,10 @@ def check_sources(bank, manifest, bank_dir, stale_only=True, gen_dir=None):
+             record = next((p for p in (manifest.get("pages") or [])
+                            if p.get("set") == page.set), None)
+             want = os.path.join(gen_dir, "pages", "PAGE_%d.bin" % page.set)
+-            source = _page_source_hash(page, page.set, islands.get(page.set))
++            # The same inputs the bake hashed, UV islands included - without them
++            # every textured page compared unequal and --check called it STALE.
++            source = _page_source_hash(page, page.set, islands.get(page.set),
++                                       _uv_islands(bank, page.set))
+ 
+             if record is None:
+                 problems.append("page set %d has no record in the manifest"
+diff --git a/tools/car/carbank_page.py b/tools/car/carbank_page.py
+index 643b7fc..39e6817 100644
+--- a/tools/car/carbank_page.py
++++ b/tools/car/carbank_page.py
+@@ -431,6 +431,14 @@ def read_page(path):
+ CIV_CLUT_ROWS = 8
+ MAX_TEX_IDS = 32
+ 
++# Part of every page's source record (carbank_bake._page_source_hash), so a page
++# the previous planner baked is re-baked once. Bump it whenever plan_islands can
++# give different bytes for the same inputs.
++#   2  a group past texture id 31 no longer overwrites its material's row; every
++#      drawn texel is checked against the row its poly really draws and moved to
++#      the nearest colour that row holds (the "confetti panels" fix).
++PLANNER_VERSION = 2
++
+ 
+ def civ_row_map(sets, budget=CIV_CLUT_ROWS):
+     """Texture sets in ascending order -> the civ_clut row the engine binds.
+@@ -689,6 +697,7 @@ def _cluster_uvs(pixels, width, height, uv_lists, split, mask=None):
+                  "cols": []}]
+ 
+     groups = []
++    seen = set()
+ 
+     for uvs in uv_lists:
+         if not uvs:
+@@ -699,6 +708,16 @@ def _cluster_uvs(pixels, width, height, uv_lists, split, mask=None):
+         if rect[2] <= rect[0] or rect[3] <= rect[1]:
+             continue
+ 
++        # The same bbox again - clean, damaged and low share one unwrap, and two
++        # triangles of a quad share a bbox. Its colours are the ones already
++        # placed, so it changes no group; but a >16-colour bbox used to open a
++        # NEW quantize group every time, burning a texture id per copy (and the
++        # page then ran out of ids). row_for_poly finds the copy's group by the
++        # same rect.
++        if rect in seen:
++            continue
++
++        seen.add(rect)
+         cols = _colours_in(pixels, width, rect, mask)
+ 
+         if not cols:
+@@ -922,7 +941,9 @@ def _paginate_leftovers(indices, pixels, width, height, blobs, rows, next_id):
+     return pieces
+ 
+ 
+-def plan_islands(pixels, width, height, islands, split=True, extra_islands=None):
++def plan_islands(pixels, width, height, islands, split=True, extra_islands=None,
++                 transparent=None, key=None, tolerance=0, chroma=None,
++                 report=None):
+     """(indices, {id: 16 colours}, pieces) for a page that does not fit one row.
+ 
+     `islands` is `{texture id: [uv list, ...]}` with uvs in page texels.
+@@ -934,6 +955,26 @@ def plan_islands(pixels, width, height, islands, split=True, extra_islands=None)
+     wheel sprite is not a body UV island, and folding it into the leftover
+     piece is what let a whole-page leftover palette paint the tyre. Each entry
+     is {"uv": [...], "kind": "wheel", "variant": "clean"}.
++
++    Texture ids are the hard limit: a page holds 32 CLUT rows. Past id 31 a
++    group takes an id no material on the page names (a gap below the highest
++    one), and only when none is left does it SHARE a row (`_share_row`): the
++    row that already fits its colours best takes it, its free slots take the
++    group's costliest missing colours, and every other texel is matched to the
++    nearest colour that row holds. It used to keep the material's own id and
++    OVERWRITE that row, so the material's first group drew with another
++    group's 16 colours - the "confetti" panels. A material id the engine cannot
++    hold (32 and up) gets a free id the same way instead of a row that
++    pack_indexed would drop.
++
++    Last, `reconcile_rows` checks every drawn texel against the row its poly
++    will actually use (`row_for_poly`, the bake's own choice) and moves any
++    that do not show their colour there.
++
++    `transparent`, `key`, `tolerance` and `chroma` are what pack_indexed will be
++    given: no visible texel is moved onto a slot pack_indexed clears for the
++    transparent ones. `report`, when a dict, receives reconcile_rows' counts
++    plus "shared_rows" (groups that had to share a row).
+     """
+     islands = islands or {0: [[(0, 0), (width - 1, 0),
+                                (width - 1, height - 1), (0, height - 1)]]}
+@@ -942,6 +983,23 @@ def plan_islands(pixels, width, height, islands, split=True, extra_islands=None)
+     pieces = []
+     next_id = (max(islands) + 1) if islands else 1
+     mask = page_coverage(width, height, islands) if split else None
++    named = {i for i in islands if 0 <= i < MAX_TEX_IDS}
++    shared = 0
++
++    def take_id():
++        # The old order first (max id + 1 upward), so every page that fitted
++        # keeps the ids it always had; the gaps only once that runs out.
++        nonlocal next_id
++
++        if next_id < MAX_TEX_IDS:
++            next_id += 1
++            return next_id - 1
++
++        for tex_id in range(MAX_TEX_IDS):
++            if tex_id not in named and tex_id not in rows:
++                return tex_id
++
++        return None
+ 
+     if mask is not None and extra_islands:
+         for extra in extra_islands:
+@@ -952,24 +1010,29 @@ def plan_islands(pixels, width, height, islands, split=True, extra_islands=None)
+                               mask)
+ 
+         for number, group in enumerate(groups):
+-            if number == 0:
++            if number == 0 and 0 <= src_id < MAX_TEX_IDS:
+                 tex_id = src_id
+-            elif next_id < MAX_TEX_IDS:
+-                tex_id = next_id
+-                next_id += 1
+             else:
+-                tex_id = src_id
++                tex_id = take_id()
+ 
+             rects = group["rects"]
+ 
+-            if group["quantize"] or len(group["cols"]) > fourbpp.CLUT_ROW_ENTRIES:
+-                colours = _scatter_quantize(indices, pixels, width, height,
+-                                            rects, mask)
++            if tex_id is None:
++                tex_id = _share_row(indices, pixels, width, height, rects, mask,
++                                    rows, pieces, transparent, key, tolerance,
++                                    chroma)
++
++                if tex_id is None:
++                    continue
++
++                shared += 1
++            elif group["quantize"] or len(group["cols"]) > fourbpp.CLUT_ROW_ENTRIES:
++                rows[tex_id] = _scatter_quantize(indices, pixels, width, height,
++                                                 rects, mask)
+             else:
+                 colours = _pad16(group["cols"])
+                 _scatter_exact(indices, pixels, width, rects, colours, mask)
+-
+-            rows[tex_id] = colours
++                rows[tex_id] = colours
+ 
+             for rect in rects:
+                 pieces.append({"id": tex_id, "rect": [int(v) for v in rect],
+@@ -989,14 +1052,15 @@ def plan_islands(pixels, width, height, islands, split=True, extra_islands=None)
+         if not cols:
+             continue
+ 
+-        if next_id >= MAX_TEX_IDS:
++        # A wheel never shares: pack_indexed clears its masked backdrop slot in
++        # its row, and on a body row that would punch holes in the body.
++        tex_id = take_id()
++
++        if tex_id is None:
+             raise SystemExit(
+                 "page: no free texture id left for the %s wheel island at %s"
+                 % (extra.get("variant") or "wheel", list(rect)))
+ 
+-        tex_id = next_id
+-        next_id += 1
+-
+         if len(cols) > fourbpp.CLUT_ROW_ENTRIES:
+             colours = _scatter_quantize(indices, pixels, width, height, [rect])
+         else:
+@@ -1014,9 +1078,474 @@ def plan_islands(pixels, width, height, islands, split=True, extra_islands=None)
+         pieces.extend(_paginate_leftovers(
+             indices, pixels, width, height, blobs, rows, next_id))
+ 
++    stats = reconcile_rows(indices, rows, pieces, islands, pixels, width, height,
++                           transparent=transparent, key=key,
++                           tolerance=tolerance, chroma=chroma)
++    stats["shared_rows"] = shared
++
++    if report is not None:
++        report.update(stats)
++
+     return indices, rows, pieces
+ 
+ 
++# ---------------------------------------------------------------------------
++# Which row draws a texel, and making every drawn texel show its own colour
++#
++# A page that does not fit one 16-entry row is split into several rows, and a
++# texel's 4-bit index only means something against the row it is drawn with.
++# Three things used to break that, each one the "confetti panel" look:
++#   * a group past texture id 31 overwrote its material's first row;
++#   * the centroid rule drew a poly the splitter had moved to a second row
++#     with its material's first row;
++#   * a later group's bbox re-indexed texels an earlier group's polys draw.
++# row_for_poly is the one answer to "which row draws this poly" (the bake asks
++# it too), and reconcile_rows makes the indices agree with it.
++# ---------------------------------------------------------------------------
++
++def _rect_texels(rect, width, height):
++    x0, y0, x1, y1 = _clip_rect(rect, width, height)
++    return [y * width + x for y in range(y0, y1) for x in range(x0, x1)]
++
++
++def _group_texels(width, height, rects, mask=None):
++    """Covered texels inside `rects`, each once - what a scatter writes."""
++    seen = set()
++    out = []
++
++    for rect in rects:
++        x0, y0, x1, y1 = _clip_rect(rect, width, height)
++
++        for y in range(y0, y1):
++            row = y * width
++
++            for x in range(x0, x1):
++                i = row + x
++
++                if i in seen or (mask is not None and not mask[i]):
++                    continue
++
++                seen.add(i)
++                out.append(i)
++
++    return out
++
++
++def _poly_texels(width, height, pts):
++    """The texels `_cover_poly` marks for one poly (the same raster)."""
++    hit = {}
++    _cover_poly(hit, width, height, pts)
++    return hit.keys()
++
++
++def _colour_distance(a, b):
++    """Perceptual distance between two 8-bit colours ("redmean" weighting).
++
++    Plain RGB distance weighs a step of blue like a step of green; the eye does
++    not. This keeps a dark red panel matching a dark red rather than a brown.
++    Used only for the re-matching below: fourbpp.nearest_clut_index keeps its
++    plain distance, because changing it would move bytes in every bank.
++    """
++    rmean = (a[0] + b[0]) >> 1
++    dr = a[0] - b[0]
++    dg = a[1] - b[1]
++    db = a[2] - b[2]
++    return (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (
++        ((767 - rmean) * db * db) >> 8)
++
++
++def _nearest_entry(colour, row, exclude=()):
++    """Index of `row`'s entry nearest `colour`, never one in `exclude`.
++
++    Pure black is the transparent marker on a keyed page, so a texel that is
++    not pure black never lands on a black entry while another entry exists -
++    the rule fourbpp.nearest_clut_index keeps too.
++    """
++    colour = tuple(colour)
++    black_ok = colour == (0, 0, 0)
++    best = None
++    bestd = None
++
++    for k, entry in enumerate(row):
++        if k in exclude:
++            continue
++
++        entry = tuple(entry)
++
++        if entry == (0, 0, 0) and not black_ok:
++            continue
++
++        d = _colour_distance(colour, entry)
++
++        if bestd is None or d < bestd:
++            best, bestd = k, d
++
++            if d == 0:
++                break
++
++    if best is None:
++        best = next((k for k in range(len(row)) if k not in exclude), 0)
++
++    return best
++
++
++def row_for_poly(uvs, own_id, rects):
++    """The CLUT row (texture id) a poly draws, given the planner's pieces.
++
++    `rects` are plan_islands' pieces (bank.json `clut_rects`). The planner puts
++    every poly's clipped UV bbox in exactly one group, and that group's row is
++    the palette the poly's texels were indexed against - so a piece whose rect
++    IS this poly's bbox, for this poly's own material, is the answer. That keeps
++    a poly the splitter moved to a second row on that row; before, a first-row
++    rect of the same material id under its centroid won, and the poly drew its
++    texels with the wrong 16 colours.
++
++    Otherwise (a hand-edited plan, or a poly the planner never saw): the
++    smallest rect the UV centroid lands in, a rect of the poly's own id wins a
++    tie, so a panel that was not split stays on the id its material named. A
++    leftover retail sprite (src is None - not a material) does not replace that
++    id: PAGE_1 stays on row 0 when its centroid only hits the leftover.
++    """
++    rects = list(rects or [])
++
++    if not rects:
++        return own_id
++
++    uvs = list(uvs or [])
++    fallback = rects[0]["id"]
++
++    if uvs and own_id is not None:
++        own_rect = [int(v) for v in _clip_rect(_bbox_uv(uvs), fourbpp.PAGE_W,
++                                               fourbpp.PAGE_H)]
++        exact = [r for r in rects if r.get("src") == own_id
++                 and [int(v) for v in r["rect"]] == own_rect]
++
++        if exact:
++            return exact[-1]["id"]          # the last group to write those texels
++
++    def material_row():
++        if any(r.get("id") == own_id and r.get("src") is not None for r in rects):
++            return own_id
++
++        # a material id past 31 was given another id: its first group's
++        moved = next((r for r in rects if r.get("src") == own_id), None)
++        return moved["id"] if moved is not None and own_id is not None else None
++
++    if not uvs:
++        if any(r["id"] == own_id for r in rects):
++            return own_id
++        kept = material_row()
++        return fallback if kept is None else kept
++
++    u = sum(p[0] for p in uvs) / float(len(uvs))
++    v = sum(p[1] for p in uvs) / float(len(uvs))
++    hit = [r for r in rects
++           if r["rect"][0] <= u < r["rect"][2] and r["rect"][1] <= v < r["rect"][3]]
++
++    if not hit:
++        kept = material_row()
++
++        if kept is not None:
++            return kept
++
++        return own_id if any(r["id"] == own_id for r in rects) else fallback
++
++    own = [r for r in hit if r["id"] == own_id]
++
++    if not own and hit and all(r.get("src") is None for r in hit):
++        kept = material_row()
++
++        if kept is not None:
++            return kept
++
++    chosen = own or hit
++    chosen.sort(key=lambda r: (r["rect"][2] - r["rect"][0]) * (r["rect"][3] - r["rect"][1]))
++    return chosen[0]["id"]
++
++
++def _slot_use(indices, pieces, rows, width, height, transparent=None, key=None,
++              tolerance=0, chroma=None):
++    """({row id: slots referenced}, {row id: slots pack_indexed will clear}).
++
++    Referenced = the index of every texel inside one of that row's rects - a
++    slot none of them uses is free to take a colour. Cleared mirrors
++    pack_indexed: a transparent texel inside the row's rects clears its slot
++    when there is no key, or when the entry still matches the key.
++    """
++    refs = {rid: set() for rid in rows}
++    bad = {rid: set() for rid in rows}
++
++    for piece in pieces:
++        rid = piece["id"]
++
++        if rid not in rows:
++            continue
++
++        row = rows[rid]
++
++        for t in _rect_texels(piece["rect"], width, height):
++            slot = indices[t]
++            refs[rid].add(slot)
++
++            if transparent is not None and transparent[t]:
++                if key is None or _key_matches(tuple(row[slot]), key,
++                                               tolerance, chroma):
++                    bad[rid].add(slot)
++
++    return refs, bad
++
++
++def _missing(hist, row, exclude=()):
++    """[(cost, colour)] for `hist` colours `row` does not hold, costliest first."""
++    present = {tuple(c) for k, c in enumerate(row) if k not in exclude}
++    out = []
++
++    for colour, count in hist.items():
++        if colour in present:
++            continue
++
++        k = _nearest_entry(colour, row, exclude)
++        out.append((count * _colour_distance(colour, row[k]), colour))
++
++    out.sort(key=lambda m: (-m[0], m[1]))
++    return out
++
++
++def _share_row(indices, pixels, width, height, rects, mask, rows, pieces,
++               transparent=None, key=None, tolerance=0, chroma=None):
++    """Put a group that has no texture id left onto the row that fits it best.
++
++    Each body row is scored by what the group would lose on it: every colour of
++    the group the row does not hold costs its texel count times its distance to
++    the row's nearest entry - except the costliest ones, which the row's free
++    (unreferenced) slots can take. The cheapest row wins; its free slots take
++    those colours and every texel is matched to the nearest colour the row then
++    holds. A transparent texel keeps a slot pack_indexed clears. Returns the
++    row id, or None when there is no row to share.
++    """
++    texels = _group_texels(width, height, rects, mask)
++
++    if not rows or not texels:
++        return None
++
++    clear = transparent if transparent is not None and any(transparent) else None
++    visible = [t for t in texels if clear is None or not clear[t]]
++    hidden = [t for t in texels if clear is not None and clear[t]]
++    hist = {}
++
++    for t in visible:
++        colour = fourbpp.snap555(pixels[t])
++        hist[colour] = hist.get(colour, 0) + 1
++
++    special = {p["id"] for p in pieces
++               if p.get("kind") == "wheel" or p.get("src") is None}
++    refs, bad = _slot_use(indices, pieces, rows, width, height, clear, key,
++                          tolerance, chroma)
++    best = None
++
++    for rid in sorted(rows):
++        if rid in special:
++            continue
++
++        free = [k for k in range(fourbpp.CLUT_ROW_ENTRIES) if k not in refs[rid]]
++        cost = sum(c for c, _colour in _missing(hist, rows[rid], bad[rid])[len(free):])
++
++        if best is None or cost < best[0]:
++            best = (cost, rid, free)
++
++    if best is None:
++        return None
++
++    _cost, rid, free = best
++    row = list(rows[rid])
++    barred = set(bad[rid])
++    hidden_slot = None
++
++    # The transparent texels' slot is settled first and barred to the visible
++    # ones: a slot pack_indexed clears must never also carry a visible texel.
++    if hidden:
++        if bad[rid]:
++            hidden_slot = min(bad[rid])
++        elif free:
++            hidden_slot = free.pop()
++            row[hidden_slot] = fourbpp.snap555(pixels[hidden[0]])
++            barred.add(hidden_slot)
++
++    for (_c, colour), slot in zip(_missing(hist, row, barred), list(free)):
++        row[slot] = colour
++
++    lookup = {}
++
++    for t in visible:
++        colour = fourbpp.snap555(pixels[t])
++
++        if colour not in lookup:
++            lookup[colour] = _nearest_entry(colour, row, barred)
++
++        indices[t] = lookup[colour]
++
++    if hidden_slot is not None:
++        for t in hidden:
++            indices[t] = hidden_slot
++
++    rows[rid] = row
++    return rid
++
++
++def reconcile_rows(indices, rows, pieces, islands, pixels, width, height,
++                   transparent=None, key=None, tolerance=0, chroma=None):
++    """Every texel a poly draws shows its own colour, or the nearest its row has.
++
++    For every poly the row it will draw with is the bake's own answer
++    (row_for_poly). A texel whose index does not show its colour in EVERY row
++    that draws it is moved:
++
++      * drawn by one row: to the slot already holding its colour; else to a
++        free (unreferenced) slot of that row, which takes the colour; else to
++        the nearest colour the row holds;
++      * drawn by several rows (a shared edge or a mirrored unwrap): to a slot
++        that holds the colour in all of them; else a slot free in all of them;
++        else the slot whose entries are nearest across all of them.
++
++    Transparent texels are left alone, and no visible texel is moved onto a
++    slot pack_indexed will clear. Wheel rects are left alone: a wheel row is
++    keyed by its own mask. A page with nothing to fix is not touched at all,
++    so its bytes do not change.
++
++    Returns {"checked", "fixed", "exact", "nearest", "shared", "worst"}:
++    texels drawn, texels moved, moved to their exact colour, moved to a
++    nearest colour, moved on a shared edge, and the worst channel error left.
++    """
++    report = {"checked": 0, "fixed": 0, "exact": 0, "nearest": 0,
++              "shared": 0, "worst": 0}
++
++    if not rows or not islands:
++        return report
++
++    clear = transparent if transparent is not None and any(transparent) else None
++    locked = set()
++
++    for piece in pieces:
++        if piece.get("kind") == "wheel":
++            locked.update(_rect_texels(piece["rect"], width, height))
++
++    fallback = min(rows)
++    draw = {}
++    done = set()
++
++    for own_id in sorted(islands):
++        for uvs in islands[own_id] or ():
++            if not uvs or len(uvs) < 3:
++                continue
++
++            poly_key = (own_id, tuple((int(p[0]), int(p[1])) for p in uvs))
++
++            if poly_key in done:
++                continue
++
++            done.add(poly_key)
++            rid = row_for_poly(uvs, own_id, pieces)
++
++            if rid not in rows:
++                rid = fallback          # pack_indexed's gap rule: the lowest id's row
++
++            for t in _poly_texels(width, height, uvs):
++                if t in locked or (clear is not None and clear[t]):
++                    continue
++
++                draw.setdefault(t, set()).add(rid)
++
++    report["checked"] = len(draw)
++    conflicts = {}
++
++    refs, bad = _slot_use(indices, pieces, rows, width, height, clear, key,
++                          tolerance, chroma)
++
++    for t, rids in draw.items():
++        colour = fourbpp.snap555(pixels[t])
++        k = indices[t]
++
++        for rid in rids:
++            refs[rid].add(k)
++
++        if all(tuple(rows[r][k]) == colour and k not in bad[r] for r in rids):
++            continue
++
++        conflicts.setdefault((tuple(sorted(rids)), colour), []).append(t)
++
++    if not conflicts:
++        return report
++
++    worst = 0
++
++    for (rids, colour), texels in sorted(conflicts.items()):
++        slot = None
++        exact = True
++        barred = set().union(*(bad[r] for r in rids))
++
++        for k in range(fourbpp.CLUT_ROW_ENTRIES):
++            if k not in barred and all(tuple(rows[r][k]) == colour for r in rids):
++                slot = k
++                break
++
++        if slot is None:
++            common = set(range(fourbpp.CLUT_ROW_ENTRIES))
++
++            for r in rids:
++                common -= refs[r]
++
++            if common:
++                slot = min(common)
++
++                for r in rids:
++                    rows[r] = list(rows[r])
++                    rows[r][slot] = colour
++
++        if slot is None:
++            exact = False
++
++            if len(rids) == 1:
++                slot = _nearest_entry(colour, rows[rids[0]], barred)
++            else:
++                best = None
++
++                for k in range(fourbpp.CLUT_ROW_ENTRIES):
++                    if k in barred:
++                        continue
++
++                    entries = [tuple(rows[r][k]) for r in rids]
++
++                    if colour != (0, 0, 0) and (0, 0, 0) in entries:
++                        continue
++
++                    total = sum(_colour_distance(colour, e) for e in entries)
++
++                    if best is None or total < best[0]:
++                        best = (total, k)
++
++                slot = best[1] if best is not None else indices[texels[0]]
++
++        for r in rids:
++            refs[r].add(slot)
++
++        for t in texels:
++            indices[t] = slot
++
++        report["fixed"] += len(texels)
++        report["exact" if exact else "nearest"] += len(texels)
++
++        if len(rids) > 1:
++            report["shared"] += len(texels)
++
++        if not exact:
++            for r in rids:
++                entry = rows[r][slot]
++                worst = max(worst, max(abs(colour[c] - entry[c]) for c in range(3)))
++
++    report["worst"] = worst
++    return report
++
++
+ def _key_matches(colour, key, tolerance, chroma):
+     if key is None:
+         return True
+diff --git a/tools/car/test_clut_fit.py b/tools/car/test_clut_fit.py
+new file mode 100644
+index 0000000..afcf686
+--- /dev/null
++++ b/tools/car/test_clut_fit.py
+@@ -0,0 +1,360 @@
++#!/usr/bin/env python3
++"""When a page's colours do not fit its CLUT rows, every texel still shows the
++nearest colour the row it is DRAWN with holds - never another row's colours.
++
++    python -m unittest test_clut_fit -v
++
++Each test builds the case that used to come out as "confetti": a texel's 4-bit
++index read against a palette it was not chosen for.
++"""
++import json
++import os
++import shutil
++import struct
++import sys
++import tempfile
++import unittest
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++sys.path.insert(0, HERE)
++sys.path.insert(0, os.path.join(HERE, "..", "common"))
++
++import bankjson
++import carbank_bake
++import carbank_page
++import fourbpp
++import pages1
++
++W = H = fourbpp.PAGE_W
++BACKDROP = (8, 8, 8)
++
++
++def _blank():
++    return [BACKDROP] * (W * H)
++
++
++def _quad(x0, y0, x1, y1):
++    return [(x0, y0), (x1 - 1, y0), (x1 - 1, y1 - 1), (x0, y1 - 1)]
++
++
++def _texels(uvs):
++    return set(carbank_page._poly_texels(W, H, uvs))
++
++
++def _drawn(pixels, islands, indices, rows, pieces):
++    """{texel: (source colour, colour drawn)} for every texel a poly draws."""
++    out = {}
++
++    for own_id, lists in islands.items():
++        for uvs in lists:
++            rid = carbank_page.row_for_poly(uvs, own_id, pieces)
++            row = rows.get(rid, rows[min(rows)])
++
++            for t in _texels(uvs):
++                out[t] = (fourbpp.snap555(pixels[t]), tuple(row[indices[t]]))
++
++    return out
++
++
++def _wrong(drawn):
++    return {t: pair for t, pair in drawn.items() if pair[0] != pair[1]}
++
++
++class OutOfIdsTests(unittest.TestCase):
++    """Past texture id 31 a group used to overwrite its material's first row."""
++
++    def setUp(self):
++        # 40 panels on one material, ten colours each, no two of which fit one
++        # 16-entry row together: 32 get rows of their own, 8 must share.
++        self.pixels = _blank()
++        self.polys = []
++
++        for p in range(40):
++            x0, y0 = (p % 16) * 16, (p // 16) * 16
++            quad = _quad(x0, y0, x0 + 10, y0 + 8)
++            colours = [fourbpp.snap555((40 + 8 * i, 8 * (p % 32), 16 + 120 * (p // 32)))
++                       for i in range(10)]
++
++            for y in range(y0, y0 + 8):
++                for x in range(x0, x0 + 10):
++                    self.pixels[y * W + x] = colours[x - x0]
++
++            self.polys.append(quad)
++
++        self.islands = {0: list(self.polys)}
++
++    def plan(self):
++        report = {}
++        indices, rows, pieces = carbank_page.plan_islands(
++            self.pixels, W, H, self.islands, True, report=report)
++        return indices, rows, pieces, report
++
++    def test_the_first_groups_keep_their_exact_colours(self):
++        indices, rows, pieces, report = self.plan()
++
++        self.assertEqual(report["shared_rows"], 8)
++        self.assertTrue(all(0 <= rid < carbank_page.MAX_TEX_IDS for rid in rows))
++
++        first32 = {0: self.polys[:32]}
++        self.assertEqual(_wrong(_drawn(self.pixels, first32, indices, rows, pieces)), {})
++
++    def test_a_shared_group_shows_the_nearest_colour_its_row_holds(self):
++        indices, rows, pieces, _report = self.plan()
++
++        for uvs in self.polys[32:]:
++            rid = carbank_page.row_for_poly(uvs, 0, pieces)
++            row = rows[rid]
++
++            for t in _texels(uvs):
++                want = fourbpp.snap555(self.pixels[t])
++                got = tuple(row[indices[t]])
++                nearest = tuple(row[carbank_page._nearest_entry(want, row)])
++                self.assertEqual(carbank_page._colour_distance(want, got),
++                                 carbank_page._colour_distance(want, nearest))
++
++    def test_a_shared_row_takes_the_colours_it_has_room_for(self):
++        indices, rows, pieces, _report = self.plan()
++        exact = sum(1 for src, got in _drawn(self.pixels, {0: self.polys[32:]},
++                                             indices, rows, pieces).values()
++                    if src == got)
++
++        # every first-32 row holds ten colours and six free slots
++        self.assertGreater(exact, 0)
++
++
++class SplitPolyRowTests(unittest.TestCase):
++    """A poly the splitter put on a second row must be drawn with that row."""
++
++    def test_a_second_row_poly_under_a_first_row_rect(self):
++        pixels = _blank()
++        big = [(0, 0), (63, 0), (0, 63)]
++        small = [(40, 40), (60, 40), (40, 60)]
++        reds = [fourbpp.snap555((16 + 16 * i, 0, 0)) for i in range(10)]
++        blues = [fourbpp.snap555((0, 0, 16 + 16 * i)) for i in range(10)]
++        inner = _texels(small)
++
++        for t in _texels(big) | inner:
++            x = t % W
++            pixels[t] = blues[(x // 2) % 10] if t in inner else reds[(x // 6) % 10]
++
++        islands = {0: [big, small]}
++        indices, rows, pieces = carbank_page.plan_islands(pixels, W, H, islands, True)
++
++        self.assertNotEqual(carbank_page.row_for_poly(small, 0, pieces),
++                            carbank_page.row_for_poly(big, 0, pieces))
++        drawn = _drawn(pixels, {0: [small]}, indices, rows, pieces)
++        self.assertEqual(_wrong(drawn), {})
++
++    def test_the_bake_asks_the_same_rule(self):
++        pieces = [{"id": 0, "rect": [0, 0, 64, 64], "src": 0},
++                  {"id": 7, "rect": [40, 40, 61, 61], "src": 0}]
++        poly = {"id": 0, "uv": [(40, 40), (60, 40), (40, 60)]}
++
++        self.assertEqual(carbank_bake._id_at(poly, pieces), 7)
++
++
++class OverlapTests(unittest.TestCase):
++    """A later group's bbox must not recolour texels an earlier group draws."""
++
++    def test_two_materials_with_overlapping_bboxes(self):
++        pixels = _blank()
++        corner = [(32, 63), (63, 32), (63, 63)]          # material 0, drawn first
++        wedge = [(0, 0), (63, 0), (0, 63)]               # material 5, bbox covers it
++        reds = [fourbpp.snap555((24 + 32 * i, 8, 8)) for i in range(6)]
++        blues = [fourbpp.snap555((8, 8, 24 + 32 * i)) for i in range(6)]
++
++        for t in _texels(corner):
++            pixels[t] = blues[(t % W) % 6]
++
++        for t in _texels(wedge):
++            pixels[t] = reds[(t // W) % 6]
++
++        islands = {0: [corner], 5: [wedge]}
++        report = {}
++        indices, rows, pieces = carbank_page.plan_islands(
++            pixels, W, H, islands, True, report=report)
++
++        self.assertEqual(_wrong(_drawn(pixels, islands, indices, rows, pieces)), {})
++        self.assertGreater(report["fixed"], 0)
++        self.assertEqual(report["nearest"], 0)
++
++
++class TransparencyTests(unittest.TestCase):
++    """A visible texel never shares a slot pack_indexed clears."""
++
++    def test_an_alpha_hole_does_not_take_its_visible_twin_with_it(self):
++        # One panel, x 0..43. Its first four columns are an alpha hole whose
++        # hidden colour is reds[0]; the last four are VISIBLE reds[0]. Exact
++        # scatter gives both the same slot, and pack_indexed clears every slot
++        # an alpha-hole texel uses - so the visible twin used to vanish too.
++        pixels = _blank()
++        reds = [fourbpp.snap555((16 + 16 * i, 0, 0)) for i in range(10)]
++        blues = [fourbpp.snap555((0, 0, 16 + 16 * i)) for i in range(10)]
++        quad = _quad(0, 0, 44, 8)
++        other = _quad(128, 0, 168, 8)            # a second material: the page splits
++        mask = [False] * (W * H)
++        hole = set()
++
++        for y in range(8):
++            for x in range(44):
++                pixels[y * W + x] = reds[(x // 4) % 10] if x < 40 else reds[0]
++
++                if x < 4:
++                    hole.add(y * W + x)
++                    mask[y * W + x] = True
++
++            for x in range(128, 168):
++                pixels[y * W + x] = blues[(x - 128) // 4]
++
++        islands = {0: [quad], 3: [other]}
++        indices, rows, pieces = carbank_page.plan_islands(
++            pixels, W, H, islands, True, transparent=mask, key=None)
++        blob, _ordered = carbank_page.pack_indexed(indices, rows, mask=mask,
++                                                   key=None, pieces=pieces)
++        page_rows, raw = pages1.read_page(blob, 0, len(blob))
++        page = fourbpp.decode_indices(raw)
++        rid = carbank_page.row_for_poly(quad, 0, pieces)
++
++        def word(t):
++            return struct.unpack_from("<H", page_rows[rid], page[t] * 2)[0]
++
++        for t in hole:
++            self.assertEqual(word(t), 0, "the hole is still transparent")
++
++        for y in range(8):
++            for x in range(40, 44):
++                self.assertEqual(word(y * W + x), fourbpp.rgb555(reds[0]),
++                                 "the visible twin kept its red")
++
++
++class EngineIdTests(unittest.TestCase):
++    def test_a_material_id_past_31_gets_a_row_the_engine_holds(self):
++        pixels = _blank()
++        reds = [fourbpp.snap555((16 + 16 * i, 0, 0)) for i in range(10)]
++        blues = [fourbpp.snap555((0, 0, 16 + 16 * i)) for i in range(10)]
++        a, b = _quad(0, 0, 40, 8), _quad(128, 0, 168, 8)
++
++        for y in range(8):
++            for x in range(40):
++                pixels[y * W + x] = reds[x // 4]
++                pixels[y * W + 128 + x] = blues[x // 4]
++
++        islands = {40: [a], 3: [b]}
++        indices, rows, pieces = carbank_page.plan_islands(pixels, W, H, islands, True)
++
++        self.assertTrue(all(rid < carbank_page.MAX_TEX_IDS for rid in rows))
++        self.assertLess(carbank_page.row_for_poly(a, 40, pieces), carbank_page.MAX_TEX_IDS)
++        self.assertEqual(_wrong(_drawn(pixels, islands, indices, rows, pieces)), {})
++
++
++class NothingToFixTests(unittest.TestCase):
++    def test_a_clean_split_is_left_exactly_as_planned(self):
++        pixels = _blank()
++        reds = [fourbpp.snap555((16 + 16 * i, 0, 0)) for i in range(10)]
++        blues = [fourbpp.snap555((0, 0, 16 + 16 * i)) for i in range(10)]
++
++        for y in range(8):
++            for x in range(80):
++                pixels[y * W + x] = reds[x // 8]
++                pixels[y * W + 128 + x] = blues[x // 8]
++
++        islands = {0: [_quad(0, 0, 80, 8), _quad(128, 0, 208, 8)]}
++        report = {}
++        _indices, _rows, _pieces = carbank_page.plan_islands(
++            pixels, W, H, islands, True, report=report)
++
++        self.assertEqual(report["fixed"], 0)
++        self.assertEqual(report["shared_rows"], 0)
++
++
++class FlatColourTests(unittest.TestCase):
++    """A 33rd flat colour used to stop the D1 bake; now it borrows the nearest."""
++
++    def test_extra_flat_colours_draw_with_their_nearest_kept_colour(self):
++        import bake
++        import contextlib
++        import io
++
++        colours = [(8 * i, 255 - 8 * i, 64) for i in range(32)] + [
++            (8 * i + 3, 255 - 8 * i - 2, 66) for i in range(4)]
++        counts = {c: 5 for c in colours[:32]}
++        counts.update({c: 1 for c in colours[32:]})
++
++        with contextlib.redirect_stdout(io.StringIO()) as out:
++            keep, index = bake._fit_flat_colours(colours, counts)
++
++        self.assertEqual(keep, colours[:32])
++        self.assertEqual(set(index), set(colours))
++        self.assertTrue(all(0 <= row < 32 for row in index.values()))
++
++        for i, extra in enumerate(colours[32:]):
++            self.assertEqual(keep[index[extra]], colours[i], "its own near twin")
++
++        self.assertIn("4 drawn with the nearest kept colour", out.getvalue())
++
++    def test_the_most_used_colours_keep_their_rows(self):
++        import bake
++        import contextlib
++        import io
++
++        colours = [(i, i, i) for i in range(0, 34 * 7, 7)]
++        counts = {c: 1 for c in colours}
++        counts[colours[-1]] = 9                  # last seen, but used most
++
++        with contextlib.redirect_stdout(io.StringIO()):
++            keep, _index = bake._fit_flat_colours(colours, counts)
++
++        self.assertEqual(len(keep), 32)
++        self.assertIn(colours[-1], keep)
++
++
++class CheckSourcesTests(unittest.TestCase):
++    """--check compares the same inputs the bake hashed."""
++
++    def test_a_freshly_recorded_page_is_current(self):
++        folder = tempfile.mkdtemp(prefix="clutfit-")
++        self.addCleanup(shutil.rmtree, folder)
++        car = os.path.join(folder, "cars", "carA")
++        os.makedirs(car)
++        os.makedirs(os.path.join(folder, "pages"))
++
++        with open(os.path.join(folder, "clean.obj"), "w") as f:
++            f.write("v 0 0 0\nv 1 0 0\nv 0 1 0\n"
++                    "vt 0.0 1.0\nvt 0.5 1.0\nvt 0.0 0.5\n"
++                    "usemtl PAGE_30\nf 1/1 2/2 3/3\n")
++
++        with open(os.path.join(folder, "page.png"), "wb") as f:
++            f.write(b"not decoded by the hash, only read")
++
++        with open(os.path.join(car, "handling.json"), "w") as f:
++            json.dump({"clean": "../../clean.obj",
++                       "textures": {"30": "../../page.png"}}, f)
++
++        with open(os.path.join(folder, "bank.json"), "w") as f:
++            json.dump({"city": "TEST", "lev": "TEST.LEV", "lcf": "TEST.LCF",
++                       "size": 1,
++                       "declare": {"schema": 1, "name": "TEST",
++                                   "order": [{"slot": 0, "car": "carA"}],
++                                   "cars": {"carA": "cars/carA/handling.json"}}}, f)
++
++        with open(os.path.join(folder, "pages", "PAGE_30.bin"), "wb") as f:
++            f.write(b"\x00")
++
++        bank = bankjson.load(os.path.join(folder, "bank.json"))
++        page = bank.cars["carA"].textures[0]
++        islands = carbank_bake._uv_islands(bank, 30)
++        self.assertTrue(islands, "the fixture's face is on page 30")
++
++        # exactly what the bake stores for the page
++        source = carbank_bake._page_source_hash(page, 30, None, islands)
++        self.assertEqual(source["planner"], carbank_page.PLANNER_VERSION)
++        manifest = {"pages": [{"set": 30, "source": source,
++                               "bin": "pages/PAGE_30.bin"}]}
++        problems = [p for p in carbank_bake.check_sources(bank, manifest, folder)
++                    if p.startswith("page set 30")]
++
++        self.assertEqual(problems, [])
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.43.0
+

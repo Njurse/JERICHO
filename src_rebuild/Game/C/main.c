@@ -3,9 +3,11 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "jer_hud.h"	// JERICHO-HOOK: on-screen HUD messages
+#include "jer_arrow.h"	// JERICHO-HOOK: module target arrows (stock Draw3DTarget)
 #include "jer_console.h"	// JERICHO-HOOK: unified status console stream
 #include "jer_texture.h"	// JERICHO-HOOK: custom texture injection (reload/free)
 #include "jer_car_palette.h"	// JERICHO-HOOK: per-instance car colour (inert table)
+#include "jer_joinmods.h"	// JERICHO-HOOK: a refused join's addon offer (-joinmods relaunch)
 #include "handling_probe.h"	// JERICHO: "my car is way too fast" measurement (env-gated, inert)
 #include <string.h>		// JERICHO-HOOK: strstr() for the log bridge
 
@@ -2195,6 +2197,14 @@ void State_GameLoop(void* param)
 		StepGame();
 	}
 #else
+	/* JERICHO: BACKSPACE is a HELD key, and DisplayOverlays clears FastForward at
+	 * the end of every frame (that is how the map turns its own fast-forward off).
+	 * The key-down alone therefore buys exactly ONE frame; re-assert the engine
+	 * flag for as long as PsyX says the key is down. PsyX owns the release (key-up,
+	 * focus loss, the mp lock), so this cannot latch on after the key is released. */
+	if (FastForwardLocked == 0 && PsyX_GetFastForwardHeld())
+		FastForward = 1;
+
 	cnt = FastForward ? 7 : 1;
 	while (--cnt >= 0)
 		StepGame();
@@ -2395,9 +2405,9 @@ int gBootOnFoot = 0;
 
 /* -mp: defined unconditionally (glaunch.c reads it when it computes the
  * take-a-ride mission number); the boot arguments are accepted in every
- * config. gBootMpArena selects which of the two
- * multiplayer maps per city (0 = the take-a-ride default arena, 1 = the
- * second arena; becomes gSubGameNumber). */
+ * config. gBootMpArena selects the multiplayer map, 0..3 (0 = the
+ * take-a-ride default arena, 1 = the second; 2 and 3 are reserved for maps
+ * the stock game does not ship; becomes gSubGameNumber). */
 int gBootMpLevel = 0;
 int gBootMpArena = 0;
 
@@ -2541,6 +2551,9 @@ void PrintCommandLineArguments()
 		"        world + orbit camera on a car or Tanner, for asset testing\n"
 		"  -mod <id> : force one module on for this boot (e.g. -mod d2pl), even if\n"
 		"        JERICHO/CONFIG/modlist.ini does not list it\n"
+		"  -nomod <id> : force one module off for this boot (a core module stays on)\n"
+		"  -joinmods : marks a relaunch for a server's mods (with -join, -mod and\n"
+		"        -nomod): the player is told those changes last this session only\n"
 		"  -onfoot : start the player outside his spawn car instead of in it (a\n"
 		"        module has to act on it - Caine's Crossfire swaps him out)\n";
 
@@ -2739,7 +2752,21 @@ int redriver2_main(int argc, char** argv)
 				jer_force_module(argv[ai + 1], 1);
 				ai++;
 			}
+			/* -nomod <id>: the other direction, force one module OFF for this
+			 * boot. A server's addon offer (jer_joinmods) relaunches with it for
+			 * a mod the server does not run, so the player's own modlist.ini is
+			 * never rewritten for one session. A core module stays on. */
+			else if (!strcmp(argv[ai], "-nomod"))
+			{
+				jer_force_module(argv[ai + 1], 0);
+				ai++;
+			}
 		}
+
+		/* the command line, kept for jer_joinmods' relaunch, and -joinmods (a
+		 * boot that relaunch started) noticed so the player is told which mods
+		 * are on for this session only */
+		jer_joinmods_boot(argc, argv);
 	}
 
 	jer_init("JERICHO");
@@ -3172,12 +3199,13 @@ int redriver2_main(int argc, char** argv)
 			gBootMpLevel = 1;
 			gBootMpArena = 0;
 
-			/* optional arena: -mp 0 | -mp 1 (two multiplayer maps per city) */
+			/* optional arena: -mp 0..3 (mp proto 24 widened the arena id; the
+			 * stock game ships two multiplayer maps per city, 0 and 1) */
 			if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9')
 			{
 				int arena = atoi(argv[i + 1]);
 
-				if (arena == 0 || arena == 1)
+				if (arena >= 0 && arena <= 3)
 				{
 					gBootMpArena = arena;
 					i++;
@@ -3286,12 +3314,16 @@ int redriver2_main(int argc, char** argv)
 			if (i + 1 < argc && argv[i + 1][0] != '-')
 				i++;
 		}
-		else if (!strcmp(argv[i], "-mod"))
+		else if (!strcmp(argv[i], "-mod") || !strcmp(argv[i], "-nomod"))
 		{
-			/* (any module) force this one module on for the boot, even if the
-			 * modlist does not list it - the value is a module id */
+			/* (any module) force this one module on / off for the boot, whatever
+			 * the modlist says - the value is a module id. Applied before jer_init. */
 			if (i + 1 < argc && argv[i + 1][0] != '-')
 				i++;
+		}
+		else if (!strcmp(argv[i], "-joinmods"))
+		{
+			/* (jer_joinmods) a bare marker, read before jer_init */
 		}
 		else if (!strcmp(argv[i], "-ccmenu"))
 		{
@@ -3756,6 +3788,11 @@ void RenderGame2(int view)
 	}
 
 	DrawAllTheCars(view);
+
+	// JERICHO-HOOK: the target arrows modules registered with jer_arrow_at /
+	// jer_arrow_on_car, after the cars so an arrow follows this frame's car
+	// position. No slot set = nothing drawn.
+	jer_arrow_draw();
 
 	// JERICHO-HOOK: module world-space extras (projectiles, pickups) draw
 	// here, mid-render with the camera matrices live, into the real OT.

@@ -92,8 +92,51 @@ int jer_sound_menu_play(int sample);
  * Desktop builds only; always 0 on PSX. */
 int jer_sound_mod_wav_play(const char* modId, const char* name);
 
+/* ---- extra lumps at level load ----------------------------------------
+ * Ask for a sound lump to be loaded into `bank` (a SOUND_BANK_* destination)
+ * from `lump` (a SoundBankIds id, e.g. SBK_ID_MISSION_23) at every following
+ * level load, BEFORE the car-import memtop is saved — the same window as the
+ * menu-bank request above, so a later car import cannot rewind over it.
+ * `maxSamples` is as LoadBankFromLumpMax: -1 = the whole lump, else at most
+ * that many leading samples. Nothing is loaded unless a module asked.
+ *
+ * Returns a request slot (0..JER_SOUND_LUMP_MAX-1), or -1 if the table is
+ * full or the arguments are bad. A second request for the same (bank, lump)
+ * reuses the slot and keeps the tighter maxSamples. The sample indices in
+ * `bank` are only valid after the level has loaded: jer_sound_lump_base is
+ * the first index, jer_sound_lump_count is how many landed, or -1 / 0 if
+ * the load has not run or failed. */
+#define JER_SOUND_LUMP_MAX	8
+
+int jer_sound_request_lump(int bank, int lump, int maxSamples);
+int jer_sound_lump_base(int slot);
+int jer_sound_lump_count(int slot);
+
 /* engine-side: LoadLevelSFX calls this before saving the memtop */
 void jer_sound_load_requested_banks(void);
+
+/* ---- module sound banks ------------------------------------------------
+ * Ask for <root>/MODS/<modId>/sounds/<name>.sbk (a PSX dynamic sound bank:
+ * int32 sample count, that many 16-byte (address, length, loop, rate)
+ * entries, then the VAG payload) to be appended to `bank` at every following
+ * level load, BEFORE the car-import memtop. This is the same window as the
+ * menu bank and the lump requests, so a car import cannot rewind over it.
+ *
+ * `bank` is a SOUND_BANK_* destination (SOUND_BANK_SFX is the usual one).
+ * Returns a request slot (0..JER_SOUND_BANK_MAX-1), or -1 when the table is
+ * full or the arguments are bad. A second request for the same
+ * (modId, name, bank) reuses its slot.
+ *
+ * The sample indices are only meaningful AFTER the level has loaded:
+ * jer_sound_mod_bank_base() is the first index and
+ * jer_sound_mod_bank_count() how many samples landed, or -1 / 0 when the
+ * load has not run or failed. A missing file is not fatal: the caller keeps
+ * its stock sample. Desktop builds only; the PSX build has no module files. */
+#define JER_SOUND_BANK_MAX	4
+
+int jer_sound_request_mod_bank(const char* modId, const char* name, int bank);
+int jer_sound_mod_bank_base(int slot);
+int jer_sound_mod_bank_count(int slot);
 
 #ifdef __cplusplus
 }

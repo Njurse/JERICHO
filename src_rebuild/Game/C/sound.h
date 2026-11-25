@@ -92,6 +92,9 @@ extern int SoundBankHasRoom(int bank, int samples);
  * check that one 3-sample bank per resident slot still fits. */
 extern int GetSoundBankCapacity(void);
 
+/* Bytes of SPU sample memory left for dynamic-bank appends (0 when full). */
+extern int SoundBankSpuRoom(void);
+
 /* Append zero-length metadata entries until the bank's sample count is a
  * multiple of `multiple`. A car bank's sample block is addressed as block*3
  * (engine, idle, horn), so an imported bank must start on a 3-sample boundary

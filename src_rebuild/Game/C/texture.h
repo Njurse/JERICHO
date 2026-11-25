@@ -12,15 +12,15 @@ extern int palette_lump_size;	// JERICHO: the LUMP_PALLET segment's byte size (s
 
 extern SXYPAIR tpagepos[20];
 
-extern unsigned short texture_pages[128];
-extern unsigned short texture_cluts[128][32];
-extern int tpage_texamts[128];
+extern unsigned short texture_pages[JER_TPAGE_SLOTS];
+extern unsigned short texture_cluts[JER_TPAGE_SLOTS][32];
+extern int tpage_texamts[JER_TPAGE_SLOTS];
 
 extern RECT16 clutpos;
 extern RECT16 fontclutpos;
 extern RECT16 mapclutpos;
 
-extern unsigned char tpageloaded[128];
+extern unsigned char tpageloaded[JER_TPAGE_SLOTS];
 // JERICHO: the base half's SLOT table. 19 entries is the ENGINE's own bound, not a policy
 // tuned here: LoadPermanentTPages writes one entry per permanent page, so a level with
 // more would already have overrun this array. That is why the slot scans stop at 19 - it
@@ -218,6 +218,19 @@ void JerLowerPoolClutCursor(RECT16 *out);	// walk it (IncrementClutNum), then Ad
 void JerLowerPoolClutAdvance(int rows);
 int  JerLowerPoolClutReserve(int rows, int* limitY);	// contiguous band, or -1
 void JerLowerPoolClutRelease(int y, int rows);		// give a band back to the free list
+// JERICHO: the CLUT column ledger (texture.c). Tag the NEXT take with its owner; a take
+// of a still-owned row or a double give-back prints a JERICHO-CLUT COLLISION line.
+#define JER_CLUT_OWN_CARPAL	1	// a city's palette table band (key = city)
+#define JER_CLUT_OWN_WHEEL	2	// a wheel palette (key = city * 128 + source set)
+#define JER_CLUT_OWN_PED	3	// a pedestrian page's CLUTs (key = destination set)
+#define JER_CLUT_OWN_PIN	4	// a pinned imported page's CLUTs (key = destination set)
+#define JER_CLUT_OWN_CHECKER	5
+#define JER_CLUT_OWN_OTHER	6
+void JerClutLedgerTag(int kind, int key);
+void JerClutLedgerReport(void);
+void JerImportIndexReport(void);	// import page handles: held / free / leaked (also run by the level-load report)
+/* JERICHO: step 6 - can an import of `city` naming `sets` get its pool pages? (texture.c) */
+int JerImportPoolHeadroom(int city, const int* sets, int n, int* needOut, int* availOut);
 int  JerLowerPoolPagesUsed(void);
 int  JerLowerPoolPagesFree(void);
 int  JerLowerPoolClutRowsUsed(void);

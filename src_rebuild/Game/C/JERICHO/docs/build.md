@@ -134,8 +134,10 @@ Consequences worth knowing:
   and exits with an explanation elsewhere. The committed `exports.def` is never
   handed to a Linux link (it is inside `filter "system:Windows"`).
 - The make configs are the lowercase `*_x64` names: the game uses
-  `release_x64` / `release_dev_x64` / `debug_x64`; the addon workspace is
-  `release_x64` only (it is `{ Release } x { x64 }`).
+  `release_x64` / `release_dev_x64` / `debug_x64`, and the addon workspace
+  declares the same three so `build.py mods` builds against the import library
+  of the configuration you built (a dev tree has `JERICHO_dev.lib`, not
+  `JERICHO.lib`).
 - The exe's make target is `JERICHO` (the premake project name), not the output
   file name (`jericho` in a Release build, `JERICHO_dev` in a dev build).
 

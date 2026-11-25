@@ -21,6 +21,11 @@ extern char GetPlayerDirectionOfTravel(PLAYER* pl);
 
 extern void CarHitByPlayer(CAR_DATA* victim, int howHard); // 0x0004D2B8
 
+/* JERICHO: a mode's veto on the stock "hit another vehicle" cop line (felony
+ * type 4, CopSay 7/8 in NoteFelony). Gets the id of the car the local player's
+ * car collided with; nonzero silences the line for that hit. NULL = stock. */
+extern int (*gJerCopHitLineVeto)(int victimCarId);
+
 extern void NoteFelony(FELONY_DATA *pFelonyData, char type, short scale); // 0x0004C330
 extern void AdjustFelony(FELONY_DATA *pFelonyData); // 0x0004C8B4
 

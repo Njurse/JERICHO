@@ -30,6 +30,12 @@
  * modlist parser, the mod.toml parser and the ini config loader. */
 char* jerTrim(char* s);
 
+/* Set one key in <root>/CONFIG/<mod>.ini IN PLACE, keeping every other line
+ * (comments included) as it was, and update the jer_config cache. For files a
+ * player documents by hand, where jer_config_set_*'s whole-file rewrite would
+ * drop the comments. Returns 1 when written. (jer_config.c) */
+int jer_config_set_line(const char* mod, const char* key, const char* value);
+
 /* Parsed JERICHO/CONFIG/modlist.ini state (module id + enabled flag, in
  * file order = load order). */
 typedef struct JER_MODLIST_ITEM

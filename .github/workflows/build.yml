@@ -66,30 +66,11 @@ jobs:
         uses: actions/checkout@v4
 
       # The checks run mp's tools and walk the mod manifests, so the public mod
-      # source repos must be present. Fetch them by name, not `submodules:
-      # true`: the step below checks out each pinned gitlink, not every
-      # .gitmodules entry. gaildrv2 is no longer a submodule.
-      #
-      # --remote deliberately: a release carries the LATEST core mods, not the
-      # commit the parent tree happens to pin. A mod fix pushed after the last
-      # gitlink bump must reach the next build without a second JERICHO commit.
-      # Fetch the branch by name and check out FETCH_HEAD rather than
-      # `submodule update --remote`: the init above is a SHALLOW clone of the
-      # pinned commit, so the branch ref `--remote` looks for does not exist.
-      - name: Fetch mod submodules
-        shell: bash
-        run: |
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
-            echo "::group::submodule $path"
-            git submodule update --init --depth=1 "$path"
-            # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
-            # branch (bake@betamiami) compiled bake in and broke the Release link.
-            sha=$(git rev-parse "HEAD:$path")
-            git -C "$path" fetch --quiet --depth=1 origin "$sha"
-            git -C "$path" checkout --quiet --detach "$sha"
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
-            echo "::endgroup::"
-          done
+      # source repos must be present. Mods are independent repositories listed in
+      # JERICHO/MODS/mods.json (no submodules); fetch the release set at the
+      # commit the manifest pins. fetch_mods exits non-zero when one is missing.
+      - name: Fetch mods (JERICHO/MODS/mods.json)
+        run: python3 tools/fetch_mods.py --release --depth 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -99,8 +80,33 @@ jobs:
       - name: Docs are consistent (links, events, indexed, counted claims)
         run: python tools/doccheck.py
 
+      # ...and the retired-id check really fails: plant a retired-id path, expect red.
+      - name: Docs check catches a retired module id (planted fault)
+        shell: bash
+        run: |
+          old=d1; old="${old}cars"   # spelled in parts so this file passes the check itself
+          echo "run JERICHO/MODS/$old/tools/bake.py" >> docs/README.md
+          if python tools/doccheck.py; then
+            echo "::error::doccheck passed a planted $old path"; exit 1
+          fi
+          # doccheck exits 1 here by design; under pipefail a plain pipe into grep
+          # would fail the step even when the message is right, so capture first.
+          out=$(python tools/doccheck.py 2>&1 || true)
+          grep -q "retired id '$old'" <<<"$out"
+          git checkout -- docs/README.md
+
       # The Release configuration compiles from the generated registry. A release
       # set that names a mod the registry does not would ship without it.
+      # jer_registry.c is generated, not tracked: generate it the way every build
+      # does (premake needs no PsyCross for this) and check what came out.
+      - name: Generate the module registry (premake gmake2)
+        run: |
+          curl -fL https://github.com/premake/premake-core/releases/download/v5.0.0-beta1/premake-5.0.0-beta1-linux.tar.gz -o premake5.tar.gz
+          echo '074fc07be17888ef41ca07eea1c527c390a04ea4550bf7962eeb0bea0cc9d2f5  premake5.tar.gz' | sha256sum -c -
+          tar xf premake5.tar.gz -C src_rebuild
+          chmod +x src_rebuild/premake5
+          (cd src_rebuild && ./premake5 gmake2)
+
       - name: Release mods (set, manifests and generated registry agree)
         run: python3 tools/check_release_mods.py
 
@@ -263,38 +269,18 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Fetch build submodules
+      - name: Fetch PsyCross and the release mods
         shell: bash
         run: |
-          # An explicit allow-list rather than `--recursive`: adding a submodule
-          # to .gitmodules must not be able to break the build by itself. The
-          # four mod source repos are public and are release mods, so a release
-          # must never be built without them.
-          #
-          # PsyCross is pinned (its branch is a feature branch the build expects).
-          # The four CORE MODS are mp, carhacks, crumple and bake. antfarm stays a
-          # submodule for local screensaver builds and is not fetched here.
-          # The four are checked out at the pinned gitlink: the init is a shallow
-          # clone of that commit, so `submodule update --remote` cannot find the
-          # branch ref.
+          # PsyCross is the engine's PSX layer and stays a pinned submodule.
+          # The mods are independent repositories listed in JERICHO/MODS/mods.json
+          # (no submodules). Fetch the release set (mp, carhacks, crumple, bake) at
+          # the commit the manifest pins: building a branch tip instead once
+          # compiled a stale bake in and broke the Release link. fetch_mods exits
+          # non-zero when a release mod's mod.toml is missing, so a release cannot
+          # silently ship without one. antfarm is not fetched (store-only).
           git submodule update --init --depth=1 src_rebuild/PsyCross
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
-            echo "::group::submodule $path"
-            git submodule update --init --depth=1 "$path"
-            # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
-            # branch (bake@betamiami) compiled bake in and broke the Release link.
-            sha=$(git rev-parse "HEAD:$path")
-            git -C "$path" fetch --quiet --depth=1 origin "$sha"
-            git -C "$path" checkout --quiet --detach "$sha"
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
-            echo "::endgroup::"
-          done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
-            test -f "$path/mod.toml" || {
-              echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
-              exit 1
-            }
-          done
+          python tools/fetch_mods.py --release --depth 1
 
       - name: Download dependencies
         shell: pwsh
@@ -393,16 +379,20 @@ jobs:
       # Runtime addons (runtime = "dll": bake, fulltwist, yarisbounce, ...). The
       # solution build above makes the exe only; without bake.dll the core suite
       # is incomplete and the loader refuses every store addon (FULL TWIST
-      # included). build.py lands them in bin/Release; Release_dev ships them too.
+      # included). build.py installs them into bin/<config>; both packages ship
+      # them, so copy the built DLLs into the other configuration as well.
       - name: Build runtime addon DLLs
         shell: pwsh
         run: |
           python JERICHO/build.py mods
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Dev-only addons ship in Release_dev (and the mod repo) only.
+          $devOnly = @('directorbox')
           Get-ChildItem "JERICHO/MODS/*/*.dll" | ForEach-Object {
             $id = $_.Directory.Name
             if ($_.BaseName -ne $id) { return }
             foreach ($cfg in @('Release', 'Release_dev')) {
+              if ($devOnly -contains $id -and $cfg -eq 'Release') { continue }
               $dst = "src_rebuild/bin/$cfg/JERICHO/MODS/$id"
               New-Item -ItemType Directory -Force -Path $dst | Out-Null
               Copy-Item $_.FullName $dst -Force
@@ -422,8 +412,8 @@ jobs:
         run: |
           # Driver 1 bake tooling. JERICHO ships the WAY to bake, never the baked
           # data -- that is derived from Driver 1's copyrighted files. The tools
-          # live in the bake submodule, which the fetch step advanced to the
-          # latest commit of its own branch (branch = betamiami). Its folder is
+          # live in the bake checkout, which the fetch step put at the commit
+          # JERICHO/MODS/mods.json pins. Its folder is
           # stripped from the build mirror (JER_MIRROR_EXCLUDE), so the tools are
           # copied out of the checkout here, for packaging only.
           $d1src = "JERICHO/MODS/bake/tools"
@@ -482,7 +472,7 @@ jobs:
             Remove-Item "$bin/DRIVER" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item "$bin/DRIVER2" -Recurse -Force -ErrorAction SilentlyContinue
             # Store-only: never in the Release/base pack. fulltwist, Hallgarth's
-            # Cars, and antfarm (screensaver submodule) are downloaded from the
+            # Cars, and antfarm (its own repo) are downloaded from the
             # mod store. Drop the folder, then fail if it is still there.
             foreach ($opt in @('fulltwist', 'hallgarthcars', 'antfarm')) {
               Remove-Item "$bin/JERICHO/MODS/$opt" -Recurse -Force -ErrorAction SilentlyContinue
@@ -564,8 +554,7 @@ jobs:
                 throw "refusing to package the master server: it is our infrastructure, not the player's"
             }
 
-            # A mod submodule's .git is a gitfile (a path into the parent's
-            # .git/modules), not game data. The mirror strips it; this is the belt
+            # A mod checkout's .git is its own repository, not game data. The mirror strips it; this is the belt
             # for a stale bin/ left over from an earlier build.
             Get-ChildItem "$bin/JERICHO/MODS" -Recurse -Force -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -eq '.git' } |
@@ -604,32 +593,18 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Fetch build submodules
+      - name: Fetch PsyCross and the release mods
         shell: bash
         run: |
-          # The four CORE MODS are mp, carhacks, crumple and bake. A build that
-          # silently skips one is worse than one that fails here. antfarm is not
-          # fetched: it stays a submodule for local screensaver builds.
-          # Check out the pinned gitlink. The init is a shallow clone of that
-          # commit, so `submodule update --remote` cannot find the branch ref.
+          # PsyCross is the engine's PSX layer and stays a pinned submodule.
+          # The mods are independent repositories listed in JERICHO/MODS/mods.json
+          # (no submodules). Fetch the release set (mp, carhacks, crumple, bake) at
+          # the commit the manifest pins: building a branch tip instead once
+          # compiled a stale bake in and broke the Release link. fetch_mods exits
+          # non-zero when a release mod's mod.toml is missing, so a release cannot
+          # silently ship without one. antfarm is not fetched (store-only).
           git submodule update --init --depth=1 src_rebuild/PsyCross
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
-            echo "::group::submodule $path"
-            git submodule update --init --depth=1 "$path"
-            # Build the PINNED gitlink, not the .gitmodules branch tip: a stale
-            # branch (bake@betamiami) compiled bake in and broke the Release link.
-            sha=$(git rev-parse "HEAD:$path")
-            git -C "$path" fetch --quiet --depth=1 origin "$sha"
-            git -C "$path" checkout --quiet --detach "$sha"
-            echo "    $path at $(git -C "$path" rev-parse --short HEAD) (pinned)"
-            echo "::endgroup::"
-          done
-          for path in JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple JERICHO/MODS/bake; do
-            test -f "$path/mod.toml" || {
-              echo "::error::$path/mod.toml is missing - the mod submodule did not check out"
-              exit 1
-            }
-          done
+          python3 tools/fetch_mods.py --release --depth 1
 
       - name: Install dependencies
         run: |
@@ -691,10 +666,17 @@ jobs:
               # the link rule, and the mirror inside it, actually re-runs.
               case "$cfg" in release_dev_x64) bincfg=Release_dev ;; *) bincfg=Release ;; esac
               rm -f "../bin/$bincfg/jericho" "../bin/$bincfg/JERICHO" "../bin/$bincfg/JERICHO_dev"
-              make config=$cfg -j1 2>&1 | grep -v '^==== ' | tail -10 | while IFS= read -r line; do
-                [ -n "$line" ] && echo "::error title=$cfg::${line}"
-              done
-              rc=${PIPESTATUS[0]}
+              make config=$cfg -j1 > "/tmp/make-$cfg-serial.log" 2>&1
+              rc=$?
+              # Annotate only a retry that FAILED: a green retry used to post its
+              # last lines as ::error, painting a successful build red.
+              if [ "$rc" -ne 0 ]; then
+                grep -v '^==== ' "/tmp/make-$cfg-serial.log" | tail -10 | while IFS= read -r line; do
+                  [ -n "$line" ] && echo "::error title=$cfg::${line}"
+                done
+              else
+                tail -3 "/tmp/make-$cfg-serial.log"
+              fi
             fi
             set -e
             if [ "$rc" -ne 0 ]; then
@@ -703,6 +685,13 @@ jobs:
             fi
             echo "::endgroup::"
           done
+
+      # The runtime's own logic, without game data: links the built runtime library
+      # into small test programs (src_rebuild/Game/C/JERICHO/test/).
+      - name: JERICHO runtime tests (Linux)
+        run: |
+          src_rebuild/Game/C/JERICHO/test/run_tests.sh Release
+          src_rebuild/Game/C/JERICHO/test/run_tests.sh Release_dev
 
       - name: Host API export (Linux)
         run: |
@@ -722,10 +711,12 @@ jobs:
           test -f JERICHO/sdk/example/example.so
           # ship the addons in BOTH packages (build.py lands them in bin/Release only);
           # bake.so missing means the core suite refuses every store addon
+          # Dev-only addons ship in Release_dev (and the mod repo) only.
           for so in JERICHO/MODS/*/*.so; do
             id=$(basename "$(dirname "$so")")
             [ "$(basename "$so" .so)" = "$id" ] || continue
             for cfg in Release Release_dev; do
+              case "$cfg:$id" in Release:directorbox) continue ;; esac
               mkdir -p "src_rebuild/bin/$cfg/JERICHO/MODS/$id"
               cp "$so" "src_rebuild/bin/$cfg/JERICHO/MODS/$id/"
             done
@@ -736,8 +727,8 @@ jobs:
 
       - name: Package
         run: |
-          # Driver 1 bake tooling: see the Windows job. The bake submodule was
-          # advanced to the latest commit of its branch by the fetch step; use
+          # Driver 1 bake tooling: see the Windows job. The bake checkout is at
+          # the commit JERICHO/MODS/mods.json pins (the fetch step); use
           # that checkout (its folder is excluded from the build mirror, so the
           # tools would otherwise never reach the package).
           d1src=JERICHO/MODS/bake/tools
@@ -826,7 +817,7 @@ jobs:
                 echo "::error::car-data bank in the package payload: $banks"
                 exit 1
             fi
-            # A mod submodule's .git file is not game data; the mirror strips it and
+            # A mod checkout's .git is not game data; the mirror strips it and
             # this catches a stale bin/ left over from an earlier build.
             find "$d/JERICHO/MODS" -name .git -exec rm -rf {} + 2>/dev/null || true
 
@@ -948,7 +939,7 @@ jobs:
 
             **Multiplayer:** everybody needs the **same version**. If a server won't let you join, update first (see above) and try again.
 
-            **Mods:** turn them on or off under *Options → JERICHO*. The four built-in ones (mp, carhacks, crumple, bake) come with the Release download.
+            **Mods:** turn them on or off under *Options → JERICHO*. The five built-in ones (mp, carhacks, crumple, bake, Pedestrian Hacks) come with the Release download.
 
             ---
 
@@ -983,7 +974,7 @@ jobs:
               `CONFIG/` and any module you added. Pass `dev` for the `Release_dev`
               build instead.
 
-            `Release` ships the four modules above. `Release_dev` compiles every
+            `Release` ships the five modules above. `Release_dev` compiles every
             module plus the debug console and dev tooling; it exists for testing the
             mods under development.
 

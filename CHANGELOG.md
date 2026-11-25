@@ -4,6 +4,251 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## Unreleased
+
+### Imported cars: refused up front, banks found on their own, easy colour variants
+
+- **A car that cannot get texture room is turned away before it is built**, with
+  a short on-screen line (`<CITY> car N not loaded: needs X texture page(s), Y
+  free`). It used to take a slot, a hot-load block and page numbers and then not
+  be drawn. Pages of imported cars with nothing on them count as free.
+- **Converted banks are found without a `cities.ini` row.** Every bank under
+  `JERICHO\MODS` - a `bank.json` folder, or a `<NAME>.LEV` + `<NAME>.LCF` pair in a
+  mod's folder, `banks\<dir>\` or one folder down - is registered unless its mod is
+  switched off (`= 0`). A mod with no modlist line is scanned, so a locally built
+  bank needs no setup. Stock cities and existing rows keep their names.
+- **Driver 1 / Euro Demo 43:** a converted `D1CARS` is still found wherever it is.
+  When there is none but the raw levels are there, the console says to run
+  `BAKE_D1_CARS.bat`.
+- **Colour variants:** `"textures": {"paints": ["red", "blue", "silver"]}` in a car's
+  `handling.json` (bake). Named colours, the body is measured from the page instead of
+  assumed blue, and each variant writes a preview PNG.
+- **citycycle** picks only cars carhacks would offer a player, so it no longer asks
+  for Chicago's empty model 11 (the only failure across 359 rounds).
+
+### World textures stay the level's own after a car is let go
+
+- **Buildings no longer end up wearing a car's texture.** The level's permanent
+  and special page lists pointed straight into the lump buffer, which is the
+  renderer's own primitive buffer: by the first drawn frame they held whatever
+  the renderer had written over them. Everything that read them later was
+  reading noise, so when an imported car gave back a rectangle it had borrowed
+  from the world, the engine measured zero bytes to re-read, said "could not
+  re-read the level's texture pages", and left the car's pixels on the world.
+  The lists are now kept in their own storage for the life of the level.
+- **Imported cars and the original game no longer share texture pages.** When the
+  lower-half pool (30 pages) was full, an imported car's page fell back to space
+  the game owns: a free resident slot, the replaced car's rectangle, or a host car
+  page "no car model names". That test only knows car models, but the sun flare,
+  the map dot, car undersides and pedestrians are drawn from those pages by name -
+  which is how wheel art ended up on the sun glare. Every import page now lives in
+  the pool. A full pool hands an imported page with no car on it to the import
+  that needs one (it comes back when a car is on it again); with nothing idle, the
+  car waits rather than drawing on the game's pages.
+- **World pages repair themselves.** A resident slot that an import wrote into and
+  no longer holds is re-read from the level file, with the level's palette CLUTs,
+  as soon as it is noticed (at most once a second; logged as `self-repair`). Only
+  slots JERICHO touched are restored - the game swaps some resident pages itself
+  (special cars), and those are left alone.
+- **One hot-load block per resident car slot.** The pool held eight, which is
+  fewer than the number of slots that can want one at the same time, so a run
+  that cycled cars eventually refused every import with "8 of 8 in use" and
+  left the slot showing the car it already had.
+
+### Imported cars: colours, wheels, damage, radio
+
+- **Traffic spawns in every colour again.** The palette census for the level's
+  own car rows was wiped right after it was filled, so every native traffic car
+  counted one colour and spawned in its first. Imported traffic counts its
+  colours from its own bank, so it is no longer stuck on colour 1 either.
+- **The pause menu and car select show each car's real number of colours.** The
+  count was the maximum over a whole page (shared by several cars), or a guess
+  of 6 before a car was built. It now comes from the car's own texture ids, or
+  for a bank car, from its own model and palette data.
+- **Wheels keep their own palette when two designs share a page.** The engine
+  gave every wheel on a page the palette of the first one it found there (the
+  Chicago GSX and armoured truck wore the Rio wheels' colours). Each wheel now
+  uses its own row.
+- **Pedestrians and imported cars no longer overwrite each other's textures.**
+  A baked pedestrian page and a car page with the same set number shared one
+  texture slot. They now get separate slots. The game log also reports any two
+  owners claiming the same palette row (`JERICHO-CLUT COLLISION`).
+- **Imported cars dent their own panels.** An imported car used the host city's
+  damage table for the same model number, so the wrong panels changed texture,
+  often to art meant for another colour. Each bank car now carries its own table
+  (rebake the bank to get it). A car imported from a Driver 2 city uses that
+  city's table, and a car with none stays undented. Cars over 256 polygons no
+  longer pick up random damage from the next car's data.
+- **Imported cars keep their damage table when their bank arrives late or is
+  reloaded.** The table choice was cached per (city, model), so a car whose bank
+  was not loaded yet froze on "no table" (never dented) and a reloaded bank kept
+  stale data. The choice is now keyed on the bank's own block and re-checked at
+  every dent. A car going back to a host slot also keeps a custom-content denting
+  file instead of the stock one.
+- **Cars no longer refuse to spawn, or draw host textures and wheels, after
+  several cities' cars have come and gone.** The 18 page numbers an imported car
+  can take (110-127) were only given back one car at a time; a city released
+  another way kept them, and later cars logged `no free import index`, kept the
+  host's page (broken wheels) or never became ready. Releasing a city now
+  returns every page number it held that no live page still uses.
+- **Imported cars and pedestrians no longer share 18 page numbers with each other
+  and the host.** Every imported page now gets a number of its own in a range
+  (128-254) that the level, the frontend and scenery never use, so two cities'
+  cars can no longer collide, and a city that is not using the host's numbers
+  no longer takes them. (Step 1-3 of the page-handle plan, `docs/JERICHO/vram-handles-plan.md`.)
+- **A car that cannot load now says so in the console.** "No free page number"
+  and "not ready" failures print a console line naming the car and the reason,
+  like multiplayer's car-change failure, and the log reports each missing set
+  once instead of on every spawn attempt (one session logged it 1,500 times).
+- **Each cop car can speak its own city's police radio.** A car's
+  `handling.json` can set `"policeVoice": "CHICAGO"` (or `HAVANA`, `VEGAS`,
+  `RIO`, `HOST`). The Cops 'n Robbers pack uses it, so its cars from all four
+  cities each keep their own radio.
+
+### Police lights
+
+- **A car bank can say how its police car's lights look.** Until now a cop car
+  imported from a bank always got its city's default bar (two red/blue lamps for
+  anything not Driver 2), so a Havana or Rio cop lost its single blue light and
+  a bus could not put a beacon on each corner. A car's `handling.json` can now
+  name a Driver 2 city's bar (`"style": "HAVANA"`, or `"HOST"` for whichever city
+  the level is) or list its own lamps one by one, each with a position, colour,
+  flash phase, size and optional mirror. Cars that say nothing look exactly as
+  before. Exporting a Driver 2 city's police car records that city's bar for
+  you. See `MODS/bake/tools/car/bank-schema.md`.
+- **Place lamps by putting them in the model.** Add a small object named
+  `COPLIGHT_<name>` where each lamp goes, export the OBJ, and `copmarkers.py`
+  reads the points back and writes them into `handling.json`. The bake leaves
+  the markers out of the car.
+
+### Caine's Crossfire
+
+- **The weapons sound like weapons.** The guns, Freeze, pickups and weapon
+  kills play the module's compiled `sounds/weapons.sbk` instead of the engine's
+  crash samples: the MG is a 3D-tracked loop while the trigger is held (the SMG
+  reuses it pitched up), Freeze has launch/travel/impact sounds, weapon impacts
+  layer a per-weapon accent over the stock explosion, pickups have
+  weapon/health cues, and a weapon kill screams. A missing bank falls back to
+  the previous stock sample.
+- **Fixer's Laser Lock tells you when to fire.** The lock plays a "selected"
+  cue, a charge loop that rises in pitch as the charge builds, and a "full"
+  cue at maximum damage, with a world-space reticle on the locked car. Swapping
+  weapons, firing or losing the lock aborts the charge and clears the reticle.
+- **Every weapon can name its fire, travel and impact sound** in its data row.
+  The bank is regenerated from `JERICHO/MODS/cainescrossfire/sounds/` with
+  `tools/build_sound_bank.py` (see `SOUNDS.md`).
+
+## v0.14.0
+
+*Released 2026-11-18.*
+
+### Fast-forward
+
+- **Holding BACKSPACE fast-forwards again.** The wall-clock step gate stopped the
+  old frame-skip path from speeding the sim up, and the engine's 7x flag was
+  cleared every frame, so a press only bought a single frame. The flag is now
+  re-asserted for as long as the key is held, and released on key-up, on focus
+  loss, or in an online session, where fast-forward stays disabled.
+
+### Alleycat
+
+- **The player-car AI is now Alleycat.** The module formerly called JerAI is
+  renamed, and its settings have their own pause-menu page, opened with L2. It
+  can follow or pursue another player, drive a route, flee the police and evade
+  them, and on a dedicated server it follows the nearest connected player. A
+  four-line readout sits top-left; the log reports a state change unless steer
+  trace is on.
+
+### Multiplayer
+
+- **mp 0.24 gives a round a lifecycle.** A round ends with a reason (clock,
+  bust, escape, leave or void); late joiners and players with no respawn are
+  benched until the next countdown; and the round holds the cars through the
+  countdown and the result screen, then repairs them after the role-car swap.
+  Cops n Robbers scores the getaway's own damage, the police radio rotates among
+  the cops near the getaway, and Fox N Hounds draws its clocks in the
+  mission-timer digits.
+- **The round countdown is the game's own 3-2-1 and GO.** `Print321Go` draws
+  Driver 2's race-start digits and a big "GO!" for any caller.
+- **Role cars are picked per connection.** A new round or a server city change
+  keeps the picks; a disconnect forgets them.
+- **A Cops n Robbers round change no longer crashes.** On PC the special-car
+  catch-up loop started two blocks per pass, walked past the level heap and
+  overwrote the level's spool data. It now starts one block per pass, stops
+  after a bounded number of passes and leaves special cars off for the level
+  instead. A spool request outside the level's data is skipped.
+- **Join and leave play the frontend menu samples** (a local option, on by
+  default).
+- **`-mp` accepts arena 0..3.** The stock game still ships two multiplayer maps
+  per city.
+
+### Cars
+
+- **A car import can give each car its own wheel art.** A bank baked with the
+  per-model wheel segment gives each model its clean, damaged and fast wheel
+  sprites from its own page set, instead of every car wearing the importing
+  city's set. The wheel palette is cached per page set, so a second
+  clean/damaged/fast tri-set gets its own colours. A single-set bank draws
+  exactly as before.
+- **Baked Driver 1 cars are found where they already are.** An install that
+  strips `JERICHO/MODS/carhacks/D1CARS` now finds the bake in the legacy
+  `DRIVER/D1CARS`, in the optional `d1cars_path` from `CONFIG/jericho.ini`, or
+  in a sibling install, instead of saying "no Driver 1 cars" next to a good
+  bake. The first-launch question and the stale-bake check judge the same files.
+- **One police-car rule.** Model 0 in a Driver 2 city, a car with a siren, or a
+  bank's `sounds.cop` mask; imported cop cars can also mark their sight cones on
+  the overhead map.
+
+### Pedestrians
+
+- **The first-launch ped bake produces the 0.14 archive.** Custom characters
+  (Tanner, Jericho) draw their own hips and toes like stock Tanner and keep
+  their own texture page sets. The archive is still baked from your own copy of
+  the game; no pedestrian art is downloaded.
+- **Pedestrian Hacks is a built-in module.** `pedhacks` sits in the join suite
+  with carhacks and mp and owns the JMPPED archive lifecycle, so the pedestrian
+  pipeline no longer depends on mp.
+
+### HUD and frontend
+
+- **Every JERICHO clock uses the mission timer's look.** `PrintTimer` draws
+  MM:SS plus frames at any scale, aligned by its left edge, right edge or
+  centre; smaller side clocks use `PrintDigitScaled`.
+- **The main menu waits for the startup questions.** It no longer flashes up
+  before the mod-update and bake prompts are settled, and both prompts offer
+  "Don't ask again" (written to `modstore.ini` / `rebake.ini`).
+- **Widescreen edges and tall-car arrows.** `jer_screen_edges` reports the
+  visible framebuffer, and the stock target arrow lifts by the car's
+  half-height so a tall car no longer swallows it.
+
+### Sound
+
+- **An imported cop car's radio speaks its own city.** A cop car from another
+  city gets that city's police radio lines in the voices bank, the way its siren
+  already worked: a Driver 2 city loads its two stock phrase lumps, any other
+  city uses its baked `LUMP_POLICE_VOICES`, then Miami's, then the host's.
+  Baked lines always take the heading clip, and the PC SPU room is bounded by
+  PsyX's 1 MiB.
+
+### Mods
+
+- **Release ships five built-in modules.** carhacks, crumple, mp, bake and
+  Pedestrian Hacks; `Release_dev` still compiles every installed module.
+- **Director Box is a dev-build camera addon.** A cinematic camera director
+  toggled from the pause menu; its DLL is not in the Release package.
+- **Alleycat is a dev-build module.** It is not compiled into the Release exe.
+
+### Fixes
+
+- **The "world textures wrong" console line is gone.** The JERICHO-VRAM line
+  still goes to the log, and the pause menu's reload is unchanged.
+- **The bake writes the per-model wheel segment** a bank needs for per-car
+  wheels.
+
+### Version
+
+- **The game reports 0.14.0.**
+
 ## v0.13.11
 
 *Released 2026-11-05.*
@@ -51,8 +296,6 @@ is in [changelog.txt](changelog.txt).
 ### Version
 
 - **The game reports 0.13.10.**
-
-## Unreleased
 
 ## v0.13.9
 

@@ -33,6 +33,11 @@ an empty value, a typo or an unwrapped quoted string leaves it **off**.
 > read back from the manifest at runtime is `dependencies`** - see Dependencies
 > below, because the registry cannot carry it.
 
+> **Data packs are not modules.** A `mod.toml` with `runtime = "data"` is
+> installed and enabled through `modlist.ini`, but it has no entry symbol and
+> never appears in this module table. carhacks reads its
+> `banks/<dir>/bank.json` and registers the city banks.
+
 Every boot writes the resolution to `JERICHO.log`:
 
 ```
@@ -147,6 +152,23 @@ called before `jer_init`. It outranks both `modlist.ini` and the module's
 `default-enabled`, adds the module to the activation order, and shows up in the
 inventory as `src=forced`. `-nomods` still outranks it.
 
+`-mod <id>` forces one module on and `-nomod <id>` forces one off, for that boot
+only, without touching `modlist.ini`; a core module stays on whatever the flag
+says.
+
+**Saved versus running.** `jer_module_list` reports what `modlist.ini` (or the
+`mod.toml` default) says - the Mods menu's view, so its toggles change what is
+saved - and so it does not see `-mod`, `-nomod` or `-nomods`.
+`jer_module_running(id)` reports what actually runs this boot. Anything that
+describes the live game uses the second: the multiplayer manifest a server
+checks, and an engine row that calls into a module (the pause menu's "Reload car
+assets" is listed only while carhacks runs, so with every mod off the stock
+pause menus are the original game's). `test/test_nomods.c` holds the guarantee:
+under `-nomods`, or with every optional mod off, no module entry runs and no
+hook, override or pause menu is left behind. A server's addon offer relaunches with them (`jer_joinmods.c`, see
+`mod-repo.md`), plus `-joinmods` so the relaunched game tells the player those
+changes last this session only. Up to 40 modules can be forced at once.
+
 `-testmode` / `-testcar <slot|n>` / `-testped` (main.c, next to the `-nomods`
 scan) use it for the `testmode` module, so a session can be set up with flags and
 no ini editing. Modules can read their own arguments through `JER_EVENT_CMDLINE`
@@ -195,7 +217,7 @@ module supplies the input):
 | Front/rear force heading (`wdir`) | wheelforces.c | **harmless no-op** | Reproduces stock's `-cdx/cdz` (rear) and `-sdx/sdz` (front) exactly. |
 | `twistRateZ` doubling in `FixCarCos` | handling.c:190 (note) | **harmless no-op** (already removed) | The pre-JERICHO `carCos->twistRateZ <<= 1` is gone; the note exists so it is not reintroduced (doubling it halves roll inertia and tips every car). |
 | `gCrumpleLastCollisionPoint` + `DentCarDirectional` | handling.c:37, :498, :778 | **parity risk** (cosmetic) | The dent *direction* comes from a global written elsewhere, so dents can point differently from stock; it does not touch physics. |
-| Handbrake → `g_PlayerControlMode` cycle | handling.c:1244 | **parity risk** | Unconditional gameplay mutation in `ProcessCarPad`; inert unless a module reads it (`sandbox`/`JerAI`), which then changes the player car's control mode. |
+| Handbrake → `g_PlayerControlMode` cycle | handling.c:1244 | **parity risk** | Unconditional gameplay mutation in `ProcessCarPad`; inert unless a module reads it (`sandbox`/`Alleycat`), which then changes the player car's control mode. |
 | `CheckCarEffects` wreck guards | handling.c:1594, :1601, :1632, :1685 | **harmless no-op** (effects only) | Only gate skid marks / tyre noise / smoke for a totaled car; no physics. Also note it uses `MaxPlayerDamage[0]` for every car rather than the per-`player_id` value. |
 | `civ_ai.c` AI-driving rewrite | civ_ai.c:3645 (and the follow-distance braking above it) | **parity risk** | Changes AI *input* (throttle/braking/steering penalty), not the handling model; the car still uses stock physics. |
 

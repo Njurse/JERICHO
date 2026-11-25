@@ -88,10 +88,17 @@ def registry(root, quiet):
 
 
 def submodule_paths(root):
-    """Paths registered in .gitmodules, normalised for comparison with MODS entries."""
+    """Paths that are other repositories - .gitmodules entries and the mods in
+    JERICHO/MODS/mods.json - normalised for comparison with MODS entries."""
     paths = set()
-    gitmodules = os.path.join(root, ".gitmodules")
+    manifest = os.path.join(root, "JERICHO", "MODS", "mods.json")
+    if os.path.isfile(manifest):
+        import json
+        with open(manifest, "r", encoding="utf-8") as fh:
+            for mod in json.load(fh).get("mods", []):
+                paths.add(os.path.normpath(mod["path"]))
 
+    gitmodules = os.path.join(root, ".gitmodules")
     if not os.path.isfile(gitmodules):
         return paths
 
@@ -117,9 +124,9 @@ def check_manifests(root, sdk, quiet):
         if not os.path.isfile(manifest):
             continue
 
-        # A submodule is its own repository: its manifest is versioned there and
-        # the parent checkout cannot update it. CI deliberately does not fetch
-        # every submodule, so checking it here would make a local run fail where
+        # A mod in mods.json is its own repository: its manifest is versioned
+        # there and the core checkout cannot update it. CI deliberately does not
+        # fetch every mod, so checking it here would make a local run fail where
         # CI passes (bake is the one that has no `interface`).
         if os.path.normpath(os.path.join("JERICHO", "MODS", name)) in subs:
             continue

@@ -1,11 +1,13 @@
 /* jer_rebake.c -- after an update, ask once whether to re-bake the Driver 1 cars.
  *
  * Ported from feature/mod-store (77be5b84) without the store: an update that
- * ships a BAKE_D1_CARS script with a higher BAKE_VERSION than the one stamped in
- * JERICHO/MODS/carhacks/D1CARS/BAKE_VERSION leaves the cars baked by the old
- * tooling. On the first main-menu frame we compare the two and raise a
- * jer_prompt. An unstamped bake counts as version 0 (older); no bake at all asks
- * nothing.
+ * ships a BAKE_D1_CARS script with a higher BAKE_VERSION than the one stamped
+ * beside the bake leaves the cars baked by the old tooling. The bake is the one
+ * jer_d1cars.c found from the LEV files (carhacks/D1CARS, the jericho.ini
+ * d1cars_path, the legacy DRIVER/D1CARS or a sibling install), the same one
+ * the engine loads. On the first main-menu frame we compare the two and raise a
+ * jer_prompt. A valid unstamped bake counts as version 0 (older); no valid LEV
+ * at all asks nothing.
  *
  * Yes starts the BAKE_D1_CARS script beside the game (the script cds to its own
  * folder and writes JERICHO/MODS/carhacks/D1CARS there). Windows: a console
@@ -19,6 +21,19 @@
  * explains why baking is needed and offers Continue / No. No only skips this
  * launch; first_bake_prompt=0 in JERICHO/CONFIG/rebake.ini (written on the
  * first No) stops it asking. The version re-bake question is unaffected.
+ *
+ * Every startup bake question also offers "Don't ask again", which writes
+ * bake_prompt=0 to the same file (in place: the player's other lines stay) and
+ * stops all of them. Bake on the Mods menu (ModsBake, jer_modstore.c) still
+ * bakes on demand; bake_prompt=1 turns the questions back on.
+ *
+ * Boot hold: the startup questions (the mod store's update question first,
+ * then this one) are decided on the main menu, and the mod store has to fetch
+ * the repo index before it knows whether to ask. The menu used to be live and
+ * drawn all that time, then a prompt replaced it -- a flash of the frontend
+ * before the question. jer_rebake_boot_hold() tells FEmain.c to keep the menu
+ * hidden (black) and the pad off it until both are settled, so a question is
+ * the first thing on screen and the menu the first thing after it.
  *
  * Both questions are short lines (a newline is a paragraph break): drop
  * Driver 1 files in DRIVER/, and if you have the 16 Dec 1998 proto (the one
@@ -39,6 +54,8 @@
 #include "../include/jer_frontend.h"
 #include "../include/jer_modstore.h"	/* the startup mod-update check runs first */
 #include "../include/jer_rebake.h"	/* the re-arm hook jer_modstore.c calls */
+#include "../include/jer_notify.h"
+#include "jer_internal.h"	/* jer_config_set_line: edit rebake.ini in place */
 
 #define RB_PATH_MAX 1024
 
@@ -50,6 +67,14 @@ static int sRebakePortraitsOnly;	/* encode MIAMI.RAW; do not rebuild the cars */
 static int sRebakeAsked;
 static int sRebakeSettled;
 static int sRebakeAccepted;	/* the player answered Yes: never re-ask this run */
+
+/* Boot hold (see the top of the file). One-shot per run: a mid-session re-arm
+ * (a mod install) asks over the live menu as before. The cap bounds a slow or
+ * hung index fetch: past it the menu shows and a late question still asks. */
+#define RB_BOOT_HOLD_MAX_FRAMES 300
+static int sBootHoldDone;		/* released: never hold again this run */
+static int sBootHoldShown = 1;	/* the main menu is the screen up (else: suspended) */
+static int sBootHoldFrames;		/* frames held with no question on screen */
 
 static int RbFileInt(const char* path, const char* afterKey)
 {
@@ -75,40 +100,6 @@ static int RbFileInt(const char* path, const char* afterKey)
 	while (*p != 0 && !isdigit((unsigned char)*p))
 		p++;
 	return *p ? atoi(p) : -1;
-}
-
-static int RbDirHasEntries(const char* path)
-{
-#if defined(_WIN32)
-	char pattern[RB_PATH_MAX + 8];
-	WIN32_FIND_DATAA fd;
-	HANDLE h;
-	int found = 0;
-
-	snprintf(pattern, sizeof(pattern), "%s/*", path);
-	h = FindFirstFileA(pattern, &fd);
-	if (h == INVALID_HANDLE_VALUE)
-		return 0;
-	do
-	{
-		if (strcmp(fd.cFileName, ".") && strcmp(fd.cFileName, "..")) { found = 1; break; }
-	} while (FindNextFileA(h, &fd));
-	FindClose(h);
-	return found;
-#else
-	DIR* d = opendir(path);
-	struct dirent* e;
-	int found = 0;
-
-	if (d == NULL)
-		return 0;
-	while ((e = readdir(d)) != NULL)
-	{
-		if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) { found = 1; break; }
-	}
-	closedir(d);
-	return found;
-#endif
 }
 
 #if defined(_WIN32)
@@ -138,28 +129,14 @@ static int RbToolingVersion(void)
 	return RbFileInt(path, "BAKE_VERSION=");
 }
 
+/* What is baked, judged by the LEV files (jer_d1cars.c): the BAKE_VERSION of the
+ * best valid bake in carhacks/D1CARS, the jericho.ini d1cars_path, the legacy
+ * DRIVER/D1CARS or a sibling install - the same folder the engine loads the
+ * cars from. -1 = no valid LEV anywhere, 0 = valid but unstamped. A stamp beside
+ * no readable LEV no longer counts as a bake. */
 static int RbBakedVersion(void)
 {
-	char dir[RB_PATH_MAX];
-	char path[RB_PATH_MAX + 16];
-	int v;
-
-	/* carhacks owns the baked car data: JERICHO/MODS/carhacks/D1CARS */
-	snprintf(dir, sizeof(dir), "%s/MODS/carhacks/D1CARS", jer_root_dir());
-	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
-	v = RbFileInt(path, NULL);
-	if (v >= 0)
-		return v;
-
-	/* A bake from before the move lived beside DRIVER2. Report it too, so an
-	 * update from that build still offers the re-bake (into the new folder). */
-	snprintf(dir, sizeof(dir), "%s/../DRIVER/D1CARS", jer_root_dir());
-	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
-	v = RbFileInt(path, NULL);
-	if (v >= 0)
-		return v;
-
-	return RbDirHasEntries(dir) ? 0 : -1;
+	return jer_d1cars_baked_version();
 }
 
 /* 1 when the page at model*0x8000 is missing or all zero. That is the
@@ -372,8 +349,17 @@ static int RbFirstPromptOptedOut(void)
 	return RbFileInt(path, "first_bake_prompt=") == 0;
 }
 
-/* No: skip this launch, and leave the switch where the prompt said it is */
-static void RbFirstNo(void)
+/* bake_prompt=0 in CONFIG/rebake.ini ("Don't ask again"): no startup bake
+ * question at all -- first launch, re-bake, or portraits. Read through
+ * jer_config like the store's modstore.ini keys; default 1 = ask. */
+static int RbPromptsOff(void)
+{
+	return jer_config_get_int("rebake", "bake_prompt", 1) == 0;
+}
+
+/* CONFIG/rebake.ini with its comments, the first time it is needed. Never
+ * overwrites: an existing file is the player's. Returns 1 when it wrote it. */
+static int RbIniEnsure(void)
 {
 	char path[RB_PATH_MAX];
 	FILE* f;
@@ -383,17 +369,92 @@ static void RbFirstNo(void)
 	if (f != NULL)
 	{
 		fclose(f);
-		return;
+		return 0;
 	}
 	f = fopen(path, "wb");
 	if (f == NULL)
-		return;
-	fputs("; JERICHO first-launch bake prompt (cars + peds).\n"
-		"; 1 = ask at startup while JMPPED.LEV / the Driver 1 cars are not baked\n"
-		"; 0 = never ask (bake any time with BAKE_D1_CARS beside the game)\n"
+		return 0;
+	fputs("; JERICHO startup bake prompts (cars + peds).\n"
+		"; bake_prompt: 1 = ask at startup when the bake is missing or older than\n"
+		";   the tooling; 0 = never ask (\"Don't ask again\"). Mods -> Bake still bakes.\n"
+		"; first_bake_prompt: 1 = ask at startup while JMPPED.LEV / the Driver 1 cars\n"
+		";   are not baked; 0 = never ask that one (bake any time with BAKE_D1_CARS)\n"
+		"bake_prompt=1\n"
 		"first_bake_prompt=1\n", f);
 	fclose(f);
-	jer_log("[rebake] first-launch bake skipped; set first_bake_prompt=0 in %s to stop asking\n", path);
+	return 1;
+}
+
+/* No: skip this launch, and leave the switch where the prompt said it is */
+static void RbFirstNo(void)
+{
+	char path[RB_PATH_MAX];
+
+	RbIniPath(path, sizeof(path));
+	if (RbIniEnsure())
+		jer_log("[rebake] first-launch bake skipped; set first_bake_prompt=0 in %s to stop asking\n", path);
+}
+
+/* "Don't ask again" on any startup bake question */
+static void RbNeverAsk(void)
+{
+	RbIniEnsure();
+	if (jer_config_set_line("rebake", "bake_prompt", "0"))
+	{
+		jer_log("[rebake] bake prompts off (CONFIG/rebake.ini bake_prompt=0); Mods -> Bake still bakes\n");
+		jer_notify("Bake prompts off. Mods -> Bake bakes any time.", 1, 6);
+	}
+	else
+		jer_log("[rebake] could not write bake_prompt=0 to CONFIG/rebake.ini\n");
+}
+
+#define RB_NEVER_LABEL "Don't ask again"
+
+/* FEmain.c: keep the main menu hidden and the pad off it this frame? */
+int jer_rebake_boot_hold(void)
+{
+	return !sBootHoldDone && sBootHoldShown;
+}
+
+static void RbBootHoldRelease(const char* why)
+{
+	if (sBootHoldDone)
+		return;
+	sBootHoldDone = 1;
+	jer_log("[rebake] boot hold released after %d frame(s): %s\n", sBootHoldFrames, why);
+}
+
+/* Once per frontend frame, before the question below is considered. */
+static void RbBootHoldTick(int onMainMenu, int upd)
+{
+	if (sBootHoldDone)
+		return;
+
+	/* another screen owns the frontend (the updater's notes, a module menu):
+	 * never black it out. Back on the main menu, the hold resumes. */
+	sBootHoldShown = onMainMenu && !(upd >= 0 && jer_frontend_current_menu() == upd);
+	if (!sBootHoldShown)
+		return;
+
+	if (jer_modstore_startup_update_off())
+	{
+		RbBootHoldRelease("this run asks no startup question (store test run)");
+		return;
+	}
+
+	/* a question on screen is what the hold is for; only count the wait */
+	if (jer_prompt_active())
+		return;
+
+	/* both questions settled and answered (or nothing to ask) */
+	if (sRebakeAsked)
+	{
+		RbBootHoldRelease("startup questions settled");
+		return;
+	}
+
+	if (++sBootHoldFrames >= RB_BOOT_HOLD_MAX_FRAMES)
+		RbBootHoldRelease("timed out waiting for the mod index; a late question still asks");
 }
 
 /* Frontend, once per frame on the main menu. Asks at most once per run. */
@@ -401,6 +462,8 @@ void jer_rebake_frontend_tick(int onMainMenu)
 {
 	int upd = jer_frontend_find("jericho.update");
 	int baked, wanted;
+
+	RbBootHoldTick(onMainMenu, upd);
 
 	if (sRebakeAsked)
 		return;
@@ -423,9 +486,18 @@ void jer_rebake_frontend_tick(int onMainMenu)
 		sRebakeSettled = 0;
 		return;
 	}
-	if (++sRebakeSettled < 30)
+	/* The quiet frames keep a mid-session re-ask off the screen the player is
+	 * leaving. At boot the menu is held hidden (above), so there is nothing to
+	 * settle: waiting here was 30 frames of live menu before the question. */
+	if (++sRebakeSettled < 30 && sBootHoldDone)
 		return;
 	sRebakeAsked = 1;
+
+	if (RbPromptsOff())
+	{
+		jer_log("[rebake] startup bake prompts are off (CONFIG/rebake.ini bake_prompt=0)\n");
+		return;
+	}
 
 	baked = RbBakedVersion();
 	wanted = RbToolingVersion();
@@ -436,20 +508,26 @@ void jer_rebake_frontend_tick(int onMainMenu)
 		char ped[RB_PATH_MAX];
 		int pedsOk, carsOk;
 
-		snprintf(ped, sizeof(ped), "%s/../DRIVER2/LEVELS/JMPPED.LEV", jer_root_dir());
+		snprintf(ped, sizeof(ped), "%s/MODS/mp/JMPPED.LEV", jer_root_dir());
 		pedsOk = RbLevReadable(ped);
+		if (!pedsOk)
+		{
+			snprintf(ped, sizeof(ped), "%s/../DRIVER2/LEVELS/JMPPED.LEV",
+				jer_root_dir());
+			pedsOk = RbLevReadable(ped);
+		}
 		carsOk = baked >= 0;
 		if (!pedsOk || !carsOk)
 		{
 			jer_log("[rebake] first launch: peds %s, Driver 1 cars %s\n",
 				pedsOk ? "ok" : "missing", carsOk ? "ok" : "missing");
-			jer_prompt_begin_ex("First start: bake cars and peds from your files.\n"
+			jer_prompt_begin3("First start: bake cars and peds from your files.\n"
 				"The game restarts after.\n"
 				"Drop Driver 1 files in DRIVER/.\n"
 				"If you have the 16 Dec 1998 proto with the Buick GSX,\n"
 				"put LEVELS/ and SOUND/ in EURO43/\n"
 				"so the bake can pull those cars.",
-				"Continue", "No", jer_rebake_start, RbFirstNo);
+				"Continue", "No", RB_NEVER_LABEL, jer_rebake_start, RbFirstNo, RbNeverAsk);
 			return;
 		}
 	}
@@ -462,25 +540,25 @@ void jer_rebake_frontend_tick(int onMainMenu)
 		if (baked >= 0 && RbMiamiPortraitMissing())
 		{
 			jer_log("[rebake] Driver 1 cars are current; MIAMI.RAW is missing\n");
-			jer_prompt_begin("Add Driver 1 car-select pictures?\n"
+			jer_prompt_begin3("Add Driver 1 car-select pictures?\n"
 				"The cars stay as they are.\n"
 				"The pictures are encoded into MIAMI.RAW\n"
 				"beside the baked level.",
-				RbStartPortraits);
+				NULL, NULL, RB_NEVER_LABEL, RbStartPortraits, NULL, RbNeverAsk);
 		}
 		return;
 	}
 	sRebakePortraitsOnly = 0;
 
 	jer_log("[rebake] Driver 1 bake is older than the tooling (baked %d, expected %d)\n", baked, wanted);
-	jer_prompt_begin("Re-bake Driver 1 cars to pick up body colours?\n"
+	jer_prompt_begin3("Re-bake Driver 1 cars to pick up body colours?\n"
 		"An older bake left those shades out of the palette,\n"
 		"so the paint swap cannot show them.\n"
 		"Drop Driver 1 files in DRIVER/.\n"
 		"If you have the 16 Dec 1998 proto with the Buick GSX,\n"
 		"put LEVELS/ and SOUND/ in EURO43/\n"
 		"so the bake can pull those cars.",
-		jer_rebake_start);
+		NULL, NULL, RB_NEVER_LABEL, jer_rebake_start, NULL, RbNeverAsk);
 }
 
 /* The one-shot prompt already ran (or the player declined). A mod install may

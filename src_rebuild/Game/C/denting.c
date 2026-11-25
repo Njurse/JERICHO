@@ -5,6 +5,7 @@
 #include "system.h"
 #include "mission.h"
 #include "cars.h"
+#include "models.h"	// JERICHO: GetCarImportDenting, CarImportCityHeld
 #include "convert.h"
 #include "pause.h"
 #include "camera.h"
@@ -42,6 +43,8 @@ char* LoadCustomCarDentingFromFile(char* dest, int modelNumber)
 }
 #endif
 
+const u_char* GetCarImportDenting(int city, int model);	// models.c (LUMP_CAR_DENTING)
+
 char* DentingFiles[] =
 {
 	"LEVELS\\CHICAGO.DEN",
@@ -59,6 +62,168 @@ char* DentingFiles[] =
 u_char gCarDamageZoneVerts[MAX_CAR_RESIDENT_MODELS][NUM_DAMAGE_ZONES][MAX_DAMAGE_ZONE_VERTS];
 u_char gHDCarDamageZonePolys[MAX_CAR_RESIDENT_MODELS][NUM_DAMAGE_ZONES][MAX_DAMAGE_ZONE_POLYS];
 u_char gHDCarDamageLevels[MAX_CAR_RESIDENT_MODELS][MAX_DAMAGE_LEVELS];	// the damage level (texture) count for polygons
+
+// JERICHO: WHOSE damage table a resident slot wears.
+//
+// Stock loads one .DEN per level and indexes it by MODEL NUMBER, so an imported car got
+// the HOST city's table for the same number: zone vertex/poly indices and per-poly
+// damage levels that describe a different mesh. Denting then shifted the UVs of the
+// wrong polys onto art drawn for another palette row. Now a slot whose car comes from
+// another city takes that car's own table: a Driver 2 city's own .DEN, or a bank's
+// LUMP_CAR_DENTING (models.c GetCarImportDenting, written by the bake from the baked
+// mesh). An import with neither gets an EMPTY table (no zones, no shifts) rather than
+// the host's: an undented car is right, a wrongly dented one is the bug.
+#define JER_DEN_FILE_SIZE		12727
+#define JER_DEN_MODEL_BYTES		(NUM_DAMAGE_ZONES * MAX_FILE_DAMAGE_ZONE_VERTS + NUM_DAMAGE_ZONES * MAX_FILE_DAMAGE_ZONE_POLYS + MAX_FILE_DAMAGE_LEVELS)
+
+static char sHostDen[JER_DEN_FILE_SIZE];
+static int sHostDenValid;
+static char* sCityDen[CITY_D2_COUNT];	// a Driver 2 source city's .DEN, loaded once when an import needs it
+static int sSlotDenKey[MAX_CAR_RESIDENT_MODELS];	// what the slot's tables were filled from (0 = not yet)
+static const u_char* sSlotDenBlk[MAX_CAR_RESIDENT_MODELS];	// ...and WHICH block: a bank freed and reloaded, or one that arrives after the slot named it, is a new block
+
+static void JerDentApplyBlock(int slot, const u_char* blk)
+{
+	int offset = 0;
+
+	memcpy((u_char*)gCarDamageZoneVerts[slot], blk + offset, NUM_DAMAGE_ZONES * MAX_FILE_DAMAGE_ZONE_VERTS);
+	offset += NUM_DAMAGE_ZONES * MAX_FILE_DAMAGE_ZONE_VERTS;
+
+	memcpy((u_char*)gHDCarDamageZonePolys[slot], blk + offset, NUM_DAMAGE_ZONES * MAX_FILE_DAMAGE_ZONE_POLYS);
+	offset += NUM_DAMAGE_ZONES * MAX_FILE_DAMAGE_ZONE_POLYS;
+
+	memcpy((u_char*)gHDCarDamageLevels[slot], blk + offset, MAX_FILE_DAMAGE_LEVELS);
+
+	// polys past the file's 256 never shift (level byte 2: no shift at any damage)
+	if (MAX_DAMAGE_LEVELS > MAX_FILE_DAMAGE_LEVELS)
+		memset((u_char*)gHDCarDamageLevels[slot] + MAX_FILE_DAMAGE_LEVELS, 2, MAX_DAMAGE_LEVELS - MAX_FILE_DAMAGE_LEVELS);
+}
+
+static void JerDentApplyEmpty(int slot)
+{
+	memset((u_char*)gCarDamageZoneVerts[slot], 0xFF, sizeof(gCarDamageZoneVerts[slot]));
+	memset((u_char*)gHDCarDamageZonePolys[slot], 0xFF, sizeof(gHDCarDamageZonePolys[slot]));
+	memset((u_char*)gHDCarDamageLevels[slot], 2, sizeof(gHDCarDamageLevels[slot]));
+}
+
+// A .DEN file's block for `model` (13 offsets, then 976-byte blocks), or NULL.
+static const u_char* JerDenModelBlock(const char* den, int model)
+{
+	int offset;
+
+	if (den == NULL || model < 0 || model > 12)
+		return NULL;
+
+	offset = *(const int*)(den + model * 4);
+
+	if (offset < 13 * 4 || offset + JER_DEN_MODEL_BYTES > JER_DEN_FILE_SIZE)
+		return NULL;
+
+	return (const u_char*)den + offset;
+}
+
+// Fill `slot`'s damage tables from the right source; cheap to call again (keyed).
+void JerDentSyncSlot(int slot)
+{
+	int model, src, key;
+	const u_char* blk = NULL;
+	const char* how;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || slot == SPECIAL_CAR_SLOT)
+		return;
+
+	model = residentCarModels[slot];
+
+	if (model < 0)
+		return;
+
+	src = GetCarModelSourceCity(slot);
+
+	if (src < 0 || src == GameLevel)
+	{
+		// the level's own car. If the slot held an import before, put the host's
+		// table back (ProcessDentLump's, kept in sHostDen).
+		if (sSlotDenKey[slot] != 0 && sHostDenValid)
+		{
+			int hm = model;
+			const u_char* hb;
+
+			if (hm == 13)
+			{
+				hm = 10 - (residentCarModels[0] + residentCarModels[1] + residentCarModels[2]);
+				hm = (hm < 1) ? 1 : (hm > 4) ? 4 : hm;
+			}
+
+			hb = JerDenModelBlock(sHostDen, hm);
+#if USE_PC_FILESYSTEM
+			if (gContentOverride)
+			{
+				const u_char* cb = (const u_char*)LoadCustomCarDentingFromFile(NULL, hm);
+
+				if (cb != NULL)
+					hb = cb;
+			}
+#endif
+
+			if (hb != NULL)
+				JerDentApplyBlock(slot, hb);
+		}
+
+		sSlotDenKey[slot] = 0;
+		sSlotDenBlk[slot] = NULL;
+		return;
+	}
+
+	key = (src + 1) * 64 + model + 1;
+
+	blk = GetCarImportDenting(src, model);
+	how = "its bank's own table";
+
+	// Keyed on the block too: a slot can name an import before its bank is held (hot
+	// import), or the bank can be released and reloaded elsewhere. Caching only
+	// (city, model) froze the empty table chosen in that window - the car never dented.
+	if (blk == NULL && src < CITY_D2_COUNT && sCityDen[src] != NULL)
+		blk = JerDenModelBlock(sCityDen[src], model);
+
+	if (sSlotDenKey[slot] == key && sSlotDenBlk[slot] == blk && (blk != NULL || CarImportCityHeld(src) || src < CITY_D2_COUNT))
+		return;
+
+	sSlotDenKey[slot] = key;
+	blk = GetCarImportDenting(src, model);
+
+	if (blk == NULL && src < CITY_D2_COUNT)
+	{
+		if (sCityDen[src] == NULL)
+		{
+			sCityDen[src] = (char*)malloc(JER_DEN_FILE_SIZE);
+
+			if (sCityDen[src] != NULL && !LoadfileSeg(DentingFiles[src], sCityDen[src], 0, JER_DEN_FILE_SIZE))
+			{
+				free(sCityDen[src]);
+				sCityDen[src] = NULL;
+			}
+		}
+
+		blk = JerDenModelBlock(sCityDen[src], model);
+		how = DentingFiles[src];
+	}
+
+	sSlotDenBlk[slot] = blk;
+
+	if (blk != NULL)
+	{
+		JerDentApplyBlock(slot, blk);
+	}
+	else
+	{
+		JerDentApplyEmpty(slot);
+		how = "no table (left undented rather than wearing the host's)";
+	}
+
+	if (blk != NULL || CarImportCityHeld(src) || src < CITY_D2_COUNT)	// not-yet-held bank: retried quietly each call
+		printInfo("[denting] slot %d (%s model %d): damage zones from %s\n",
+			slot, (src < CITY_COUNT && LevelNames[src]) ? LevelNames[src] : "?", model, how);
+}
 
 // [D] [T]
 void InitialiseDenting(void)
@@ -89,6 +254,7 @@ void DentCarDirectional(CAR_DATA* cp, VECTOR collisionpoint)
 
 	MaxDamage = 0;
 	model = cp->ap.model;
+	JerDentSyncSlot(model);	// the slot may have changed hands since this car was made
 	cp->lowDetail = -1;
 	cp->ap.qy = 0;
 	cp->ap.qw = 0;
@@ -255,6 +421,10 @@ void CreateDentableCar(CAR_DATA *cp)
 	}
 
 	model = cp->ap.model;
+
+	// JERICHO: the slot may hold a different car than at level load (a pick, a hot
+	// import): make sure its damage tables describe THIS car's mesh.
+	JerDentSyncSlot(model);
 
 	srcModel = gCarCleanModelPtr[model];
 	if (srcModel != NULL)
@@ -561,6 +731,14 @@ void ProcessDentLump(char *lump_ptr, int lump_size)
 			offset += NUM_DAMAGE_ZONES * MAX_FILE_DAMAGE_ZONE_POLYS;
 			
 			memcpy((u_char*)gHDCarDamageLevels[i], mem + offset, MAX_FILE_DAMAGE_LEVELS);
+
+			if (MAX_DAMAGE_LEVELS > MAX_FILE_DAMAGE_LEVELS)
+				memset((u_char*)gHDCarDamageLevels[i] + MAX_FILE_DAMAGE_LEVELS, 2, MAX_DAMAGE_LEVELS - MAX_FILE_DAMAGE_LEVELS);
+
+			// JERICHO: an imported car in this slot takes its own table instead
+			sSlotDenKey[i] = 0;
+			sSlotDenBlk[i] = NULL;
+			JerDentSyncSlot(i);
 		}
 	}
 }
@@ -599,6 +777,12 @@ void SetupSpecDenting(char *loadbuffer)
 void LoadDenting(int level)
 {
 	LoadfileSeg(DentingFiles[level], (char*)_other_buffer, 0, 12727);
+
+	// JERICHO: keep the host's table - _other_buffer is reused - so a slot that goes back
+	// from an imported car to a host one can be refilled (JerDentSyncSlot).
+	memcpy(sHostDen, (const void*)_other_buffer, JER_DEN_FILE_SIZE);
+	sHostDenValid = 1;
+
 	ProcessDentLump((char*)_other_buffer, 0);
 }
 

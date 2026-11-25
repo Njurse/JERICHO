@@ -10,9 +10,9 @@
 
   What it does, in the same order and with the same layout as CI:
 
-    0. advance the four core mod submodules (mp, carhacks, crumple, bake) to
-       the latest commit of their own branch, so the release carries the current
-       mods rather than the pinned gitlinks
+    0. advance the four core mods (mp, carhacks, crumple, bake) to the latest
+       commit of their branch in JERICHO/MODS/mods.json (tools/fetch_mods.py
+       --advance), so the release carries the current mods rather than the pins
     1. (re)generate the project files with premake (vs2019 locally)
     2. build Release and Release_dev for x64, each with the two-pass
        exports.def recipe CI uses -- see the note below
@@ -112,41 +112,17 @@ function Get-MSBuild {
 
 # --- 0. latest core mods ---------------------------------------------------
 function Update-ModSubmodules {
-    Step "Advancing the core mod submodules to the latest of their branch"
+    Step "Advancing the core mods to the latest of their branch"
 
-    # Same rule as CI: a release carries the LATEST core mods, not whatever
-    # gitlink the parent tree pinned. `--remote` uses the `branch =` recorded in
-    # .gitmodules (bake tracks betamiami, the others main).
-    $paths = @('JERICHO/MODS/mp', 'JERICHO/MODS/carhacks',
-               'JERICHO/MODS/crumple', 'JERICHO/MODS/bake')
-    foreach ($p in $paths) {
-        & git -C $RepoRoot submodule update --init -- $p
-        if ($LASTEXITCODE -ne 0) { Fail "could not initialise $p." }
-
-        # Fetch the branch by NAME. `submodule update --remote` also works in a
-        # normal clone, but a checkout that was initialised shallow (CI, or a
-        # submodule fetched at one commit) has no refs/remotes/origin/<branch>
-        # for it to find.
-        $branch = (& git -C $RepoRoot config -f .gitmodules --get "submodule.$p.branch")
-        if (-not $branch) { $branch = 'HEAD' }
-
-        & git -C (Join-Path $RepoRoot $p) fetch --quiet origin $branch
-        if ($LASTEXITCODE -ne 0) { Fail "could not fetch $p ($branch)." }
-
-        & git -C (Join-Path $RepoRoot $p) checkout --quiet --detach FETCH_HEAD
-        if ($LASTEXITCODE -ne 0) { Fail "could not check out $p ($branch)." }
-
-        if (-not (Test-Path (Join-Path $RepoRoot "$p/mod.toml"))) {
-            Fail "$p/mod.toml is missing after the update."
-        }
-        $sha = (& git -C (Join-Path $RepoRoot $p) rev-parse --short HEAD)
-        Write-Host "    $p at $sha ($branch)"
-    }
-
-    $dirty = (& git -C $RepoRoot status --porcelain -- $paths)
-    if ($dirty) {
-        Warn "the advanced mods differ from the committed gitlinks -- the build version will report as dirty."
-    }
+    # A release carries the LATEST core mods, not the commit
+    # JERICHO/MODS/mods.json pins. fetch_mods clones a missing mod, moves a clean
+    # checkout to the tip of its manifest `branch` (bake tracks betamiami, the
+    # others main) and REFUSES a checkout with modified tracked files rather than
+    # touching local work.
+    & python (Join-Path $RepoRoot 'tools/fetch_mods.py') --release
+    if ($LASTEXITCODE -ne 0) { Fail "could not fetch the core mods." }
+    & python (Join-Path $RepoRoot 'tools/fetch_mods.py') --release --advance
+    if ($LASTEXITCODE -ne 0) { Fail "could not advance the core mods (a dirty checkout is skipped, not overwritten)." }
 }
 
 # --- 1. project files ------------------------------------------------------
@@ -300,7 +276,7 @@ function New-Package {
             Move-Item $cfgIni (Join-Path $stage 'config.default.ini') -Force
         }
 
-        # Driver 1 bake tooling, from the checked-out bake submodule. Copy
+        # Driver 1 bake tooling, from the bake checkout. Copy
         # only tracked tools: the working tree may carry local experiments.
         $d1repo = Join-Path $RepoRoot 'JERICHO\MODS\bake'
         $d1dst  = Join-Path $stage 'JERICHO\MODS\bake\tools'
@@ -353,7 +329,7 @@ function New-Package {
         Get-ChildItem (Join-Path $stage 'JERICHO\MODS') -Directory -Filter '*~HEAD' -ErrorAction SilentlyContinue |
             Remove-Item -Recurse -Force
 
-        # A mod submodule's .git is a gitfile, never game data.
+        # A mod checkout's .git is never game data.
         Get-ChildItem $stage -Recurse -Force -Filter '.git' -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -eq '.git' } |
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue

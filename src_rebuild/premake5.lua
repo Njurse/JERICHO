@@ -29,17 +29,18 @@ require "premake_modules/jericho_mods"
 -- ---------------------------------------------------------------------------
 -- A mod that is not there must never turn into a smaller game.
 --
--- mp, carhacks and crumple are submodules. When one is not fetched, its folder
+-- mp, carhacks, crumple and bake are their own repositories, listed in
+-- JERICHO/MODS/mods.json. When one is not fetched, its folder
 -- is missing or empty, jericho_scan_mods() simply returns fewer ids, and the
 -- build succeeds -- with a registry, a mirror and an exe that quietly lack a
 -- chunk of the game. That is a hard error here instead, naming the command
 -- that fixes it. gaildrv2 is not on this list: it is no longer a submodule
--- (hibernated). d1cars is allowed to be missing and degrades the way it
--- always has.
+-- (hibernated). bake (formerly d1cars) is a release mod the core suite needs,
+-- so it is required.
 --
 -- jer_required_mods.h repeats the check at COMPILE time, so an IDE or msbuild
 -- run that skips premake still cannot produce a smaller game.
-local JERICHO_REQUIRED_MODS = { "mp", "carhacks", "crumple" }
+local JERICHO_REQUIRED_MODS = { "mp", "carhacks", "crumple", "bake" }
 
 for _, req in ipairs(JERICHO_REQUIRED_MODS) do
 	local path = string.format("../JERICHO/MODS/%s/mod.toml", req)
@@ -47,8 +48,8 @@ for _, req in ipairs(JERICHO_REQUIRED_MODS) do
 
 	if not manifest then
 		error(string.format(
-			"%s is a submodule and was not fetched; run:\n" ..
-			"    git submodule update --init JERICHO/MODS/%s\n" ..
+			"%s is its own repository and was not fetched; run:\n" ..
+			"    python tools/fetch_mods.py %s\n" ..
 			"the game does not build without it (a missing mod must not silently " ..
 			"build a smaller game)", req, req), 0)
 	end
@@ -56,34 +57,13 @@ for _, req in ipairs(JERICHO_REQUIRED_MODS) do
 	manifest:close()
 end
 
--- True when <id>'s mod.toml marks it as a runtime DLL addon.
-function jericho_is_dll_addon(id)
-	local toml = io.open(jericho_mod_dir(id) .. "/mod.toml", "r")
-
-	if toml then
-		local line = toml:read("*l")
-
-		while line do
-			if line:match("^%s*runtime%s*=%s*\"dll\"") then
-				toml:close()
-				return true
-			end
-
-			line = toml:read("*l")
-		end
-
-		toml:close()
-	end
-
-	return false
-end
-
--- Deep (compiled-in) modules: every installed mod that is NOT a DLL addon.
+-- Deep (compiled-in) modules: every installed mod that is NOT a DLL addon
+-- and NOT a data pack.
 JERICHO_COMPILED_MODS = {}
 -- Optional out-of-tree mods: their own repos, not part of the superproject and
 -- NOT compiled even when the folder is present, unless opted in with
 -- JERICHO_WITH_<ID>=1 (e.g. JERICHO_WITH_D2PL=1). d2pl is not release-ready.
--- Re-add later with: git submodule add <url> JERICHO/MODS/d2pl
+-- Re-add later as an entry in JERICHO/MODS/mods.json.
 JERICHO_OPTIONAL_MODS = { d2pl = true }
 
 local function jericho_optional_enabled(id)
@@ -94,7 +74,7 @@ end
 for _, id in ipairs(jericho_scan_mods()) do
 	if JERICHO_OPTIONAL_MODS[id] and not jericho_optional_enabled(id) then
 		print("JERICHO: skipping optional mod " .. id .. " (set JERICHO_WITH_" .. id:upper() .. "=1 to build it)")
-	elseif not jericho_is_dll_addon(id) then
+	elseif not jericho_is_dll_addon(id) and not jericho_is_data_mod(id) then
 		table.insert(JERICHO_COMPILED_MODS, id)
 	end
 end
@@ -121,6 +101,8 @@ JERICHO_RELEASE_MODS = {
 	-- distributed through the official mod repo, not bundled with a release:
 	-- players who want it install it from Options -> JERICHO -> Mods -> Mod Repo.
 	-- Release_dev still compiles it in for development.
+	-- cainescrossfire is NOT here either: a separate project with its own repo
+	-- (JERICHO-Mod-CainesCrossfire), not ready for players. Dev builds only.
 }
 
 -- true when id is pre-included in a release build.
@@ -341,7 +323,7 @@ local function jer_version_defines()
    -- never become the window title (it once read "checkpoint/getrdun-...").
    -- Stamped when premake generates the project, not at compile time. Re-run
    -- premake after a commit or tag or the exe keeps the previous string.
-   local JERICHO_BASE_VERSION = "0.13.11"
+   local JERICHO_BASE_VERSION = "0.14.0"
    local desc = git("git describe --tags --exact-match --match \"v*\" HEAD"):gsub("^v", "")
    if desc == "" then
       desc = JERICHO_BASE_VERSION
@@ -903,7 +885,9 @@ project "JERICHO"
     -- runtime changes to modlist.ini / module settings survive rebuilds.
     filter { "system:Windows" }
         postbuildcommands {
-            "xcopy /E /I /Y \"..\\..\\JERICHO\\MODS\" \"%{cfg.buildtarget.directory}JERICHO\\MODS\"",
+            -- /EXCLUDE: a mod checkout's .git is a whole repository; never copy it
+            -- (the per-mod cleanup below would only delete it again).
+            "xcopy /E /I /Y /EXCLUDE:..\\mirror_exclude.txt \"..\\..\\JERICHO\\MODS\" \"%{cfg.buildtarget.directory}JERICHO\\MODS\"",
             "if not exist \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\" xcopy /E /I \"..\\..\\JERICHO\\CONFIG\" \"%{cfg.buildtarget.directory}JERICHO\\CONFIG\"",
             -- modlist.ini is the single source of truth for which modules run, but the
             -- seeded-once CONFIG copy above meant a repo-side edit to it never reached
@@ -922,7 +906,7 @@ project "JERICHO"
             "copy /Y \"..\\..\\JERICHO\\build_game.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_game.sh\"",
             "copy /Y \"..\\..\\JERICHO\\build_mods.sh\" \"%{cfg.buildtarget.directory}JERICHO\\build_mods.sh\"",
             -- the Driver 1 car/ped bake launchers at the build root, as CI packs them;
-            -- a stale copy here still pointed at the retired MODS\d1cars\tools.
+            -- a stale copy here still pointed at the retired d1cars module's tools folder.
             "copy /Y \"..\\..\\BAKE_D1_CARS.bat\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.bat\"",
             "copy /Y \"..\\..\\BAKE_D1_CARS.sh\" \"%{cfg.buildtarget.directory}BAKE_D1_CARS.sh\"",
             "copy /Y \"..\\..\\d1_portraits.py\" \"%{cfg.buildtarget.directory}d1_portraits.py\"",
@@ -960,9 +944,8 @@ project "JERICHO"
 
     -- Modules whose FOLDER is not mirrored into the build.
     --
-    -- bake is fetched by the build now (the allow-list in .github/workflows/build.yml
-    -- fetches PsyCross and the four public mod source repos: mp, carhacks, crumple and
-    -- bake), but its folder still must not land in the build output: it carries
+    -- bake is fetched by the build now (.github/workflows/build.yml runs
+    -- tools/fetch_mods.py --release: mp, carhacks, crumple and bake), but its folder still must not land in the build output: it carries
     -- Driver 1 car content (shapes as .obj/.json, textures, LEV/LCF level data) that
     -- must not ride along in a build output or in a package made from one. gaildrv2
     -- is no longer a submodule (hibernated); the exclude key stays so a local
@@ -996,10 +979,9 @@ project "JERICHO"
                 -- A runtime addon's <id>.dll IS game data and is left alone.
                 "if exist \"" .. JER_DEST .. "\\obj\" rd /S /Q \"" .. JER_DEST .. "\\obj\"",
                 "if exist \"" .. JER_DEST .. "\\lib\" rd /S /Q \"" .. JER_DEST .. "\\lib\"",
-                -- A mod sourced from its own repository carries a .git gitfile. It is
-                -- neither source nor game data, and shipping it would leak a path into
-                -- the parent checkout. rd handles a real directory (a mod cloned in
-                -- place); del handles the gitfile.
+                -- A mod sourced from its own repository carries a .git (a directory for a
+                -- checkout, a file for an old submodule). It is neither source nor game
+                -- data. rd handles the directory; del handles a gitfile.
                 "if exist \"" .. JER_DEST .. "\\.git\\\" rd /S /Q \"" .. JER_DEST .. "\\.git\"",
                 "if exist \"" .. JER_DEST .. "\\.git\" del /Q /F \"" .. JER_DEST .. "\\.git\"",
                 -- by EXTENSION, not by name. The artefacts are mod_<id>.lib/.pdb/.idb
@@ -1084,7 +1066,7 @@ project "JERICHO"
         for _, JER_MOD in ipairs(jer_mirrored_mods) do
             local JER_DEST = "%{cfg.buildtarget.directory}/JERICHO/MODS/" .. JER_MOD
             local JER_CMDS = {
-                -- .git is the submodule's gitfile (or a full directory for an
+                -- .git is the mod checkout's repository (or an old submodule gitfile,
                 -- in-place clone), never part of a mod.
                 "rm -rf \"" .. JER_DEST .. "/tools\" \"" .. JER_DEST .. "/obj\" \"" .. JER_DEST .. "/lib\" \"" .. JER_DEST .. "/.git\"",
                 -- by extension, as on Windows: a static library is .a here and the rest

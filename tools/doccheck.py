@@ -23,8 +23,10 @@ Only TRACKED files are examined for links and claims, and that is deliberate:
 bin/Release and bin/Release_dev carry untracked mirror copies of the docs from the
 last build, so a filesystem walk matches stale text and reports a corrected claim
 as uncorrected. `git ls-files` excludes them for free. The one exception is the
-index check for documented mod folders: two of them are submodules, which
-`git ls-files` does not descend into, so those folders are walked on disk.
+index check for documented mod folders: mods are their own repositories
+(JERICHO/MODS/mods.json), which `git ls-files` does not list, so those folders are
+walked on disk. A mod that is not fetched is skipped: core's checks pass with no
+mods present.
 """
 
 import glob
@@ -100,19 +102,24 @@ def find(path, pattern, group=1):
 # 1. relative links resolve
 # ---------------------------------------------------------------------------
 def submodule_paths():
-    """The submodules' paths, from .gitmodules.
+    """Paths that are other repositories: .gitmodules entries plus every mod in
+    JERICHO/MODS/mods.json.
 
-    A link INTO a submodule cannot be resolved from a clone that has not
-    initialised it. Links into those paths are skipped here. Failing them would
-    make the job red for a file that IS tracked one level down, and would push
-    the docs into not linking the submodules at all - which is worse than not
-    verifying them here. gaildrv2 is not a submodule, so a link to its old path
-    is checked like any other missing file."""
+    A link INTO one cannot be resolved from a clone that has not fetched it.
+    Links into those paths are skipped here. Failing them would make the job red
+    for a file that IS tracked in the mod's own repo, and would push the docs
+    into not linking the mods at all - which is worse than not verifying them
+    here. gaildrv2 is in neither, so a link to its old path is checked like any
+    other missing file."""
     paths = []
-    for line in read(".gitmodules").splitlines():
-        line = line.strip()
-        if line.startswith("path"):
-            paths.append(line.split("=", 1)[1].strip())
+    if os.path.isfile(os.path.join(ROOT, ".gitmodules")):
+        for line in read(".gitmodules").splitlines():
+            line = line.strip()
+            if line.startswith("path"):
+                paths.append(line.split("=", 1)[1].strip())
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    from fetch_mods import mod_paths
+    paths.extend(mod_paths())
     return paths
 
 
@@ -153,8 +160,9 @@ def check_index():
     linked = set(links_in(index))
     folders = set(os.path.dirname(p) for p in linked)
     for mod in ("cainescrossfire", "carhacks", "mp"):
-        # Walk the folder rather than git ls-files: carhacks and mp are
-        # submodules, whose files the parent index does not list.
+        # Walk the folder rather than git ls-files: these mods are their own
+        # repositories, whose files the core index does not list. An absent
+        # (unfetched) mod has no docs to index.
         for full in glob.glob(os.path.join(ROOT, "JERICHO", "MODS", mod, "*.md")):
             doc = os.path.relpath(full, ROOT).replace(os.sep, "/")
             if doc not in linked and os.path.dirname(doc) not in folders:
@@ -164,7 +172,14 @@ def check_index():
 # ---------------------------------------------------------------------------
 # 4. claims that have a source of truth in the code
 # ---------------------------------------------------------------------------
+CC = "JERICHO/MODS/cainescrossfire"
+
+
 def check_claims():
+    # cainescrossfire is its own repository (JERICHO/MODS/mods.json). Its claims
+    # are checked against the engine when it is fetched, and skipped when it is
+    # not: core's checks must pass with no mods present.
+    cc = os.path.isfile(os.path.join(ROOT, CC, "PROFILES.md"))
     # -- the resident slot pool: dr2limits.h (first define is the PC branch) vs
     #    the number PROFILES.md states, and AI.md must not state one of its own.
     limits = read("src_rebuild/Game/dr2limits.h")
@@ -173,6 +188,7 @@ def check_claims():
         fail("claims", "dr2limits.h no longer defines MAX_CAR_RESIDENT_MODELS")
     else:
         slots = int(m.group(1))
+    if m and cc:
         stated = find("JERICHO/MODS/cainescrossfire/PROFILES.md",
                       r"Resident car slots: `MAX_CAR_RESIDENT_MODELS` = (\d+)")
         if stated != str(slots):
@@ -182,6 +198,9 @@ def check_claims():
                      read("JERICHO/MODS/cainescrossfire/AI.md")):
             fail("claims", "AI.md states a slot count of its own instead of pointing at "
                            "PROFILES.md's capacity section")
+
+    if not cc:
+        return
 
     # -- the guest-city ceiling: cars.h + cars.c vs the number PROFILES.md states.
     rows = int(find("src_rebuild/Game/C/cars.h", r"#define CIV_CLUT_ROWS\s+(\d+)"))
@@ -194,13 +213,14 @@ def check_claims():
         fail("claims", "CIV_CLUT affords %d guest cities ((%d-%d)/%d) but PROFILES.md "
                        "states %s" % (guests, rows, import_row, block, stated))
 
-    # -- the roster size: the row manifest vs the count the docs advertise.
-    registry = read("JERICHO/MODS/cainescrossfire/profiles/registry.c")
-    body = re.search(r"gVehRows\[[^\]]*\]\s*=\s*\{(.*?)\n\};", registry, re.S)
-    if not body:
-        fail("claims", "could not find the gVehRows[] manifest in profiles/registry.c")
+    # -- the roster size: the JSON authoring files vs the count the docs advertise.
+    profile_files = glob.glob(os.path.join(
+        ROOT, "JERICHO/MODS/cainescrossfire/profiles/*.json"))
+    count = len(profile_files)
+    if count == 0:
+        fail("claims", "no vehicle-profile JSON found under "
+                       "JERICHO/MODS/cainescrossfire/profiles")
     else:
-        count = len(re.findall(r"cd2VehRow", body.group(1)))
         word = WORDS.get(count, str(count))
         if ("## The %s" % word) not in read("JERICHO/MODS/cainescrossfire/SPECIALS.md"):
             fail("claims", "the roster has %d profiles but SPECIALS.md does not head its "
@@ -249,8 +269,57 @@ def check_sdk_mirror():
             fail("sdk", "%s has no counterpart in the engine - is it stale?" % path)
 
 
+
+# 6. renamed module ids
+# ---------------------------------------------------------------------------
+# A module that is renamed leaves its old id behind in paths, manifests and
+# configs, and those break things, not just prose: the dedi example config kept
+# requiring `d1cars` after it became `bake`, so it refused every client. Only the
+# forms that a tool or a config would act on are flagged: a MODS/<old> path,
+# <old>/tools or <old>/docs, and the quoted id. History and "formerly <old>"
+# prose are left alone.
+RENAMED_IDS = {"d1cars": "bake"}
+
+
+def renamed_id_patterns(old):
+    return re.compile(r"(MODS[/\\]+%s\b|\b%s[/\\](tools|docs)\b|[\"']%s[\"'])"
+                      % (old, old, old))
+
+
+def check_renames():
+    for old, new in RENAMED_IDS.items():
+        pattern = renamed_id_patterns(old)
+        for path in git_ls("*"):
+            if path.startswith(("libs/", "docs/patches/")) or path in ("CHANGELOG.md", "docs/FIX_PLAN.md", "tools/doccheck.py"):
+                continue
+            full = os.path.join(ROOT, path)
+            if not os.path.isfile(full) or os.path.getsize(full) > 2_000_000:
+                continue
+            try:
+                text = read(path)
+            except OSError:
+                continue
+            for n, line in enumerate(text.splitlines(), 1):
+                if pattern.search(line):
+                    fail("renamed-id", "%s:%d uses the retired id '%s' (now '%s')" % (path, n, old, new))
+
+        # The fetched mod submodules are other repositories: report what they still
+        # carry, but do not fail this tree on it (fix it there, then bump the pin).
+        for sub in submodule_paths():
+            if not os.path.isdir(os.path.join(ROOT, sub, ".git")) and \
+               not os.path.isfile(os.path.join(ROOT, sub, ".git")):
+                continue
+            out = subprocess.run(["git", "-C", os.path.join(ROOT, sub), "grep", "-nIE",
+                                  pattern.pattern], capture_output=True, text=True).stdout
+            hits = [l for l in out.splitlines() if l]
+            if hits:
+                print("doccheck: note: %s still uses '%s' in %d place(s) (fix upstream), e.g. %s"
+                      % (sub, old, len(hits), hits[0][:120]))
+
+
 def main():
-    for check in (check_links, check_events, check_index, check_claims, check_sdk_mirror):
+    for check in (check_links, check_events, check_index, check_claims, check_sdk_mirror,
+                  check_renames):
         check()
 
     if failures:
@@ -260,7 +329,7 @@ def main():
         return 1
 
     print("doccheck: OK - links resolve, every event is documented, every doc is indexed, "
-          "the SDK headers mirror the engine's, and the counted claims match the code")
+          "the SDK headers mirror the engine's, no retired module ids, and the counted claims match the code")
     return 0
 
 

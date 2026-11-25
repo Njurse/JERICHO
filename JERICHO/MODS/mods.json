@@ -1,0 +1,89 @@
+{
+  "_comment": [
+    "Every JERICHO mod is its own git repository; core uses no submodules for them.",
+    "tools/fetch_mods.py clones a missing mod at `ref` (the commit core was last",
+    "built and tested against) and never touches a folder that already exists",
+    "unless asked (--update / --advance, clean checkouts only). `branch` is where",
+    "that commit is followed; --advance moves to its tip, --pin records HEAD here.",
+    "required: the game does not build without it (premake5.lua, jer_required_mods.h).",
+    "release: fetched by CI and pre-included in a Release build (JERICHO_RELEASE_MODS).",
+    "Everything else is optional: core builds and its checks pass without it."
+  ],
+  "schema": 1,
+  "mods": [
+    {
+      "name": "mp",
+      "path": "JERICHO/MODS/mp",
+      "repo": "https://github.com/Njurse/JERICHO-Mod-MP.git",
+      "ref": "42b8df4a1243a3da1bcdefd38a2252c76e8cc514",
+      "branch": "jer/cnr-carselect",
+      "required": true,
+      "release": true
+    },
+    {
+      "name": "carhacks",
+      "path": "JERICHO/MODS/carhacks",
+      "repo": "https://github.com/Njurse/JERICHO-Mod-carhacks.git",
+      "ref": "4a06002b0f6f03e1b498fe36d18598964f16419b",
+      "branch": "jer/cnr-role-cars",
+      "required": true,
+      "release": true
+    },
+    {
+      "name": "crumple",
+      "path": "JERICHO/MODS/crumple",
+      "repo": "https://github.com/Njurse/Jericho-Mod-CRUMPLE.git",
+      "ref": "84db59b63138ed982df3e2c45da3a4f5febcfc0d",
+      "branch": "main",
+      "required": true,
+      "release": true
+    },
+    {
+      "name": "bake",
+      "path": "JERICHO/MODS/bake",
+      "repo": "https://github.com/Njurse/JERICHO-D1.git",
+      "ref": "d07e05e53a540d87dd0c44fb018d6023b02f582c",
+      "branch": "0.14",
+      "required": true,
+      "release": true,
+      "_note": "Driver 1 bake toolkit. Its folder is excluded from the build mirror (JER_MIRROR_EXCLUDE); CI packages only its tools."
+    },
+    {
+      "name": "antfarm",
+      "path": "JERICHO/MODS/antfarm",
+      "repo": "https://github.com/Njurse/JERICHO-Mod-Antfarm.git",
+      "ref": "88f621f6d9f41e35256f9cd972624fa95b259400",
+      "branch": "0.12",
+      "required": false,
+      "release": false,
+      "_note": "Screensaver. Store-only: never in a pack."
+    },
+    {
+      "name": "cainescrossfire",
+      "path": "JERICHO/MODS/cainescrossfire",
+      "repo": "https://github.com/Njurse/JERICHO-Mod-CainesCrossfire.git",
+      "ref": "b9e63553005559954f0e05adc45243ffd3fa6b93",
+      "branch": "main",
+      "required": false,
+      "release": false
+    },
+    {
+      "name": "civviecops",
+      "path": "JERICHO/MODS/civviecops",
+      "repo": "https://github.com/Njurse/JERICHO-Mod-CivvieCops.git",
+      "ref": "5cf5ac64789ffa1c0eaf9a32f1e3078e2b3712d0",
+      "branch": "main",
+      "required": false,
+      "release": false
+    },
+    {
+      "name": "democars",
+      "path": "JERICHO/MODS/democars",
+      "repo": "https://github.com/Njurse/JERICHO-Mod-DemoCars.git",
+      "ref": "8719701ff8ca76c4b2fdb2ae67232dac5fdef8dc",
+      "branch": "main",
+      "required": false,
+      "release": false
+    }
+  ]
+}

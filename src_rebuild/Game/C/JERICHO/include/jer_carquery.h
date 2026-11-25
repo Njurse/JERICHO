@@ -22,6 +22,9 @@
  * it.
  *
  * The ids sit in the core-contracts block of the custom-event registry (+40..+49).
+ *
+ * ROLES and ROLEPICK run the other way round: the CAR SELECT (carhacks' join menu)
+ * asks, and the SESSION (mp, from its game mode) answers.
  * ------------------------------------------------------------------ */
 
 #include "jericho.h"
@@ -30,8 +33,11 @@
 #define JER_CARQ_LOAD	(JER_EVENT_MODULE_CUSTOM + 41)	/* "make (city,model) available" */
 #define JER_CARQ_CHOSEN	(JER_EVENT_MODULE_CUSTOM + 42)	/* "this is what we drive now" */
 #define JER_CARQ_SLOTS	(JER_EVENT_MODULE_CUSTOM + 43)	/* "which slots may this city offer?" */
+#define JER_CARQ_UNLOAD	(JER_EVENT_MODULE_CUSTOM + 50)	/* "no car needs (city,model) any more" */
 #define JER_CARQ_STANDIN	(JER_EVENT_MODULE_CUSTOM + 44)	/* "give me a stand-in body slot" */
 #define JER_CARQ_CITYWIRE	(JER_EVENT_MODULE_CUSTOM + 47)	/* "spell this city for the wire / read it back" */
+#define JER_CARQ_ROLES		(JER_EVENT_MODULE_CUSTOM + 48)	/* "which cars does the session want picked?" */
+#define JER_CARQ_ROLEPICK	(JER_EVENT_MODULE_CUSTOM + 49)	/* "this is the car picked for role N" */
 
 /* Handlers fill the result field of the struct and return
  * JER_RESULT_CONTINUE; the caller reads it. */
@@ -91,6 +97,16 @@ typedef struct JER_CARQ_LOAD_ARGS
 	int  model;	/* in: model number */
 	int  ok;	/* out: 1 = held (or being loaded) here */
 } JER_CARQ_LOAD_ARGS;
+
+/* JER_CARQ_UNLOAD: a NOTICE that a caller which asked for (city, model) with JER_CARQ_LOAD
+ * is done with it (a spawner removed its cars). The handler runs its normal release
+ * decision: a car still on the slot defers it, a named car keeps it. Without this a slot,
+ * its hot-load block and its page handles stay held until the level ends. */
+typedef struct JER_CARQ_UNLOAD_ARGS
+{
+	int  city;	/* in */
+	int  model;	/* in */
+} JER_CARQ_UNLOAD_ARGS;
 
 /* JER_CARQ_CHOSEN -> nothing to fill in: a NOTICE, fired AFTER a switch attempt (a
  * Change car pick, or the local player getting into a car again after being on
@@ -155,5 +171,53 @@ typedef struct JER_CARQ_CITYWIRE_ARGS
 	int wire;	/* out (toWire) / in (!toWire) */
 	int handled;	/* out */
 } JER_CARQ_CITYWIRE_ARGS;
+
+/* JER_CARQ_ROLES - the car select asks the session how many cars to ask for.
+ *
+ * A game mode can give a player more than one car: one per ROLE, each from its
+ * own pool (Cops n Robbers: a patrol car from the police cars, then a getaway car
+ * from the rest). The car select then walks the roles in order, one pick each,
+ * with the roster filtered to the role's pool, and only the LAST pick launches
+ * (the usual JER_EVENT_MP_FRONTEND START). The session drives the right one per
+ * role and round itself.
+ *
+ * count = 0 means "one ordinary pick" -- every mode without roles, a session
+ * that does not answer, no session at all. The asker must then behave exactly as
+ * it did before this contract existed.
+ *
+ * `launch` names the role whose car the level loads with (0..count-1); the session
+ * swaps cars itself when the role changes. */
+#define JER_CARQ_ROLES_MAX	4
+#define JER_CARQ_ROLE_TITLE_MAX	24
+
+#define JER_CARQ_POOL_ANY	0	/* every car the roster offers */
+#define JER_CARQ_POOL_POLICE	1	/* police cars only (JerCarIsPolice, models.h) */
+#define JER_CARQ_POOL_CIVILIAN	2	/* everything that is not a police car */
+
+typedef struct JER_CARQ_ROLE
+{
+	char title[JER_CARQ_ROLE_TITLE_MAX];	/* the step's heading, e.g. "PATROL CAR" */
+	int  pool;				/* JER_CARQ_POOL_* */
+} JER_CARQ_ROLE;
+
+typedef struct JER_CARQ_ROLES_ARGS
+{
+	JER_CARQ_ROLE roles[JER_CARQ_ROLES_MAX];	/* out */
+	int count;	/* out: 0 = one ordinary pick (nobody answered / no roles) */
+	int launch;	/* out: the role whose car the level loads with */
+} JER_CARQ_ROLES_ARGS;
+
+/* JER_CARQ_ROLEPICK - a NOTICE from the car select: role `role` is (city, model).
+ * Fired once per role as each step is confirmed, before the launch. `ok` = 1 when
+ * the session kept it. A pick the session refuses (outside the role's pool) is
+ * not an error for the asker: the session falls back to its own choice. */
+typedef struct JER_CARQ_ROLEPICK_ARGS
+{
+	int role;	/* in: 0..count-1 */
+	int city;	/* in: the roster city (an index, as JER_CARQ_SLOTS) */
+	int model;	/* in: model number */
+	int palette;	/* in: the paint picked with it */
+	int ok;		/* out */
+} JER_CARQ_ROLEPICK_ARGS;
 
 #endif /* JER_CARQUERY_H */

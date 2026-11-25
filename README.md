@@ -39,7 +39,7 @@ More detail: [Prebuilt downloads](#prebuilt-downloads) and the [REDRIVER2 instal
 
 **Multiplayer:** everybody needs the **same version**. If a server won't let you join, update first (see above) and try again.
 
-**Mods:** turn them on or off under *Options → JERICHO*. The four built-in ones (mp, carhacks, crumple, bake) come with the Release download.
+**Mods:** turn them on or off under *Options → JERICHO*. The five built-in ones (mp, carhacks, crumple, bake, Pedestrian Hacks) come with the Release download.
 
 ## Stock means behavioral, not byte-for-byte
 
@@ -71,21 +71,27 @@ process.
 The `runtime = "dll"` key is the current marker; the words this README uses are
 **compiled-in** and **external**.
 
-`mp`, `carhacks` and `crumple` are git submodules whose sources live in their own
-repositories ([JERICHO-Mod-MP](https://github.com/Njurse/JERICHO-Mod-MP),
+Every mod lives in its own repository; core uses no submodules for them.
+[`JERICHO/MODS/mods.json`](JERICHO/MODS/mods.json) lists each one (repo, pinned
+commit, branch) and `tools/fetch_mods.py` clones the missing ones. `mp`,
+`carhacks` and `crumple` are required to build the game
+([JERICHO-Mod-MP](https://github.com/Njurse/JERICHO-Mod-MP),
 [JERICHO-Mod-carhacks](https://github.com/Njurse/JERICHO-Mod-carhacks),
 [Jericho-Mod-CRUMPLE](https://github.com/Njurse/Jericho-Mod-CRUMPLE)). A fresh
 clone needs them explicitly:
 
 ```sh
-git submodule update --init JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple
+git submodule update --init src_rebuild/PsyCross    # the engine's PSX layer
+python tools/fetch_mods.py                          # every mod, or --release
 ```
 
-`tools/update_mod_submodules.sh` advances those pins to the latest commits (review
-the printed diff, then commit the gitlinks). `d1cars` is fetched for release builds
-but its data is excluded from the mirror. `gaildrv2` is hibernated at
-[JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2) and is not
-a submodule of this tree.
+`--advance` moves clean checkouts to their branch tips and `--pin` records the
+new commits in `mods.json` (review, then commit). The build stops with the exact
+command to run if one of the four required mods (mp, carhacks, crumple, bake) is
+missing. `bake` (the Driver 1 car toolkit, formerly `d1cars`) is a release mod,
+but its Driver 1 data is excluded from the mirror. `gaildrv2` is hibernated at
+[JERICHO-Mod-GAIL-DRV2](https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2) and is
+not listed.
 
 JERICHO is compiled into the game, so it can see the game's data. An external
 module cannot open `player[]` or `car_data[]` itself, because Windows will not
@@ -113,7 +119,7 @@ These are the numbers and behaviours the headers define.
 
 | Limit | Behaviour |
 |---|---|
-| Event handlers | **256** across every module; registering past that returns without a log |
+| Event handlers | **256** across every module; registering past that drops the hook and logs it once (module and event) in `JERICHO.log` |
 | Override slots | **8**; only `JER_OVERRIDE_SLOT_SIM` (the world step) is named today |
 | Module table | fixed (`JER_MAX_MODULES`, 32 slots) |
 | External loading | Windows and Linux |
@@ -429,12 +435,12 @@ README in the d2pl repo (optional out-of-tree mod)
 A high-energy arcade handling overhaul that derives every value from existing chassis
 stats. [README](JERICHO/MODS/collisiondevil/README.md)
 
-### JerAI (`JerAI`) — an A\* AI driver for the player's car *(compiled-in)*
+### Alleycat (`Alleycat`) — an A\* AI driver for the player's car *(compiled-in)*
 
 A general-purpose AI driver for the player's car: A\* pathfinding over an
-engine occupancy grid, road-graph extraction, joyride/random-wander behaviors,
-debug visualization and a control menu.
-[README](JERICHO/MODS/JerAI/README.md)
+engine occupancy grid, road-graph extraction, joyride, pursuit (follow or ram
+another player) and cop-evade behaviors, debug visualization and a control menu.
+[README](JERICHO/MODS/Alleycat/README.md)
 
 ### Ant Farm (`antfarm`) — a screensaver / idle mode *(compiled-in)*
 

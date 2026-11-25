@@ -1,9 +1,0 @@
-# cainescrossfire arena -- see ARENAS.md
-arena: vegasstrip
-name: vegasstrip
-city: 2
-mp: 0 0
-region: -34512 469392 295994 794790
-# spawn: x z heading [y]  (first = player, rest = opponents; y = height)
-spawn: 120271 649487 0 8092
-# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]

@@ -49,7 +49,7 @@ of the space is unclaimed for exactly that):
 | +40 .. +49 | **core contracts** | `+40..+46` — the live car query, the per-car crush multiplier |
 | +50 .. +59 | `mp` | — |
 | +60 .. +69 | `bake` | — |
-| +70 .. +79 | `JerAI` | — |
+| +70 .. +79 | `Alleycat` | — |
 | +80 .. +89 | `antfarm` | — |
 | +90 .. +99 | unclaimed — ask before using | — |
 
@@ -99,6 +99,7 @@ another mod's header and no mod links to another mod's symbols.
 | header | asked by | answered by |
 |---|---|---|
 | `jer_carquery.h` | `mp`, `sandbox` | `carhacks` |
+| `jer_carquery.h` roles (`JER_CARQ_ROLES`, `JER_CARQ_ROLEPICK`) | `carhacks` (the join car select) | `mp` (the game mode) |
 | `jer_crumple.h` | `mp` | `crumple` |
 | `jer_ped_archive.h` | `mp` | `pedhacks` |
 

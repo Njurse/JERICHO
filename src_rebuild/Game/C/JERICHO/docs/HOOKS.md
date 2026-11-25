@@ -101,6 +101,9 @@ jer_pause_menu_register(&myMenu);
   `jer_pause_menu_add_items(target, items, count)` — resolved when the menu is
   built, so order does not matter, and the owner's own rows are never
   displaced (carhacks contributes its car actions to mp's car page this way).
+- **Opening your page from a key.** A compiled-in module can call
+  `jer_pause_menu_open(target)` (id or title) to open the pause straight on its
+  page. Triangle or Start on that page closes the pause. Alleycat binds it to L2.
 - `crumple`, `d2pl` and `sandbox` are the worked examples — their old
   hardcoded shells were removed from `pause.c`.
 
@@ -145,7 +148,8 @@ jer_hud_message("You killed VASQUEZ", 0);        /* 0 frames = the 3 s default *
   subject exists and clear it when it does not:
   `jer_hud_panel(slot, anchor, text, r, g, b)` with `anchor` one of
   `JER_HUD_ANCHOR_TOP_LEFT` / `_TOP_CENTRE` / `_TOP_RIGHT`. Panels sharing an
-  anchor stack downward in slot order (`JER_HUD_PANEL_MAX` = 4), and
+  anchor stack downward in slot order (`JER_HUD_PANEL_MAX` = 10; the slots are
+  global, so take a free one from the owner table in `jer_hud.h`), and
   `jer_hud_panel_bar(slot, anchor, value, max, r, g, b)` puts a small filled
   **meter** in the same slot — a health bar under a lock-on name.
 - All of it is drawn from the engine's overlay pass (`jer_hud_draw`, next to the
@@ -176,6 +180,47 @@ difference is who is speaking.
   of the **font you are drawing in**: the frontend font is about three times the
   height of the in-game one, so the engine steps frontend rows by 36 px and
   in-game rows by 12 px.
+
+### Pointing at something — `jer_arrow`
+
+```c
+#include "jer_arrow.h"
+
+jer_arrow_on_car(0, &car_data[slot]);   /* the stock bouncing arrow follows that car */
+jer_arrow_at(1, x, y, z);               /* ...or sits above a fixed world point      */
+jer_arrow_clear(0);                     /* gone; jer_arrow_clear_all() drops every slot */
+```
+
+- This is the game's own mission arrow (`Draw3DTarget(pos, 0x1)` in `targets.c`),
+  not the 2D map arrow. The **engine draws it** every view, in the world pass
+  right after the cars (`main.c`, just before `JER_EVENT_DRAW_WORLD`), until the
+  slot is cleared — set it once, like a HUD panel. `JER_ARROW_MAX` (8) slots.
+- Coordinates are the raw game frame (`CAR_DATA hd.where.t[]`, y negative up).
+  **y is used**: the arrow is drawn just above the point you give, so pass its
+  real height.
+- A car slot follows the car each frame and clears itself when the pointer is
+  NULL, outside `car_data[]`, or the car has left the world. Deciding *which*
+  car (and not marking the viewer's own) is the module's call.
+- The engine drops every slot on the way out of a level and on the frontend
+  entry. Never call these from a frontend hook.
+
+### Calm or pursuit music — `jer_music_force`
+
+```c
+#include "jer_music.h"
+
+jer_music_force(JER_MUSIC_PURSUIT);   /* or JER_MUSIC_CALM; JER_MUSIC_AUTO releases */
+```
+
+- Every level song has a calm part and a cop/pursuit part, switched by
+  `FunkUpDaBGMTunez` (`gamesnd.c`) from cop AI and some mission starts. While a
+  force is set those calls are **remembered but not applied**, so a chase cannot
+  flip the track back underneath a mode; `JER_MUSIC_AUTO` restores the part the
+  engine last asked for. `jer_music_forced()` reads the current force.
+- With no force set nothing changes — stock felony pursuit music is untouched.
+- The engine releases the force itself on level exit (`State_GameComplete`) and
+  on the frontend entry, so a mode can never leave pursuit stuck in the menus.
+  Re-apply it after a level restart if you still want it.
 
 ## What a module can do
 
@@ -242,6 +287,16 @@ difference is who is speaking.
   `jer_sound_ensure(&channel)` is the one-call form for a cached `-1` channel
   (acquire, re-lock after a level change, or give up gracefully). A refused lock
   still yields a voice to play on — never treat it as "no sound".
+- **Load a sound lump for a later level** — `jer_sound_request_lump(bank, lump,
+  maxSamples)` in `jer_sound.h`. Mission-only banks (`SOUND_BANK_MISSION`, a
+  `SBK_ID_MISSION_*` lump) are not loaded in Take a Ride or multiplayer; a module
+  that needs one of those samples asks once at init. Every following level load
+  appends the lump to `bank` before the car-import memtop is saved, so a later
+  car import cannot rewind over it. `maxSamples` is as `LoadBankFromLumpMax`
+  (`-1` = the whole lump). The slot returned by the request is how you read the
+  sample indices after the load: `jer_sound_lump_base(slot)` and
+  `jer_sound_lump_count(slot)`. The menu-bank helper (`jer_sound_request_menu_bank`)
+  is the same path, specialised to the four FE samples.
 - **Give the voice back when the player leaves the game** — a voice locked with
   `jer_sound_lock` survives a level change (`ResetSound` clears the locks at the next
   level's start) but NOT the return to the menus, so a module that caches a channel
@@ -259,6 +314,26 @@ difference is who is speaking.
   a little at 4:3, a lot on a wide aspect. `jer_screen_remap_x` is the engine's own
   conversion (the one `sky.c` applies to the GTE-projected sun): pass the projected
   x, get the x to draw at. Y is not affected — the aspect matrix is PAL-only, not AR.
+- **Anchor 2D HUD to the screen's sides** — `jer_screen_edges(&left, &right)`: the
+  framebuffer x of the visible edges, `0`/`320` at 4:3 and wider under widescreen
+  (about `-53`/`373` at 16:9). It is the band `DisplayOverlays` aligns the damage bar
+  and the map to, so a column drawn at `right - 6` sits at the real screen edge
+  instead of inside the 4:3 middle.
+- **HUD timers: one convention** — `pres.h`, `PrintTimer(x, y, ms, scale, align)`.
+  Every JERICHO clock is the mission timer's own look: `MM:SS` in the digit texture
+  plus `.FF` in the small font (`mdraw.c` `DrawTimer`), drawn at `scale`/16 of its
+  size and placed by its left edge, right edge or centre (`PRINT_TIMER_*`). The
+  rules the game modes follow (mp `MpHudTimer*`):
+  - **your own clock** is full size (16) at the top centre, under a one-line title
+    (who is what) at y 4; **other players' clocks** are smaller (10) in a column at
+    the right screen edge (`jer_screen_edges`), each with its name to its left;
+  - **colour says state, and it FADES** (about 0.4 s), never snaps: white
+    (128,128,128, the texture's own) is neutral; grey (72,72,72) is a clock that is
+    not running for you (a frozen hound); cyan is the clock that is running (the
+    fox); red is danger that is yours (holding the bomb). Passing the danger on
+    fades back to white;
+  - extra state (a damage meter) is one small-font line under the clock, never a
+    second clock.
 - **Move somewhere the world has not streamed to** — `jer_map.h`. The engine
   streams the map as a 2×2 window of REGIONS and only pre-loads neighbours, so a
   region you HOP into (a teleport, or a spawn far from the level start) is never
@@ -335,10 +410,11 @@ JERICHO-PROBE: steps=239 ms=7986 steps_per_sec=29 max_speed=168 ff=0 lock=0 skip
 - `steps_per_sec` is the clock check, measured against **real milliseconds**
   (`PsyX_GetTicks`), never the vblank counter — the frame skip inflates that counter,
   which would make the fast case read *slow*.
-- 30 = stock. ~210 = `FastForward` (7 steps/frame). Anything else above 30 with
-  `ff=0` is the PsyX frame skip below (`skip=1`), which is what a latched BACKSPACE
-  produced: **355 steps/second, ~12x**, with the car's per-sim-second speed curve
-  unchanged (0, 67, 98, 130 ...) — i.e. the handling was never the problem.
+- 30 = stock. ~210 = `FastForward` (7 steps/frame), including a held or latched
+  BACKSPACE: the engine re-asserts `ff=1` from the PsyX hold (`skip=1`) every gated
+  frame. The skip alone no longer raises the rate — the wall-clock gate caps it —
+  so the old **355 steps/second, ~12x** was pre-gate. The car's per-sim-second speed
+  curve is unchanged (0, 67, 98, 130 ...) — i.e. the handling was never the problem.
 - Drive it headlessly: `JERICHO_HANDLING_PROBE=1 JERICHO_PADPROBE_FORCE=cross
   JERICHO_dev.exe -level chicago -frames 240` (gas is `cross`; use `square` under the
   tmb_buttons scheme). The verdict line only prints on the `-frames` exit path.
@@ -379,8 +455,11 @@ same throttle, `speed` must not differ between `mbc=0/30` and `mbc>0` seconds.
 The engine offers fast-forward two ways, and both are the sim's business, so a
 module that owns the sim rate (an mp session) must be able to turn the offer OFF:
 
-- `BACKSPACE` — a debug/cutscene convenience (`redriver2_psxpc.cpp`): one press runs
-  the sim fast from then on.
+- `BACKSPACE` — a debug/cutscene convenience: **hold it** to run the sim fast and
+  release it for normal speed. PsyX owns the hold (`PsyX_GetFastForwardHeld`, the
+  same latch as the frame skip: key-down sets it; key-up, a lost focus and the mp
+  lock clear it), because the per-frame clear below would otherwise cut a hold off
+  after the single frame its key-down landed in.
 - the fullscreen map — `overlay.c` sets `FastForward` on **every frame** the map is
   open, so the world keeps moving behind it.
 
@@ -399,17 +478,17 @@ different rate from every other machine, which is a desync by definition.
 
 `FastForwardLocked` gated the engine's own `BACKSPACE` handler but not PsyX's, and
 PsyX has its own: on BACKSPACE key-down it sets `g_skipSwapInterval`, which makes
-`PsyX_Sys_GetVBlankCount()` advance the counter an extra time per call, so the game's
-2-vblank/30 Hz gate in `FilterFrameTime` passes on nearly every frame and the sim
-runs at whatever rate the machine renders. Turning off "the fast-forward key" in a
+`PsyX_Sys_GetVBlankCount()` advance the counter an extra time per call. Back when the
+step gate followed that counter, this satisfied the gate on nearly every frame and
+the sim ran at whatever rate the machine renders. Turning off "the fast-forward key" in a
 session therefore turned off one of two, and the surviving one was worse: it is
 latched on key-DOWN and cleared **only** by key-UP, so a key-up that never arrives
 (focus stolen mid-press, a handler that swallows it) leaves the skip on for the rest
 of the process.
 
-That is a ~12x sim, measured at **355 steps/second against a stock 29-30**, and it
-reads as "the player's car drives way too fast / the handling model is broken". Three
-things close it:
+That was a ~12x sim, measured at **355 steps/second against a stock 29-30** before
+the step gate moved to wall-clock time, and it reads as "the player's car drives way
+too fast / the handling model is broken". Three things close it:
 
 - `PsyX_SetFastForwardLocked(int)` (`PsyX_public.h`) mirrors the engine's
   `FastForwardLocked`; the engine pushes it once per frame from `State_GameLoop`.
@@ -422,10 +501,20 @@ things close it:
   them, so those frames inherited whatever a map or a BACKSPACE tap had set and the
   sim stayed at 7 steps/frame afterwards.
 
+The per-frame clear is also why a key-down alone is not enough. BACKSPACE is a
+**hold**, so `State_GameLoop` re-asserts `FastForward` from
+`PsyX_GetFastForwardHeld()` on every gated frame while the key is down (and the clock
+is unlocked). Release, focus loss and the lock all clear the PsyX latch, so the
+re-assert stops and the next clear returns the sim to 30 Hz. Today a held or latched
+key measures ~210 steps/second (the deliberate 7x path); the 355 above was the old
+render-coupled skip.
+
 `JERICHO_FF_LATCH=1` reproduces the latched state at boot for testing (it is the
-skipped key-up, without the keyboard); it is test-only. A live 2-seat session with it
-set is the end-to-end check: both seats log the release on the first frame, and
-every probe sample afterwards reads `lock=1 skip=0`.
+skipped key-up, without the keyboard); it is test-only. It is the same latch the key
+drives, so the engine re-asserts it too: a single-player run reads `ff=1 skip=1` at
+~210 steps/s. A live 2-seat session with it set is the end-to-end check: both seats
+log the release on the first frame, and every probe sample afterwards reads
+`lock=1 skip=0 ff=0`.
 
 ### The step gate itself is wall-clock, and every step path goes through it
 

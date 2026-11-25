@@ -30,6 +30,7 @@ extern int PrintStringRightAligned(char *pString, int x, int y); // 0x00074B8C
 extern void PrintStringCentred(char *pString, short y); // 0x00074BD8
 extern int PrintString(char *string, int x, int y); // 0x00073EA0
 extern short PrintDigit(int x, int y, char *string); // 0x00074140
+extern int PrintDigitScaled(int x, int y, char *string, int scale);	// JERICHO: PrintDigit at scale/16 (HUD clocks)
 extern int PrintStringFeature(char *string, int x, int y, int w, int h, int transparent); // 0x00074D34
 extern int PrintStringHiresScaled(char* string, int x, int y, float scale);	// sandbox menu
 extern int PrintStringHiresScaledSpaced(char* string, int x, int y, float scale, float extra);	// jer_console tracking
@@ -38,6 +39,11 @@ extern void PrintStringBoxed(char *string, int ix, int iy); // 0x00074364
 extern void SetCLUT16Flags(ushort clutID, ushort mask, char transparent);
 
 extern int PrintScaledString(int y, char *string, int scale); // 0x000745DC
+extern int Print321Go(int y, int count, int scale);	// JERICHO: the race-start 3-2-1 / GO! for any caller (mp rounds)
+#define PRINT_TIMER_LEFT	0	// PrintTimer: x is the left edge
+#define PRINT_TIMER_RIGHT	1	// ...x is the right edge (the ".FF" included)
+#define PRINT_TIMER_CENTRE	2	// ...the "MM:SS" digits centred on x (".FF" hangs right)
+extern int PrintTimer(int x, int y, int ms, int scale, int align);	// JERICHO: the HUD timer convention (docs/screens.md)
 extern char* GetNextWord(char *string, char *word); // 0x00074D54
 
 extern void* DrawButton(u_char button, void *prim, int x, int y); // 0x00074858

@@ -481,8 +481,8 @@ void PlaceShadowForCar(VECTOR *shadowPoints, int subdiv, int zOfs, int flag)
 	gte_SetRotMatrix(&inv_camera_matrix);
 
 	plotContext.primptr = current->primptr;
-	plotContext.ptexture_pages = (ushort(*)[128])texture_pages;
-	plotContext.ptexture_cluts = (ushort(*)[128][32])texture_cluts;
+	plotContext.ptexture_pages = (ushort(*)[JER_TPAGE_SLOTS])texture_pages;
+	plotContext.ptexture_cluts = (ushort(*)[JER_TPAGE_SLOTS][32])texture_cluts;
 	plotContext.ot = current->ot + 10 + zOfs;
 	plotContext.flags = flag;
 	plotContext.colour = 80 | (80 << 8) | (80 << 16) | 0x2e000000;

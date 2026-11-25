@@ -1,0 +1,9 @@
+id = "citycycle"
+name = "City Cycle"
+version = "0.1.0"
+# the JERICHO interface (SDK) this mod is built against
+interface = 3
+author = "JERICHO"
+description = "Stress test for cross-city cars: keeps four cars on the road and every few seconds swaps them for random cars from 1, 2, 3 and then 4 different cities, logging whether each one loaded and is drawable."
+dependencies = ["carhacks"]
+default-enabled = false

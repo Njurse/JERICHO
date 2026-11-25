@@ -10,6 +10,7 @@
 #include "camera.h"
 #include "director.h"
 #include "main.h"
+#include "glaunch.h"	// JERICHO: ActiveCheats (the mini-car cheat scales custom police lights)
 
 char* CosmeticFiles[CITY_COUNT] = {
 	"LEVELS\\CHICAGO.LCF",
@@ -454,6 +455,109 @@ void AddBrakeLight(CAR_DATA *cp)
 	} while (loop < 2);
 }
 
+typedef struct
+{
+	char side;			// passes: both sides of the car (2) or one (1)
+	char num_lights;	// lights per pass (the loop draws num_lights + 1)
+	char count_speed;	// flash speed
+	char animate_pos;	// 1 = the x-pattern slides while lit
+	char xoffset;		// 1 = spread the lights along the bar
+	char two_tone;		// 1 = red one pass / blue the next
+	char blue_only;		// when not two_tone: 1 = blue, 0 = red
+} COPLIGHT_STYLE;
+
+// JERICHO: the light bar is the CAR'S, not the level's. Stock keyed the layout and
+// colours on GameLevel, so a cop car imported from another city (carhacks / bake
+// cross-city loads) flashed in the host city's pattern. Styles 0..2 are Driver 2's
+// own; every Driver 1 / custom city (source >= CITY_D2_COUNT) gets style 3, the
+// common 2-light red/blue bar, instead of inheriting the host level's.
+static int CopLightStyleForCity(int city)
+{
+	if (city < 0)				// the level's own car: keep the stock look
+		city = GameLevel;
+
+	switch (city)
+	{
+	case 1:						// HAVANA
+	case 3:						// RIO
+		return 1;
+	case 2:						// VEGAS
+		return 2;
+	case 0:						// CHICAGO
+		return 0;
+	default:					// Driver 1 / custom city
+		return 3;
+	}
+}
+
+static const COPLIGHT_STYLE copLightStyles[] =
+{
+	{ 2, 2, 16, 0, 1, 0, 0 },	// 0 CHICAGO: 2 lights, both sides, all red
+	{ 1, 2, 48, 0, 0, 0, 1 },	// 1 HAVANA / RIO: one side, all blue, slow
+	{ 2, 3, 16, 1, 1, 1, 0 },	// 2 VEGAS: 3 lights, sliding, red/blue
+	{ 2, 2, 16, 0, 1, 1, 0 },	// 3 Driver 1 / custom: 2 lights, red/blue
+};
+
+
+// JERICHO: a bank car's own light layout (handling.policeLights, LUMP_CAR_LIGHTS).
+// One lamp per entry, exactly where the bank put it: no city pattern, no implied
+// mirror, so a single beacon, a lopsided bar or a bus with a light at each corner
+// are all just a list. The flash is the stock one, size = coplife >> 1 on a signed
+// char, so a lamp is lit for half of its cycle and ramps up; `phase` shifts a lamp
+// along that cycle (128 = exactly opposite), which is what makes a pair alternate.
+// coplife advances once per call by the car's `speed`, not once per lamp as the
+// stock bar does, so adding a light never changes how fast the others flash.
+static void AddCustomCopLights(CAR_DATA *cp, const JER_COP_LIGHTS *cl)
+{
+	CAR_COSMETICS *car_cos = cp->ap.carCos;
+	char *coplife = &cp->ap.coplife;
+	int shift = ActiveCheats.cheat13 ? 1 : 0;	// super mini cars halve every anchor
+	int i, pass, passes;
+	SVECTOR v1;
+	CVECTOR col;
+
+	for (i = 0; i < cl->count; i++)
+	{
+		const JER_COP_LIGHT *l = &cl->light[i];
+		int size = ((char)(*coplife + l->phase)) >> 1;
+		int peak;
+
+		if (l->size)
+			size = size * l->size / 100;
+
+		col.r = l->r;
+		col.g = l->g;
+		col.b = l->b;
+
+		// at night the stock bar drops the off-colour channels (90 -> 50); do the
+		// same for whatever colour this lamp is, so red and blue match the stock
+		// look and an amber lamp stays amber
+		if (gNight != 0)
+		{
+			peak = col.r > col.g ? col.r : col.g;
+			peak = peak > col.b ? peak : col.b;
+
+			if (col.r < peak) col.r = col.r * 5 / 9;
+			if (col.g < peak) col.g = col.g * 5 / 9;
+			if (col.b < peak) col.b = col.b * 5 / 9;
+		}
+
+		passes = (l->flags & JER_COPLIGHT_MIRROR) ? 2 : 1;
+
+		for (pass = 0; pass < passes; pass++)
+		{
+			v1.vx = car_cos->cog.vx + ((pass ? -l->x : l->x) >> shift);
+			v1.vy = car_cos->cog.vy + (l->y >> shift);
+			v1.vz = car_cos->cog.vz + (l->z >> shift);
+
+			ShowCarlight(&v1, cp, &col, size, size * 3, &light_texture, 0xff);
+		}
+	}
+
+	if (pauseflag == 0)
+		*coplife += cl->speed ? cl->speed : 16;
+}
+
 // [D] [T]
 void AddCopCarLight(CAR_DATA *cp)
 {
@@ -465,7 +569,6 @@ void AddCopCarLight(CAR_DATA *cp)
 	int light;
 	int size;
 	short sign;
-	char count_speed;
 	int num_lights;
 	CAR_COSMETICS *car_cos;
 	char *coplife;
@@ -473,9 +576,9 @@ void AddCopCarLight(CAR_DATA *cp)
 	int side;
 	SVECTOR v1;
 	CVECTOR col;
-	int lightCity;
-	int srcCity, srcModel;
-	int forceRed, d1Bar;
+	int srcCity;
+	const COPLIGHT_STYLE *style;
+	const JER_COP_LIGHTS *bankLights;
 
 	coplife = &cp->ap.coplife;
 
@@ -496,41 +599,30 @@ void AddCopCarLight(CAR_DATA *cp)
 	// cross-city loads) flashed in the host city's pattern. Its source city decides now;
 	// a level's own cars report -1 and keep the stock look.
 	srcCity = GetCarModelSourceCity(cp->ap.model);
-	srcModel = (cp->ap.model >= 0 && cp->ap.model < MAX_CAR_RESIDENT_MODELS) ?
-		residentCarModels[cp->ap.model] : -1;
 
-	/* D1 lightbars sit a touch low on the transplanted bodies. */
-	d1Bar = (srcCity >= CITY_D2_COUNT);
+	// JERICHO: a bank can say how its car's lights look (handling.policeLights): its
+	// own list of lamps, or a named Driver 2 city's bar in place of the source-city
+	// default. NULL for every car that does not, which is all of the stock ones.
+	bankLights = JerCarSlotCopLights(cp->ap.model);
 
-	/* IVIEW slot 1 and the BETAMIAMI cop (model 8) are solid red for testing. */
-	forceRed = ((srcCity == 9 && srcModel == 1) || (srcCity == 11 && srcModel == 8));
-
-	lightCity = srcCity;
-	if (lightCity < 0 || lightCity > 3)
-		lightCity = GameLevel;
-
-	// configure
-	if (lightCity == 1 || lightCity == 3)
+	if (bankLights != NULL)
 	{
-		side = 1;
-		num_lights = 2;
-		pos = 3;
-		count_speed = 48;
+		if (bankLights->mode == JER_COPLIGHTS_CUSTOM)
+		{
+			AddCustomCopLights(cp, bankLights);
+			return;
+		}
+
+		// style: a city 0..3, or HOST = whichever city the level is (-1 here)
+		srcCity = (bankLights->style == JER_COPLIGHT_HOST) ? -1 : bankLights->style;
 	}
-	else if (lightCity == 0)
-	{
-		side = 2;
-		num_lights = 2;
-		pos = 3;
-		count_speed = 16;
-	}
-	else 
-	{
-		side = 2;
-		num_lights = 3;
-		count_speed = 16;
-		pos = main_cop_light_pos + CAR_INDEX(cp) & 7;
-	}
+
+	style = &copLightStyles[CopLightStyleForCity(srcCity)];
+
+	// configure (from the car's own source-city style, never the host level's)
+	side = style->side;
+	num_lights = style->num_lights;
+	pos = style->animate_pos ? (main_cop_light_pos + CAR_INDEX(cp)) & 7 : 3;
 
 	sign = 1;
 
@@ -546,35 +638,25 @@ void AddCopCarLight(CAR_DATA *cp)
 		{
 			v1.vx = car_cos->cog.vx;
 
-			if (lightCity != 1 && lightCity != 3) 
+			if (style->xoffset)
 				v1.vx += (xpos1[pos] + car_cos->policeLight.vx) * sign;
 
 			col.g = 90;
 			v1.vy = car_cos->policeLight.vy + car_cos->cog.vy;
 
-			/* D1 lightbars sit a touch low on the transplanted bodies; nudge
-			 * them up slightly (tunable). */
-			if (d1Bar)
-				v1.vy -= 4;
-
 			if (gNight != 0)
 				col.g = 50;
 
-			if (pauseflag == 0 && (CameraCnt & 1U) != 0 && lightCity == 2) 
+			if (pauseflag == 0 && (CameraCnt & 1U) != 0 && style->animate_pos)
 				pos++;
 
 			v1.vz = car_cos->policeLight.vz + car_cos->cog.vz;
 
 			size = *coplife >> 1;
 
-			/* IVIEW slot 1 and BETAMIAMI model 8: both halves solid red. */
-			if (forceRed)
-			{
-				col.r = 255;
-				col.b = col.g;
-			}
-			// switch colours if needed
-			else if (lightCity == 1 || lightCity == 3 || (lightCity == 2 && side == 0))
+			// switch colours if needed: a two-tone bar turns blue on the second
+			// pass, a single-colour bar (HAVANA/RIO) is always blue, the rest red
+			if ((style->two_tone && side == 0) || (!style->two_tone && style->blue_only))
 			{
 				col.b = 255;
 				col.r = col.g;
@@ -586,11 +668,11 @@ void AddCopCarLight(CAR_DATA *cp)
 			}
 
 			if (pauseflag == 0) 
-				cp->ap.coplife += count_speed;
+				cp->ap.coplife += style->count_speed;
 
 			ShowCarlight(&v1, cp, &col, size, size*3, &light_texture, 0xff);
 
-			if (pauseflag == 0 && (CameraCnt & 1U) != 0 && lightCity == 2) 
+			if (pauseflag == 0 && (CameraCnt & 1U) != 0 && style->animate_pos)
 				pos++;
 
 			pos = pos & 7;

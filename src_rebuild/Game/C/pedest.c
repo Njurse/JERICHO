@@ -759,6 +759,7 @@ void InitTanner(void)
 	jer_ped_palette_init();
 
 	SetSkelModelPointers(TANNER_MODEL);
+	vStored = 0;	/* fresh level models: the only time the Tanner rest snapshot is valid */
 	StoreVertexLists(0);
 
 	numTannerPeds = 0;

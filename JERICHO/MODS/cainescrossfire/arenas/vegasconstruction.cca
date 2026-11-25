@@ -1,9 +1,0 @@
-# cainescrossfire arena -- see ARENAS.md
-arena: vegasconstruction
-name: Construction Site
-city: 2
-mp: 0 0
-region: 184436 -122651 230052 -92055
-# spawn: x z heading [y]  (first = player, rest = opponents; y = height)
-spawn: 211979 -105721 0 35
-# pickup: weapon <name> x z [ammo]   |   pickup: health x z [amount]

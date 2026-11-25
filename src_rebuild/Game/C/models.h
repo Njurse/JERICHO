@@ -40,17 +40,26 @@ void InitCarImport(void);
 // mid-level: see its sibling's comment in models.c.
 void InitCarImportMidLevel(void);
 char* GetCarImportModels(int slot);
+// JERICHO: body colour count of a held city's model, from its own model and palette
+// lump (no census needed); -1 when the city is not held. cars.c CarModelPaletteCount.
+int CarImportModelPaletteCount(int city, int model);
 
-// The wheel models an imported city carries in its own LUMP_CAR_WHEELS segment
-// (the D1 bake writes it). `kind` is one of CAR_IMPORT_WHEEL_*; NULL means that
-// variant is absent or unusable, and the caller keeps the host level's wheel
-// texture. The models are copied out of the import buffer, already FT4 +
-// set-remapped + mangled, and are used as the texture/UV source over the host
-// wheel mesh.
+// The wheel models an imported city carries in its own wheel segment (the bake
+// writes it). `kind` is one of CAR_IMPORT_WHEEL_*; NULL means that variant is
+// absent or unusable, and the caller keeps the host level's wheel texture. The
+// models are copied out of the import buffer, already FT4 + set-remapped +
+// mangled, and are used as the texture/UV source over the host wheel mesh.
+//
+// TWO segment layouts feed this: LUMP_CAR_WHEELS (200) holds ONE set for the
+// whole import, which every imported car wears; LUMP_CAR_WHEELS2 (204) names the
+// MODEL each set belongs to, so a bank can carry a wheel set per car. The
+// GetCarImportWheelFor / ...TexFor / ...SetsFor accessors ask per model and fall
+// back to the default set, so a caller reads the same either way.
 #define CAR_IMPORT_WHEEL_CLEAN		0
 #define CAR_IMPORT_WHEEL_DAMAGED	1
 #define CAR_IMPORT_WHEEL_FAST		2
 #define CAR_IMPORT_WHEEL_VARIANTS	3
+#define CAR_IMPORT_MODEL_SLOTS		13	// LUMP_CAR_MODELS is a fixed 13-entry table
 MODEL* GetCarImportWheel(int city, int kind);
 
 // A D2 city's wheel art is a pair of TEXINF details on a permanent page
@@ -70,14 +79,27 @@ typedef struct JER_WHEEL_TEX
 } JER_WHEEL_TEX;
 
 int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out);
+
+// JERICHO: the same three questions, asked about ONE model of the import. A bank
+// may carry a wheel set per car (LUMP_CAR_WHEELS2); `model` is the source bank's
+// model slot, which is what the import record puts in a resident slot. A model
+// the segment does not name - and every model of a v1 bank - answers from the
+// bank default above, so a caller needs no special case for the old layout.
+MODEL* GetCarImportWheelFor(int city, int model, int kind);
+int GetCarImportWheelTexFor(int city, int model, int kind, JER_WHEEL_TEX* out);
+int GetCarImportWheelSetsFor(int city, int model, int kind, unsigned char* out,
+                             int max);
 void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts);
 int CarImportIsWheelSet(int city, int sourceSet);
 void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub);
-int CarImportReserveWheelPalette(int city, int hub, const unsigned char* colors);
+int CarImportReserveWheelPalette(int city, int sourceSet, int hub, const unsigned char* colors);
 int CarImportWheelPaletteRow(int city, int cluts);
 int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub);
-void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow);
-void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow);
+void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow);
+// JERICHO: a baked bank's wheel records each take the palette of their own page row
+// (several wheel designs can share one page). Runs after the set-level pass; D2 no-op.
+void CarImportReserveRecordWheelPalettes(int city, int sourceSet, const unsigned char* page, int size);
+void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow);
 
 // The wheel's source-city texture sets, before CarSetRemap. LoadImportedTPages
 // maps these to the page it pins; the MODEL carries the remapped draw index.
@@ -99,6 +121,7 @@ int JerHotLoadCarModel(int slot);
 // case the caller has nothing to release on this side. Anything still driving that slot must be
 // rebuilt afterwards; mp does that through its own swap path.
 int JerReleaseCarGeometry(int slot);
+extern int gJerHotRefusedNoPages[];	// JERICHO: slot's last hot load refused for texture pool room
 
 // JERICHO cross-city unload, all of it: hand back the imported cities' buffers and the hot-load
 // pool. Called when no map is loaded (the frontend, after leaving a session) - a level load does
@@ -168,6 +191,71 @@ char* GetCarImportPalletForCity(int city, int* size);
 // returns 0 when the city has no usable sound segment (the caller falls back).
 int GetCarImportSoundBank(int city, int model, char** bank, int* size);
 int GetCarImportSiren(int city, int model);
+
+// JERICHO: police radio lines. GetCarImportPoliceVoices: `city`'s baked
+// LUMP_POLICE_VOICES (203) body, a 17-sample dynamic bank (6 heading clips, then 11
+// chatter lines), or 0 when the city is not held or has none. JerPoliceVoiceCity:
+// the city whose lines a cop from `sourceCity` uses - a D2 city is itself; any other
+// city is its own lump 203, else Driver 1 Miami's (CITY_D2_COUNT), else -1 (keep the
+// host city's lines). Neither loads anything.
+int GetCarImportPoliceVoices(int city, char** bank, int* size);
+int JerPoliceVoiceCity(int sourceCity);
+
+// JERICHO: police cars. JerCityPoliceModels: bit N = `city`'s model N is a police
+// car (Driver 2: model 0; any other city: the bake's LUMP_CAR_SIRENS flags, which a
+// bank sets with `sounds.cop`). Loads the city's car data when it is not held, as
+// JerCityCarModels does. JerCarIsPolice is one bit of it; JerCarSlotIsPolice asks
+// for the car in a resident slot (cp->ap.model), from that slot's source city.
+unsigned JerCityPoliceModels(int city);
+int JerCarIsPolice(int city, int model);
+int JerCarSlotIsPolice(int slot);
+
+// JERICHO: the bank's drive-wheel override for the car in resident slot `slot`
+// (LUMP_CAR_DRIVE, 205): 0 = stock rule, else bit0 front / bit1 rear axle driven.
+int JerCarSlotDrive(int slot);
+
+// JERICHO: the bank's police light layout for the car in resident slot `slot`
+// (LUMP_CAR_LIGHTS, 206; bank handling.policeLights). NULL = the bank says
+// nothing and AddCopCarLight keeps its source-city style, so every existing car
+// is untouched. Otherwise `mode` is one of:
+//   JER_COPLIGHTS_STYLE  - wear a stock Driver 2 pattern: `style` is the city
+//                          0..3 (CHICAGO HAVANA VEGAS RIO) or JER_COPLIGHT_HOST
+//                          for "whichever city the level is".
+//   JER_COPLIGHTS_CUSTOM - draw exactly `light[0..count-1]`, one lamp each.
+// Light positions are relative to the car's COG, in the same engine units as
+// CAR_COSMETICS.policeLight.
+#define JER_COP_LIGHTS_MAX		8
+#define JER_COPLIGHTS_STYLE		1
+#define JER_COPLIGHTS_CUSTOM	2
+#define JER_COPLIGHT_HOST		255
+#define JER_COPLIGHT_MIRROR		1	// light.flags: also draw it at -x
+
+typedef struct JER_COP_LIGHT
+{
+	short x, y, z;					// relative to the COG
+	unsigned char r, g, b;			// colour at full flash
+	unsigned char phase;			// 0..255 offset into the flash cycle (128 = opposite)
+	unsigned char flags;			// JER_COPLIGHT_MIRROR
+	unsigned char size;				// percent of the stock lamp size, 0 = 100
+} JER_COP_LIGHT;
+
+typedef struct JER_COP_LIGHTS
+{
+	unsigned char mode;				// 0 = none, else JER_COPLIGHTS_*
+	unsigned char style;			// STYLE: city 0..3 or JER_COPLIGHT_HOST
+	unsigned char count;			// CUSTOM: lights in use
+	unsigned char speed;			// CUSTOM: flash cycle advance per frame, 0 = 16
+	JER_COP_LIGHT light[JER_COP_LIGHTS_MAX];
+} JER_COP_LIGHTS;
+
+const JER_COP_LIGHTS* JerCarSlotCopLights(int slot);
+// JERICHO: per-car police radio (bank handling.policeVoice, LUMP_CAR_VOICE): the
+// Driver 2 city 0..3 whose stock lines the car speaks, JER_POLICE_VOICE_HOST, or -1
+// for the source-city rule (JerPoliceVoiceCity).
+#define JER_POLICE_VOICE_HOST	255
+int JerCarSlotPoliceVoice(int slot);
+// JERICHO: a held city's per-model damage table (LUMP_CAR_DENTING, .DEN block layout), or NULL.
+const unsigned char* GetCarImportDenting(int city, int model);
 
 // The imported city's LUMP_TEXTUREINFO body - the page lists LoadPermanentTPages
 // walks. texture.c parses it (the TP/TEXINF types the layout needs live there).

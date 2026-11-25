@@ -1,0 +1,18 @@
+# directorbox — Director Box
+#
+# A camera-only addon: toggled from the JERICHO Addons pause menu, it cuts
+# between framed shots of the player (their car, or Tanner on foot) and an
+# occasional random roadside tripod that pans to keep them framed.
+id = "directorbox"
+name = "Director Box"
+version = "0.1.0"
+# the JERICHO interface (SDK) this mod is built against
+interface = 3
+author = "Jaret Ludvik"
+description = "A cinematic director camera toggled from the pause menu: static chase/front/side/low/high/tail framings, a slow orbit and a rising crane, a randomly placed roadside tripod, and occasional world-anchored angles that let the car rotate under a static view."
+dependencies = []
+# OFF out of the box: turn it on in Options -> JERICHO, then flip the row in
+# the in-game pause menu under JERICHO Addons.
+default-enabled = false
+# API-only addon: built into a DLL and loaded at runtime (no game rebuild).
+runtime = "dll"

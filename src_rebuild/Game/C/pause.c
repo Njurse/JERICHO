@@ -350,6 +350,17 @@ static void ReloadCarAssets(int direction)
 	chkImportReloadAll();
 }
 
+/* JERICHO: the row above is carhacks', so it is only listed while carhacks runs
+ * (JerPauseFilteredMenu). With every mod off, or -nomods, the stock pause menus
+ * must read exactly as the original game's - and the row would have run a
+ * disabled module's code. */
+static int JerPauseCarhacksActive(void)
+{
+	/* RUNNING, not "enabled in modlist.ini": carhacks is a core module, so the only
+	 * way it is off is -nomods, which modlist.ini knows nothing about */
+	return jer_module_running("carhacks");
+}
+
 MENU_ITEM MainPauseItems[] =
 {
 	{ G_LTXT_ID(GTXT_Continue), 1u, 2u, NULL, MENU_QUIT_CONTINUE, NULL },
@@ -913,7 +924,11 @@ static void JerPauseApplyRestartOverride(void)
  * filtered copy with those rows REMOVED (not blanked), so the selection index, the
  * row count and the box size are those of the shorter list. One copy per menu, built
  * once and kept: the navigation remembers item POINTERS (ActiveItem[]), so a menu must
- * come back as the same array when the player backs into it. Offline, nothing changes. */
+ * come back as the same array when the player backs into it. Offline, nothing changes.
+ *
+ * The same filtered copy drops a row whose module is not running: "Reload car assets"
+ * without carhacks (JerPauseCarhacksActive). A menu with nothing to drop is shown as
+ * it is, so with every mod off the stock pause menus are the original game's. */
 #define JER_PAUSE_FILTER_MAX	12
 #define JER_PAUSE_FILTER_ITEMS	24
 static MENU_HEADER* gJerFilterSrc[JER_PAUSE_FILTER_MAX];
@@ -925,20 +940,33 @@ static int JerPauseItemIsRestart(const MENU_ITEM* it)
 	return it->SubMenu == &YesNoRestartHeader || it->ExitValue == MENU_QUIT_RESTART;
 }
 
-static MENU_HEADER* JerPauseOnlineMenu(MENU_HEADER* menu)
+static int JerPauseItemHidden(const MENU_ITEM* it, int carhacks)
+{
+	if (gJerPauseRestartAsRespawn && JerPauseItemIsRestart(it))
+		return 1;		/* online: a restart means nothing */
+
+	if (it->func == (pauseFunc)&ReloadCarAssets && !carhacks)
+		return 1;		/* carhacks' row, and carhacks is not running */
+
+	return 0;
+}
+
+static MENU_HEADER* JerPauseFilteredMenu(MENU_HEADER* menu)
 {
 	MENU_ITEM* it;
-	int i, n, hit = 0;
+	int i, n, hit = 0, carhacks;
 
-	if (!gJerPauseRestartAsRespawn || menu == NULL || menu->MenuItems == NULL)
+	if (menu == NULL || menu->MenuItems == NULL)
 		return menu;
+
+	carhacks = JerPauseCarhacksActive();
 
 	for (i = 0; i < JER_PAUSE_FILTER_MAX; i++)
 		if (gJerFilterSrc[i] != NULL && &gJerFilterHdr[i] == menu)
 			menu = gJerFilterSrc[i];	/* backing into a filtered menu: rebuild from its source */
 
 	for (it = menu->MenuItems; it->Type != PAUSE_TYPE_ENDITEMS; it++)
-		if (JerPauseItemIsRestart(it))
+		if (JerPauseItemHidden(it, carhacks))
 			hit = 1;
 
 	if (!hit)
@@ -956,7 +984,7 @@ static MENU_HEADER* JerPauseOnlineMenu(MENU_HEADER* menu)
 
 	n = 0;
 	for (it = menu->MenuItems; it->Type != PAUSE_TYPE_ENDITEMS && n < JER_PAUSE_FILTER_ITEMS - 1; it++)
-		if (!JerPauseItemIsRestart(it))
+		if (!JerPauseItemHidden(it, carhacks))
 			gJerFilterItems[i][n++] = *it;
 	gJerFilterItems[i][n] = *it;	/* the ENDITEMS terminator */
 	if (gJerFilterItems[i][n].Type != PAUSE_TYPE_ENDITEMS)
@@ -984,7 +1012,7 @@ void SetupMenu(MENU_HEADER *menu, int back)
 		JerPauseApplyRestartOverride();
 
 	{
-		MENU_HEADER* shown = JerPauseOnlineMenu(menu);
+		MENU_HEADER* shown = JerPauseFilteredMenu(menu);
 
 		if (shown != menu)
 		{
@@ -1098,7 +1126,14 @@ static JER_PAUSE_BRIDGE gJerBridge[JER_PAUSE_MAX_ITEMS];
 static int gJerBridgeCount;		/* items used (incl. terminators) */
 static int gJerModuleHeaderCount;
 static MENU_HEADER* gJerTopHeaders[JER_PAUSE_MAX_MENUS];	/* registered top-level menus */
+static const JER_PAUSE_MENU* gJerTopMenus[JER_PAUSE_MAX_MENUS];	/* the module menu each was built from */
 static int gJerTopCount;
+
+/* jer_pause_menu_open: the page the next pause opens on ("" = the root), and the
+ * navigation level that page landed at (-1 = not opened directly). Triangle or
+ * Start at that level closes the pause (see ControlMenu). */
+static char gJerPauseOpenTarget[48];
+static int gJerPauseDirectLevel = -1;
 
 static EXIT_VALUE JerPauseMapQuit(int q)
 {
@@ -1362,7 +1397,10 @@ static int JerPauseBuildModuleMenus(void)
 		MENU_HEADER* h = JerPauseBuildMenuRec(jer_pause_menu_get(i), 0);
 
 		if (h != NULL)
+		{
+			gJerTopMenus[gJerTopCount] = jer_pause_menu_get(i);
 			gJerTopHeaders[gJerTopCount++] = h;
+		}
 	}
 
 	if (i < count)
@@ -1487,6 +1525,75 @@ static MENU_HEADER* JerPauseRootOr(MENU_HEADER* original)
 	return &gJerPauseRoot;
 }
 
+/* JERICHO-HOOK: jer_pause_menu_open (jer_pause_menu.h). Ask for the pause and
+ * remember which module page it should open on; InitaliseMenu walks there. */
+int jer_pause_menu_open(const char* target)
+{
+	if (target == NULL || target[0] == '\0' || pauseflag)
+		return 0;
+
+	snprintf(gJerPauseOpenTarget, sizeof(gJerPauseOpenTarget), "%s", target);
+	EnablePause(PAUSEMODE_PAUSE);
+
+	return 1;
+}
+
+/* Walk the freshly set-up root straight to the requested module page, filling the
+ * navigation stack the way the player would have (root -> JERICHO Addons -> page),
+ * so backing out of a submenu and the cursor positions behave exactly as usual. */
+static void JerPauseEnterRequestedPage(MENU_HEADER* root, PAUSEMODE mode)
+{
+	char target[sizeof(gJerPauseOpenTarget)];
+	int k, a;
+
+	if (gJerPauseOpenTarget[0] == '\0')
+		return;
+
+	memcpy(target, gJerPauseOpenTarget, sizeof(target));
+	gJerPauseOpenTarget[0] = '\0';		/* one pause, one request */
+
+	if ((mode != PAUSEMODE_PAUSE && mode != PAUSEMODE_PAUSEP1 && mode != PAUSEMODE_PAUSEP2) ||
+	    root != &gJerPauseRoot || PAUSE_MENU_LEVELS < 3)
+	{
+		jer_log("[jericho] pause menu: can't open '%s' directly here - showing the normal pause\n", target);
+		return;
+	}
+
+	for (k = 0; k < gJerTopCount; k++)
+	{
+		const JER_PAUSE_MENU* m = gJerTopMenus[k];
+
+		if (m != NULL && ((m->id != NULL && strcmp(m->id, target) == 0) ||
+		    (m->title != NULL && strcmp(m->title, target) == 0)))
+			break;
+	}
+
+	for (a = 0; gJerPauseRootItems[a].Type != PAUSE_TYPE_ENDITEMS; a++)
+	{
+		if (gJerPauseRootItems[a].SubMenu == &gJerModulesHeader)
+			break;
+	}
+
+	if (k >= gJerTopCount || gJerPauseRootItems[a].Type == PAUSE_TYPE_ENDITEMS)
+	{
+		jer_log("[jericho] pause menu: no page '%s' to open - showing the normal pause\n", target);
+		return;
+	}
+
+	ActiveItem[0] = &gJerPauseRootItems[a];		/* backing up lands on JERICHO Addons */
+
+	VisibleMenu = 1;
+	VisibleMenus[1] = &gJerModulesHeader;
+	ActiveItem[1] = &gJerModulesItems[k];
+	SetupMenu(&gJerModulesHeader, 1);		/* back = 1: the cursor sits on the page's row */
+
+	VisibleMenu = 2;
+	VisibleMenus[2] = gJerTopHeaders[k];
+	SetupMenu(gJerTopHeaders[k], 0);
+
+	gJerPauseDirectLevel = 2;
+}
+
 // [D] [T]
 void InitaliseMenu(PAUSEMODE mode)
 {
@@ -1498,6 +1605,8 @@ void InitaliseMenu(PAUSEMODE mode)
 		ActiveItem[i] = NULL;
 		VisibleMenus[i] = NULL;
 	}
+
+	gJerPauseDirectLevel = -1;
 
 	// JERICHO-HOOK: (re)build the module-provided pause menus whenever the
 	// pause opens (this also refreshes their dynamic labels).
@@ -1676,6 +1785,9 @@ void InitaliseMenu(PAUSEMODE mode)
 		}
 
 		SetupMenu(pNewMenu, 0);
+
+		// JERICHO-HOOK: a module asked for its own page (jer_pause_menu_open)
+		JerPauseEnterRequestedPage(pNewMenu, mode);
 	}
 	else
 	{
@@ -1970,6 +2082,15 @@ void ControlMenu(void)
 	}
 	else if ((paddata & MPAD_TRIANGLE) || (paddata & MPAD_START)) // Triangle or Start
 	{
+		/* JERICHO: a page opened directly (jer_pause_menu_open) is the whole pause,
+		 * so backing out of it closes the pause rather than walking up into the
+		 * Addons list and the root menu the player never opened. */
+		if (gJerPauseDirectLevel > 0 && VisibleMenu == gJerPauseDirectLevel)
+		{
+			PauseReturnValue = MENU_QUIT_CONTINUE;
+			return;
+		}
+
 		// continue game if needed
 
 		if (VisibleMenu == 0)

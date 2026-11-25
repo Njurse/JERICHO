@@ -12,6 +12,7 @@
 #include "jericho.h"	// JERICHO-HOOK: mod runtime (inert without modules)
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "../ASM/compres.h"	// decomp_asm: the wheel page image, for its CLUT row
+#include "jer_console.h"	// JERICHO: the refusal toast (JerHotLoadCarModel)
 
 #if USE_PC_FILESYSTEM
 extern int gContentOverride;
@@ -239,12 +240,41 @@ char* _MDL_GETTER_collision_block(MODEL* mdl)
 #define CAR_IMPORT_LUMP_PALLET	25	// LUMP_PALLET - the car palettes (civ_clut)
 #define CAR_IMPORT_LUMP_TEXINFO	34	// LUMP_TEXTUREINFO - the page lists
 #define CAR_IMPORT_LUMP_WHEELS	200	// JERICHO: optional wheel models (the D1 bake)
+#define CAR_IMPORT_LUMP_WHEELS2	204	// JERICHO: the same, one wheel set PER MODEL SLOT
 #define CAR_IMPORT_LUMP_SOUNDS	201	// JERICHO: embedded per-model car sounds (the D1 bake)
 #define CAR_IMPORT_LUMP_SIRENS	202	// JERICHO: per-model cop flags (the D1 bake)
+#define CAR_IMPORT_LUMP_POLICE_VOICES	203	// JERICHO: the city's police radio lines (bake declare.police_voices)
+#define CAR_IMPORT_LUMP_DRIVE	205	// JERICHO: per-model drive-wheel override (bank handling.driveWheels)
+#define CAR_IMPORT_LUMP_LIGHTS	206	// JERICHO: per-model police light layout (bank handling.policeLights)
+#define CAR_IMPORT_LUMP_VOICE	207	// JERICHO: per-model police radio voice (bank handling.policeVoice)
+#define CAR_IMPORT_LUMP_DENTING	208	// JERICHO: per-model damage zones and levels, .DEN layout (the bake)
+#define CAR_IMPORT_DENT_BYTES	976	// 6*50 zone verts + 6*70 zone polys + 256 levels, as one .DEN model block
+#define CAR_IMPORT_POLICE_VOICE_COUNT	17	// 6 directions + 11 chatter, the order D2's two phrase banks load in
 #define CAR_IMPORT_LUMP_MODELS_D2	1	// LUMP_MODELS - the level's model table (DATA2)
 #define CAR_IMPORT_LUMP_TEXTURENAMES	5	// LUMP_TEXTURENAMES (DATA1)
 #define CAR_IMPORT_LUMP_MODELNAMES	12	// LUMP_MODELNAMES (DATA1)
-#define CAR_IMPORT_MODEL_SLOTS	13	// LUMP_CAR_MODELS is a fixed 13-entry table
+
+// JERICHO: one wheel sprite's record. `sets` are the SOURCE-city set numbers the
+// record names (before CarSetRemap), so a lookup by set finds the record whose
+// page is being loaded and has its rect and CLUT ids right beside it. Row 0 of
+// CAR_IMPORT.wheel is the bank default (a v1 LUMP_CAR_WHEELS fills it); rows
+// 1..13 are one model's set each (a v2 LUMP_CAR_WHEELS2).
+typedef struct CAR_WHEEL_REC
+{
+	JER_WHEEL_TEX tex;			// page, rects, CLUT ids
+	unsigned char sets[8];		// SOURCE set numbers, before CarSetRemap
+	int setCount;
+	unsigned char present;		// a usable record lives in this row
+} CAR_WHEEL_REC;
+
+#define CAR_IMPORT_WHEEL_ROWS		(1 + CAR_IMPORT_MODEL_SLOTS)
+// model < 0 (or out of range) is the bank default row; 0..12 index rows 1..13
+#define CAR_IMPORT_WHEEL_ROW(model)	(((model) >= 0 && (model) < CAR_IMPORT_MODEL_SLOTS) ? 1 + (model) : 0)
+#define CAR_WHEEL(imp, model, kind)	(&(imp)->wheel[CAR_IMPORT_WHEEL_ROW(model)][(kind)])
+#define CAR_WHEEL_ROW_PRESENT(imp, model) \
+	(CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_CLEAN)->present || \
+	 CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_DAMAGED)->present || \
+	 CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_FAST)->present)
 
 extern int PolySizes[56];		// draw.c: the poly-stream walk
 
@@ -265,11 +295,24 @@ typedef struct
 	char* carSounds;	// LUMP_CAR_SOUNDS body, or NULL (no embedded car sounds)
 	int carSoundsSize;
 	unsigned carSirenMask;	// bit N = model N is a cop car (LUMP_CAR_SIRENS)
+	unsigned char carDrive[CAR_IMPORT_MODEL_SLOTS];	// LUMP_CAR_DRIVE: 0 = stock, else bit0 front / bit1 rear
+	unsigned char carVoice[CAR_IMPORT_MODEL_SLOTS];
+	const unsigned char* carDent[CAR_IMPORT_MODEL_SLOTS];	// LUMP_CAR_DENTING block per model, NULL = none	// LUMP_CAR_VOICE: 0 = source-city rule, 1..4 = D2 city + 1, 255 = host
+	JER_COP_LIGHTS carLights[CAR_IMPORT_MODEL_SLOTS];	// LUMP_CAR_LIGHTS: mode 0 = the stock light bar
+	char* policeVoices;	// LUMP_POLICE_VOICES body, or NULL (no baked police lines)
+	int policeVoicesSize;
 	char* wheelMem;		// malloc'd copies of the wheel MODELs below
 	MODEL* wheels[CAR_IMPORT_WHEEL_VARIANTS];
 	char* wheelTexMem[CAR_IMPORT_WHEEL_VARIANTS];	// per-model D2 texture-source blocks
-	unsigned char wheelSet[CAR_IMPORT_WHEEL_VARIANTS][8];	// source-city set numbers
-	int wheelSetCount[CAR_IMPORT_WHEEL_VARIANTS];		// ...before CarSetRemap
+	/* JERICHO: ONE record per wheel sprite, covering the bank default (row 0,
+	 * what a v1 LUMP_CAR_WHEELS fills) and every per-model set (rows 1..13, a
+	 * v2 LUMP_CAR_WHEELS2). A record's texture, the source sets it names and its
+	 * count used to live in three parallel arrays - and the per-model copies in
+	 * three MORE - which is how the v2 metadata became invisible to the
+	 * set-keyed palette code: it rewrote wheelSet/wheelTex and never saw the
+	 * per-model rows. tex + sets + count travel together now, so whoever finds a
+	 * record by its set already has the rect and the reserved CLUTs beside it. */
+	CAR_WHEEL_REC wheel[CAR_IMPORT_WHEEL_ROWS][CAR_IMPORT_WHEEL_VARIANTS];
 	char* data2;		// malloc'd DATA2 (D2 levels: the model table lives here)
 	int data2Size;
 	char* models;		// LUMP_MODELS body in data2
@@ -278,7 +321,12 @@ typedef struct
 	int modelNamesSize;
 	char* textureNames;	// LUMP_TEXTURENAMES body in region
 	int textureNamesSize;
-	JER_WHEEL_TEX wheelTex[CAR_IMPORT_WHEEL_VARIANTS];	// D2 TEXINF wheel sprites
+	// JERICHO: the D2 named-model wheel table. `wheels[]` (above) and this one
+	// are row 0 only: the D2 path mangles its own MODELs, while a bake fills the
+	// record table above. Rows 1..13 of CAR_WHEEL_REC carry the per-model sets
+	// (LUMP_CAR_WHEELS2); `wheelsModel` is the per-model MODEL* mirror for the
+	// accessors, and both point into wheelMem - one allocation, not one each.
+	MODEL* wheelsModel[CAR_IMPORT_MODEL_SLOTS][CAR_IMPORT_WHEEL_VARIANTS];
 	int pageBase;		// byte offset of this file's permanent page data
 } CAR_IMPORT;
 
@@ -317,6 +365,115 @@ static int FindLumpSegment(char* body, int size, int want, char** out, int* outS
 	}
 
 	return 0;
+}
+
+
+// JERICHO: LUMP_CAR_LIGHTS (206), the per-model police light layout.
+//
+//   i32 version (1)   i32 numModels   i32 offset[numModels]   blocks...
+//   block (at `offset` bytes into the body; 0 = this model has none):
+//     u8 mode (1 style, 2 custom)  u8 style  u8 count  u8 speed
+//     then `count` lights of 12 bytes: i16 x, y, z   u8 r, g, b, phase, flags, size
+//
+// Everything is bounds-checked and clamped here, once, so AddCopCarLight can trust
+// what JerCarSlotCopLights hands it every frame. A bad block is dropped (that model
+// keeps the stock light bar) with a warning; it never takes the rest of the bank
+// down, and a bank with no segment at all is the normal case.
+#define CAR_IMPORT_LIGHT_BYTES	12
+
+static short CarLightS16(const unsigned char* p)
+{
+	return (short)(p[0] | (p[1] << 8));
+}
+
+static void ParseCarImportLights(CAR_IMPORT* imp, const char* body, int size, const char* levPath)
+{
+	const unsigned char* b = (const unsigned char*)body;
+	int version, numModels, m;
+
+	memset(imp->carLights, 0, sizeof(imp->carLights));
+
+	if (b == NULL || size < 8)
+		return;
+
+	version = *(const int*)(b + 0);
+	numModels = *(const int*)(b + 4);
+
+	if (version != 1 || numModels < 1 || numModels > CAR_IMPORT_MODEL_SLOTS ||
+		size < 8 + numModels * 4)
+	{
+		printWarning("carimport: %s police light segment is not a v1 table (version %d, %d models, %d bytes) - ignored\n",
+			levPath, version, numModels, size);
+		return;
+	}
+
+	for (m = 0; m < numModels; m++)
+	{
+		int off = *(const int*)(b + 8 + m * 4);
+		const unsigned char* blk;
+		JER_COP_LIGHTS* out = &imp->carLights[m];
+		int mode, style, count, i;
+
+		if (off == 0)
+			continue;
+
+		if (off < 8 + numModels * 4 || off + 4 > size)
+		{
+			printWarning("carimport: %s model %d police lights: block offset %d is outside the segment - ignored\n",
+				levPath, m, off);
+			continue;
+		}
+
+		blk = b + off;
+		mode = blk[0];
+		style = blk[1];
+		count = blk[2];
+
+		if (mode == JER_COPLIGHTS_STYLE)
+		{
+			if (style > 3 && style != JER_COPLIGHT_HOST)
+			{
+				printWarning("carimport: %s model %d police lights: style %d is not a Driver 2 city - ignored\n",
+					levPath, m, style);
+				continue;
+			}
+
+			out->mode = JER_COPLIGHTS_STYLE;
+			out->style = (unsigned char)style;
+			printInfo("carimport: %s model %d police lights: %s light bar\n", levPath, m,
+				style == JER_COPLIGHT_HOST ? "the host city's" : LevelNames[style]);
+			continue;
+		}
+
+		if (mode != JER_COPLIGHTS_CUSTOM || count < 1 || count > JER_COP_LIGHTS_MAX ||
+			off + 4 + count * CAR_IMPORT_LIGHT_BYTES > size)
+		{
+			printWarning("carimport: %s model %d police lights: mode %d with %d lights does not fit - ignored\n",
+				levPath, m, mode, count);
+			continue;
+		}
+
+		out->mode = JER_COPLIGHTS_CUSTOM;
+		out->count = (unsigned char)count;
+		out->speed = blk[3];
+
+		for (i = 0; i < count; i++)
+		{
+			const unsigned char* p = blk + 4 + i * CAR_IMPORT_LIGHT_BYTES;
+
+			out->light[i].x = CarLightS16(p + 0);
+			out->light[i].y = CarLightS16(p + 2);
+			out->light[i].z = CarLightS16(p + 4);
+			out->light[i].r = p[6];
+			out->light[i].g = p[7];
+			out->light[i].b = p[8];
+			out->light[i].phase = p[9];
+			out->light[i].flags = p[10];
+			out->light[i].size = p[11];
+		}
+
+		printInfo("carimport: %s model %d police lights: %d custom light%s\n", levPath, m, count, count == 1 ? "" : "s");
+	}
 }
 
 static void FreeCarImport(CAR_IMPORT* imp)
@@ -526,8 +683,14 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 
 	// JERICHO: optional wheel models. A Driver 1 bake writes them beside the car
 	// models so an imported D1 car can wear D1 wheels; a real Driver 2 level has
-	// no such segment and keeps the host level's shared wheel models.
-	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_WHEELS, &imp->carWheels, &imp->carWheelsSize);
+	// no such segment and keeps the host level's shared wheel models. The v2
+	// segment (a wheel set per MODEL) is preferred when present; a bank baked
+	// before it existed carries v1, and both land in imp->carWheels because
+	// BuildCarImportWheels tells the two layouts apart by their first word.
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_WHEELS2, &imp->carWheels, &imp->carWheelsSize);
+
+	if (imp->carWheels == NULL)
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_WHEELS, &imp->carWheels, &imp->carWheelsSize);
 
 	// JERICHO: the synthetic Driver 1 LEVs embed a per-model car-sound table in
 	// their own segment. Optional: D2 levels and older D1 bakes simply have none,
@@ -550,6 +713,109 @@ int JerLoadCarImportFromFile(const char* levPath, const char* lcfPath, CAR_IMPOR
 				imp->carSirenMask |= 1u << s;
 		}
 	}
+
+	// JERICHO: per-model drive-wheel override (bank handling.driveWheels). Optional;
+	// absent or short = 0 for the missing models, and the slot keeps the stock rule
+	// (AddWheelForcesDriver1). FreeCarImport's memset clears it with the bank.
+	{
+		char* drive = NULL;
+		int driveSize = 0;
+		int s;
+
+		memset(imp->carDrive, 0, sizeof(imp->carDrive));
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_DRIVE, &drive, &driveSize);
+
+		for (s = 0; drive != NULL && s < CAR_IMPORT_MODEL_SLOTS && s < driveSize; s++)
+		{
+			imp->carDrive[s] = (unsigned char)drive[s] & 3;
+
+			if (imp->carDrive[s])
+				printInfo("carimport: %s model %d drive override %d (%s)\n", levPath, s, imp->carDrive[s],
+					imp->carDrive[s] == 1 ? "front" : imp->carDrive[s] == 2 ? "rear" : "all");
+		}
+	}
+
+	// JERICHO: per-model police light layout (bank handling.policeLights). Optional;
+	// no segment, or a model with no entry, keeps the source-city light bar.
+	{
+		char* lights = NULL;
+		int lightsSize = 0;
+
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_LIGHTS, &lights, &lightsSize);
+		ParseCarImportLights(imp, lights, lightsSize, levPath);
+	}
+
+	// JERICHO: per-model damage tables (LUMP_CAR_DENTING, 208): i32 version 1, i32 13,
+	// i32 offset[13] (0 = none), then one .DEN-layout block per model, generated by the
+	// bake from the BAKED mesh, so its vertex and poly indices are this model's own.
+	// Optional; denting.c gives a model without one an empty table, never the host's.
+	{
+		char* dent = NULL;
+		int dentSize = 0;
+		int s;
+
+		memset((void*)imp->carDent, 0, sizeof(imp->carDent));
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_DENTING, &dent, &dentSize);
+
+		if (dent != NULL && dentSize >= 8 + CAR_IMPORT_MODEL_SLOTS * 4 &&
+			*(int*)dent == 1 && *(int*)(dent + 4) == CAR_IMPORT_MODEL_SLOTS)
+		{
+			for (s = 0; s < CAR_IMPORT_MODEL_SLOTS; s++)
+			{
+				int off = *(int*)(dent + 8 + s * 4);
+
+				if (off == 0)
+					continue;
+
+				if (off < 8 + CAR_IMPORT_MODEL_SLOTS * 4 || off + CAR_IMPORT_DENT_BYTES > dentSize)
+				{
+					printWarning("carimport: %s model %d damage table: offset %d is outside the segment - ignored\n", levPath, s, off);
+					continue;
+				}
+
+				imp->carDent[s] = (const unsigned char*)dent + off;
+			}
+		}
+		else if (dent != NULL)
+		{
+			printWarning("carimport: %s damage table segment is not a v1 table (%d bytes) - ignored\n", levPath, dentSize);
+		}
+	}
+
+	// JERICHO: per-model police radio voice (bank handling.policeVoice). Optional; no
+	// segment, or 0 for a model, keeps the source-city rule (JerPoliceVoiceCity). A
+	// value that is not a Driver 2 city or HOST is dropped with a warning.
+	{
+		char* voice = NULL;
+		int voiceSize = 0;
+		int s;
+
+		memset(imp->carVoice, 0, sizeof(imp->carVoice));
+		FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_VOICE, &voice, &voiceSize);
+
+		for (s = 0; voice != NULL && s < CAR_IMPORT_MODEL_SLOTS && s < voiceSize; s++)
+		{
+			unsigned char v = (unsigned char)voice[s];
+
+			if (v == 0)
+				continue;
+
+			if (v != JER_POLICE_VOICE_HOST && (v < 1 || v > CITY_D2_COUNT))
+			{
+				printWarning("carimport: %s model %d police voice %d is not a Driver 2 city - ignored\n", levPath, s, v);
+				continue;
+			}
+
+			imp->carVoice[s] = v;
+			printInfo("carimport: %s model %d police radio: %s\n", levPath, s,
+				v == JER_POLICE_VOICE_HOST ? "the host city's" : LevelNames[v - 1]);
+		}
+	}
+
+	// JERICHO: the city's police radio lines, a dynamic sound bank the bake writes
+	// from bank.json's declare.police_voices. Optional: no shipped bank has it yet,
+	// and gamesnd then keeps the host city's lines (GetCarImportPoliceVoices).
+	FindLumpSegment(imp->region + 8, (int)data1Size - 8, CAR_IMPORT_LUMP_POLICE_VOICES, &imp->policeVoices, &imp->policeVoicesSize);
 
 	// JERICHO: a Driver 1 bake (no DATA2) from before v0.10.9 carries neither
 	// segment, so its cars keep the host's wheels and engine. Log it. The
@@ -827,6 +1093,16 @@ static void JerPedCollectModelSets(MODEL* m)
  * and wheel imports use. A host-owned set number gets a free destination index
  * and the pin fills that index; leaving the source number would sample the
  * host's page. */
+// JERICHO: the remap key a BAKED ped page is filed under. A baked ped bank (JMPPED.LEV)
+// numbers its re-baked pages with the city's own set numbers (Chicago's suit page is
+// "set 4"), and the remap is keyed by (set, city) - so a Chicago CAR's real set 4 and the
+// baked ped page "set 4" resolved to ONE destination index. Whichever pinned last
+// overwrote the other's texture_pages/texture_cluts, and releasing the car freed the
+// index the pedestrians still drew from. Filing baked pages under city + CITY_COUNT
+// gives them their own indices. The real-page ped path (JerPedPinTpages) keeps the
+// plain city key: those ARE the city's pages, and sharing them is correct.
+#define JER_PED_BAKED_KEY(city)	((city) + CITY_COUNT)
+
 static void JerPedRemapModelSets(MODEL* m, int city)
 {
 	char* p;
@@ -1124,12 +1400,30 @@ int JerPedImportBuild(int city)
 	return 1;
 }
 
+/* Prefer the mp-mod copy, then the historical DRIVER2/LEVELS path. */
+static FILE* JerPedOpenBakedLev(void)
+{
+	char path[512];
+	FILE* f;
+	const char* root = jer_root_dir();
+
+	if (root != NULL && root[0] != 0)
+	{
+		snprintf(path, sizeof(path), "%s/MODS/mp/JMPPED.LEV", root);
+		f = fopen(path, "rb");
+		if (f != NULL)
+			return f;
+	}
+
+	return fopen("DRIVER2\\LEVELS\\JMPPED.LEV", "rb");
+}
+
 int JerPedBakedAvailable(void)
 {
 	FILE* f;
 	char magic[8];
 
-	f = fopen("DRIVER2\\LEVELS\\JMPPED.LEV", "rb");
+	f = JerPedOpenBakedLev();
 
 	if (f == NULL)
 		return 0;
@@ -1363,11 +1657,11 @@ static int JerPedImportBakedV5(unsigned char* file, long len, int city)
 
 	for (e = 0; e < entryCount; e++)
 		for (slot = 0; slot < nm[e]; slot++)
-			JerPedRemapModelSets(built[e][slot], city);
+			JerPedRemapModelSets(built[e][slot], JER_PED_BAKED_KEY(city));
 
 	for (i = 0; i < pageTotal; i++)
 	{
-		int dst = CarImportPinDstSet(pages[i].set, city);
+		int dst = CarImportPinDstSet(pages[i].set, JER_PED_BAKED_KEY(city));
 
 		if (!JerPedUploadBakedPage(pages[i].set, dst, pages[i].npal,
 			pages[i].clut, pages[i].clutLen, pages[i].image, pages[i].imageLen, pages[i].flags & 1))
@@ -1469,7 +1763,7 @@ int JerPedImportBaked(int city)
 	if (sJerPedReady)
 		return 1;
 
-	f = fopen("DRIVER2\\LEVELS\\JMPPED.LEV", "rb");
+	f = JerPedOpenBakedLev();
 
 	if (f == NULL)
 	{
@@ -1643,7 +1937,7 @@ int JerPedImportBaked(int city)
 	}
 
 	for (i = 0; i < JER_PED_BAKED_MODELS; i++)
-		JerPedRemapModelSets(built[i], city);
+		JerPedRemapModelSets(built[i], JER_PED_BAKED_KEY(city));
 
 	for (i = 0; i < (int)pageCount; i++)
 	{
@@ -1666,7 +1960,7 @@ int JerPedImportBaked(int city)
 
 		cluts = p;
 		image = p + clutLen;
-		dst = CarImportPinDstSet((int)set, city);
+		dst = CarImportPinDstSet((int)set, JER_PED_BAKED_KEY(city));
 
 		if (!JerPedUploadBakedPage((int)set, dst, (int)npal, cluts, (int)clutLen, image, (int)imageLen, (int)(flags & 1)))
 		{
@@ -2288,6 +2582,226 @@ int GetCarImportSiren(int city, int model)
 	return (gCarImports[city].carSirenMask >> model) & 1;
 }
 
+// JERICHO: which of `city`'s models are POLICE cars, bit N = model N. The engine's
+// own two rules, in one place:
+//   - a Driver 2 city (rows 0..CITY_D2_COUNT-1): model 0, the police body. That is
+//     FEmain.c's carNumLookup (model 0 in every D2 city's list), the one-colour cop
+//     body in civ_ai.c, and CarHasSiren's model-0 siren (gamesnd.c).
+//   - any other city (Driver 1, a car mod's bank): the bake's LUMP_CAR_SIRENS flags,
+//     written from the bank's `sounds.cop` (bank.json, bake/tools/car/bank-schema.md)
+//     -- the same flags CarHasSiren gives the imported siren. The city's car data is
+//     read first when it is not held, exactly as JerCityCarModels does, so a
+//     frontend roster can ask before anything is picked. An older bank with no
+//     flags has no police car.
+unsigned JerCityPoliceModels(int city)
+{
+	if (city < 0 || city >= CITY_COUNT)
+		return 0;
+
+	if (city < CITY_D2_COUNT)
+		return 1u;
+
+	if (!JerCityRegistered(city))
+		return 0;
+
+	if (!CarImportCityHeld(city) && !JerLoadCarImportForCity(city))
+		return 0;
+
+	return gCarImports[city].carSirenMask;
+}
+
+int JerCarIsPolice(int city, int model)
+{
+	if (model < 0 || model >= 32)
+		return 0;
+
+	return (JerCityPoliceModels(city) >> model) & 1;
+}
+
+// JERICHO: is the car in resident slot `slot` (cp->ap.model) a police car? The
+// slot's own source city answers (GetCarModelSourceCity); -1 is the level's own
+// car, which keeps Driver 2's model-0 rule (CarHasSiren's native case).
+int JerCarSlotIsPolice(int slot)
+{
+	int model, city;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	model = residentCarModels[slot];
+
+	if (model < 0)
+		return 0;
+
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0)
+		return model == 0;
+
+	return JerCarIsPolice(city, model);
+}
+
+// JERICHO: the drive-wheel override (LUMP_CAR_DRIVE, 205) of the car in resident
+// slot `slot`, from that slot's source city: 0 = none (stock rule), else bit0 =
+// front axle driven, bit1 = rear. The level's own cars and unheld cities answer 0.
+// Never loads anything: AddWheelForcesDriver1 calls it once per car per step.
+int JerCarSlotDrive(int slot)
+{
+	int model, city;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	model = residentCarModels[slot];
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || !CarImportCityHeld(city))
+		return 0;
+
+	return gCarImports[city].carDrive[model];
+}
+
+// JERICHO: the police light layout (LUMP_CAR_LIGHTS, 206) of the car in resident
+// slot `slot`, from that slot's source city, or NULL when the bank says nothing
+// (the level's own cars, an unheld city, a bank without the segment): the caller
+// then keeps its source-city style. Never loads anything: AddCopCarLight calls it
+// once per lit cop car per frame.
+// JERICHO: the police radio voice the bank gives the car in resident slot `slot`
+// (LUMP_CAR_VOICE, 207): a Driver 2 city index 0..3, JER_POLICE_VOICE_HOST, or -1
+// when the bank says nothing and the source-city rule applies. Never loads anything.
+// JERICHO: a held city's damage table block for `model` (LUMP_CAR_DENTING), or NULL.
+const unsigned char* GetCarImportDenting(int city, int model)
+{
+	if (city < 0 || city >= CITY_COUNT || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || !CarImportCityHeld(city))
+		return NULL;
+
+	return gCarImports[city].carDent[model];
+}
+
+int JerCarSlotPoliceVoice(int slot)
+{
+	int model, city, v;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return -1;
+
+	model = residentCarModels[slot];
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || city >= CITY_COUNT || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || !CarImportCityHeld(city))
+		return -1;
+
+	v = gCarImports[city].carVoice[model];
+
+	if (v == 0)
+		return -1;
+
+	return (v == JER_POLICE_VOICE_HOST) ? JER_POLICE_VOICE_HOST : v - 1;
+}
+
+const JER_COP_LIGHTS* JerCarSlotCopLights(int slot)
+{
+	int model, city;
+
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS)
+		return NULL;
+
+	model = residentCarModels[slot];
+	city = GetCarModelSourceCity(slot);
+
+	if (city < 0 || model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || !CarImportCityHeld(city))
+		return NULL;
+
+	if (gCarImports[city].carLights[model].mode == 0)
+		return NULL;
+
+	return &gCarImports[city].carLights[model];
+}
+
+// JERICHO: `city`'s baked police radio lines (LUMP_POLICE_VOICES, 203), or 0 when
+// the city is not held or has no valid segment. The body is a D2 dynamic bank
+// (int num_samples, SAMPLE_DATA[num_samples], payload) of exactly
+// CAR_IMPORT_POLICE_VOICE_COUNT samples - the six heading clips then the eleven
+// chatter lines, the same order the host's two phrase banks occupy in
+// SOUND_BANK_VOICES - so gamesnd can hand it to LoadSoundBankDynamic unchanged.
+// Every SAMPLE_DATA must lie inside the payload and start on a 16-byte VAG block;
+// a short or oversized body is refused rather than read past. Slots MAY share
+// an offset (an identical clip stored once): LoadSoundBankDynamic relocates each
+// entry independently and uploads the payload once. Playback stops at the VAG
+// end flag in the data, not at SAMPLE_DATA.length (PsyX_SPUAL.cpp decodeSound),
+// so a SHORTER cut of a clip needs its own copy with its own end flag.
+int GetCarImportPoliceVoices(int city, char** bank, int* size)
+{
+	CAR_IMPORT* imp;
+	int n, i, dir, payload;
+
+	if (!CarImportCityHeld(city))
+		return 0;
+
+	imp = &gCarImports[city];
+
+	if (imp->policeVoices == NULL || imp->policeVoicesSize < 4)
+		return 0;
+
+	n = *(int*)imp->policeVoices;
+
+	if (n != CAR_IMPORT_POLICE_VOICE_COUNT)
+		return 0;
+
+	dir = 4 + n * 16;
+
+	if (dir > imp->policeVoicesSize)
+		return 0;
+
+	payload = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		int a = *(int*)(imp->policeVoices + 4 + i * 16);
+		int length = *(int*)(imp->policeVoices + 8 + i * 16);
+
+		if (a < 0 || length <= 0 || (a & 15) ||
+			a > imp->policeVoicesSize || length > imp->policeVoicesSize)
+			return 0;
+
+		if (a + length > payload)
+			payload = a + length;
+	}
+
+	if (dir + payload > imp->policeVoicesSize)
+		return 0;
+
+	if (bank)
+		*bank = imp->policeVoices;
+	if (size)
+		*size = dir + payload;
+	return 1;
+}
+
+// JERICHO: which city's baked police lines a cop from `sourceCity` speaks with.
+//   - a Driver 2 city: itself (gamesnd loads its stock phrase banks; no lump).
+//   - any other city (Driver 1, BETAMIAMI, a car mod's bank): its OWN lump 203
+//     when its bank carries one, else Driver 1 Miami's (row CITY_D2_COUNT) - every
+//     Driver 1 cop shares the Miami set - when Miami's car data is held.
+//   - -1 when neither is available: the caller keeps the host city's lines.
+// Only HELD cities are asked: nothing is loaded here just for its voices.
+int JerPoliceVoiceCity(int sourceCity)
+{
+	if (sourceCity < 0 || sourceCity >= CITY_COUNT)
+		return -1;
+
+	if (sourceCity < CITY_D2_COUNT)
+		return sourceCity;
+
+	if (GetCarImportPoliceVoices(sourceCity, NULL, NULL))
+		return sourceCity;
+
+	if (GetCarImportPoliceVoices(CITY_D2_COUNT, NULL, NULL))
+		return CITY_D2_COUNT;
+
+	return -1;
+}
+
 // JERICHO: the embedded car-sound bank a D1 city's car uses, or 0. Driver 1 gave
 // EVERY car the same generic engine and idle, so the model number is not used to
 // pick the bank: every car gets the city's one generic engine + idle pair (below).
@@ -2589,6 +3103,94 @@ static int CarImportPolysFit(const char* lump, int size, int ofs)
 	return 1;
 }
 
+// JERICHO: how many body colours `model` of a HELD city really has, read from that
+// city's own data and nothing else: the (set, texture id) pairs the clean model paints
+// with, against the palette records its LUMP_PALLET carries for those pairs. Lump
+// palette k fills colour column k + 1 (column 0 is the page's own CLUT), so the count
+// is the highest such k + 2, at most 6; a model the lump gives no records is 1.
+// -1 when the city is not held or the data is unusable - the caller then estimates.
+// This is what a car select and the pause menu ask BEFORE a car is built, when there is
+// no census yet; it used to answer "6 for models 0..4, 1 otherwise" for every bank.
+int CarImportModelPaletteCount(int city, int model)
+{
+	static u_int sUsed[128];
+	CAR_IMPORT* imp;
+	MODEL* m;
+	int* offsets;
+	int* e;
+	int* end;
+	char* p;
+	int i, maxPal = -1, any = 0;
+
+	if (city < 0 || city >= CITY_COUNT || model < 0 || model > 12 || !CarImportCityHeld(city))
+		return -1;
+
+	imp = &gCarImports[city];
+
+	if (imp->carModels == NULL || imp->pallet == NULL || imp->palletSize < 8 ||
+		4 + (model + 1) * 3 * (int)sizeof(int) > imp->carModelsSize)
+		return -1;
+
+	offsets = (int*)(imp->carModels + 4 + model * sizeof(int) * 3);
+
+	if (offsets[0] < 0 || offsets[0] >= imp->carModelsSize ||
+		!CarImportModelFits(imp->carModels, imp->carModelsSize, offsets[0]) ||
+		!CarImportPolysFit(imp->carModels, imp->carModelsSize, offsets[0]))
+		return -1;
+
+	/* The table's offsets are relative to the models block that follows the 4-byte count and
+	 * the 160-byte offset table - the same base CarImportModelFits / CarImportPolysFit use
+	 * (4 + 160 + ofs). Without it this read the poly walk from the wrong place: it passed the
+	 * fit checks, then dereferenced garbage (access violation at the first poly byte the
+	 * moment a held city's palette count was asked, e.g. HAVANA model 1 in a Chicago level). */
+	m = (MODEL*)(imp->carModels + 4 + 160 + offsets[0]);
+
+	if (m->poly_block == 0 || m->num_polys <= 0)
+		return 1;
+
+	memset(sUsed, 0, sizeof(sUsed));
+	p = (char*)m + m->poly_block;
+
+	for (i = 0; i < m->num_polys; i++)
+	{
+		int type = (u_char)*p & 0x1f;
+		int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+
+		if (step <= 0)
+			break;
+
+		if (JerPedIsTexturedPoly(type) && (u_char)p[1] < 128 && (u_char)p[2] < 32)
+		{
+			sUsed[(u_char)p[1]] |= 1u << (u_char)p[2];
+			any = 1;
+		}
+
+		p += step;
+	}
+
+	if (!any)
+		return 1;
+
+	e = (int*)(imp->pallet + 4);
+	end = (int*)(imp->pallet + imp->palletSize);
+
+	while (e + 1 <= end && *e != -1 && e + 4 <= end)
+	{
+		int pal = e[0], tex = e[1], set = e[2], clutNumber = e[3];
+
+		e += 4;
+
+		if (clutNumber == -1)
+			e += 8;		// an inline 16-colour CLUT follows the record
+
+		if (set >= 0 && set < 128 && tex >= 0 && tex < 32 && (sUsed[set] & (1u << tex)) &&
+			pal > maxPal && pal <= 4)
+			maxPal = pal;
+	}
+
+	return (maxPal < 0) ? 1 : maxPal + 2;
+}
+
 char* GetCarImportModels(int slot)
 {
 	int model;
@@ -2781,6 +3383,152 @@ static void WheelPolyRect(const POLYFT4* p, int* u0, int* v0, int* u1, int* v1)
 	*v1 += 1;
 }
 
+// One wheel MODEL block -> the texture record and the source-city sets it names.
+// `body`/`size` are the wheel segment, `off` the block's offset from its start,
+// `what` names it in the log ("wheel 0", "model 1 wheel 2"). Returns 0 when the
+// block cannot be used, leaving *wt untouched (absent), which is the fail-soft
+// the D1 wheel path has always had.
+static int CarImportWheelBlock(int city, char* body, int size, int off,
+							   JER_WHEEL_TEX* wt, unsigned char* sets,
+							   int* setCount, const char* what)
+{
+	MODEL* src;
+	POLYFT4* p;
+	int k;
+
+	if (off < 0 || off + (int)sizeof(MODEL) > size)
+	{
+		printInfo("cross-city: %s %s offset %d is outside the segment (%d bytes) - absent\n",
+			LevelNames[city], what, off, size);
+		return 0;
+	}
+
+	src = (MODEL*)(body + off);
+
+	if (src->num_polys < 8 || src->num_polys > 24 || src->poly_block <= (int)sizeof(MODEL) ||
+		src->poly_block + src->num_polys * (int)sizeof(POLYFT4) > size - off)
+	{
+		printInfo("cross-city: %s %s has an unusable MODEL header (polys %d, %d bytes) - absent\n",
+			LevelNames[city], what, src->num_polys, src->poly_block);
+		return 0;
+	}
+
+	p = (POLYFT4*)((char*)src + src->poly_block);
+
+	for (k = 0; k < 8; k++)
+	{
+		if ((p[k].id & 0x1f) != 21)
+			break;
+	}
+
+	if (k < 8)
+	{
+		printInfo("cross-city: %s %s is not the 8-quad FT4 wheel - absent\n",
+			LevelNames[city], what);
+		return 0;
+	}
+
+	// the SOURCE set numbers, for the pin; CollectWheelSets only reads the record
+	*setCount = CollectWheelSets(src, sets, 8);
+
+	if (*setCount <= 0)
+		return 0;
+
+	WheelPolyRect(&p[2], &wt->u0, &wt->v0, &wt->u1, &wt->v1);
+	WheelPolyRect(&p[4], &wt->hubU0, &wt->hubV0, &wt->hubU1, &wt->hubV1);
+
+	CarSetRemapEnable(1, city);
+	wt->set = CarSetRemap(p[2].texture_set);
+	CarSetRemapEnable(0, -1);
+
+	wt->clut = p[2].texture_id;
+	wt->hubClut = p[4].texture_id;	// the page loader puts the wheel row here
+	wt->present = (wt->set > 0 && wt->set < JER_TPAGE_SLOTS - 1);
+
+	printInfo("cross-city: %s %s texture: source set %d -> %d, face (%d,%d)-(%d,%d), tread (%d,%d)-(%d,%d)\n",
+		LevelNames[city], what, p[2].texture_set, wt->set,
+		wt->u0, wt->v0, wt->u1, wt->v1, wt->hubU0, wt->hubV0, wt->hubU1, wt->hubV1);
+
+	return 1;
+}
+
+// LUMP_CAR_WHEELS2: "WHL2", nslots, then per slot
+//   [i32 model][i32 count][i32 slot_bytes][count x i32 offset][MODEL blocks]
+// with the offsets from the segment body. Each slot is ONE model's wheel set, so
+// two cars in a bank can wear different wheels. A model the segment does not
+// name keeps the bank default (imp->wheelTex), and a slot that does not parse is
+// skipped - never fatal, because the host level's wheels still work.
+static void BuildCarImportWheelsV2(int city)
+{
+	CAR_IMPORT* imp = &gCarImports[city];
+	char* body = imp->carWheels;
+	int size = imp->carWheelsSize;
+	int nslots, at, s, m;
+
+	for (m = 0; m < CAR_IMPORT_MODEL_SLOTS; m++)
+	{
+		if (CAR_WHEEL_ROW_PRESENT(imp, m))
+			return;		// already built (level load, then a hot load)
+	}
+
+	nslots = *(int*)(body + 4);
+
+	if (nslots < 1 || nslots > CAR_IMPORT_MODEL_SLOTS)
+	{
+		printInfo("cross-city: %s wheel2 segment is malformed (%d slots, %d bytes) - keeping the host wheels\n",
+			LevelNames[city], nslots, size);
+		return;
+	}
+
+	at = 8;
+
+	for (s = 0; s < nslots; s++)
+	{
+		int model, count, slotBytes, k;
+
+		if (at + 12 > size)
+			break;
+
+		model = *(int*)(body + at);
+		count = *(int*)(body + at + 4);
+		slotBytes = *(int*)(body + at + 8);
+
+		if (model < 0 || model >= CAR_IMPORT_MODEL_SLOTS || count < 1 ||
+			count > CAR_IMPORT_WHEEL_VARIANTS || slotBytes < 12 || at + slotBytes > size)
+		{
+			printInfo("cross-city: %s wheel2 slot %d is unusable (model %d, %d variants, %d bytes) - skipped\n",
+				LevelNames[city], s, model, count, slotBytes);
+			break;
+		}
+
+		for (k = 0; k < count; k++)
+		{
+			int off = *(int*)(body + at + 12 + k * (int)sizeof(int));
+			char what[48];
+
+			if (off == -1)
+				continue;
+
+			snprintf(what, sizeof(what), "model %d wheel %d", model, k);
+
+			if (CarImportWheelBlock(city, body, size, off,
+									&CAR_WHEEL(imp, model, k)->tex,
+									CAR_WHEEL(imp, model, k)->sets,
+									&CAR_WHEEL(imp, model, k)->setCount, what))
+				CAR_WHEEL(imp, model, k)->present =
+					(unsigned char)CAR_WHEEL(imp, model, k)->tex.present;
+		}
+
+		printInfo("cross-city: %s model %d wheels - clean %s, damaged %s, fast %s\n",
+			LevelNames[city], model,
+			CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_CLEAN)->present ? "yes" : "host",
+			CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_DAMAGED)->present ? "yes" : "host",
+			CAR_WHEEL(imp, model, CAR_IMPORT_WHEEL_FAST)->present ? "yes" : "host");
+
+		at += slotBytes;
+	}
+}
+
 // JERICHO: a D1 car keeps the HOST wheel models (CLEANWHEEL/FASTWHEEL/DAMWHEEL)
 // and takes only its wheel TEXTURE from LUMP_CAR_WHEELS: the record is read in
 // place for its page, its face rect (polys 2/3, the quads MangleWheelModel keeps
@@ -2804,7 +3552,7 @@ static void BuildCarImportWheels(int city)
 
 	for (i = 0; i < CAR_IMPORT_WHEEL_VARIANTS; i++)
 	{
-		if (imp->wheelTex[i].present)
+		if (CAR_WHEEL(imp, -1, i)->present)
 			return;		// already built (level load, then a hot load)
 	}
 
@@ -2812,6 +3560,16 @@ static void BuildCarImportWheels(int city)
 	{
 		printInfo("cross-city: %s wheel segment is too small (%d bytes) - keeping the host wheels\n",
 			LevelNames[city], imp->carWheelsSize);
+		return;
+	}
+
+	// JERICHO: LUMP_CAR_WHEELS2 names the MODEL each set belongs to, so one bank
+	// can carry a wheel set per car. "WHL2" cannot be read as a v1 count (1..3),
+	// which is how the two layouts are told apart without a version field: a
+	// bank baked before this change, and every real D2 city, take the v1 path.
+	if (imp->carWheelsSize >= 8 && memcmp(imp->carWheels, "WHL2", 4) == 0)
+	{
+		BuildCarImportWheelsV2(city);
 		return;
 	}
 
@@ -2828,7 +3586,7 @@ static void BuildCarImportWheels(int city)
 	for (i = 0; i < count; i++)
 	{
 		int off = *(int*)(imp->carWheels + 4 + i * (int)sizeof(int));
-		JER_WHEEL_TEX* wt = &imp->wheelTex[i];
+		JER_WHEEL_TEX* wt = &CAR_WHEEL(imp, -1, i)->tex;
 		MODEL* src;
 		POLYFT4* p;
 		int k;
@@ -2868,9 +3626,9 @@ static void BuildCarImportWheels(int city)
 		}
 
 		// the SOURCE set numbers, for the pin; CollectWheelSets only reads the record
-		imp->wheelSetCount[i] = CollectWheelSets(src, imp->wheelSet[i], 8);
+		CAR_WHEEL(imp, -1, i)->setCount = CollectWheelSets(src, CAR_WHEEL(imp, -1, i)->sets, 8);
 
-		if (imp->wheelSetCount[i] <= 0)
+		if (CAR_WHEEL(imp, -1, i)->setCount <= 0)
 			continue;
 
 		WheelPolyRect(&p[2], &wt->u0, &wt->v0, &wt->u1, &wt->v1);
@@ -2882,7 +3640,8 @@ static void BuildCarImportWheels(int city)
 
 		wt->clut = p[2].texture_id;
 		wt->hubClut = p[4].texture_id;	// the page loader puts the wheel row here
-		wt->present = (wt->set > 0 && wt->set < 128);
+		wt->present = (wt->set > 0 && wt->set < JER_TPAGE_SLOTS - 1);
+		CAR_WHEEL(imp, -1, i)->present = (unsigned char)wt->present;
 
 		printInfo("cross-city: %s wheel %d texture: source set %d -> %d, face (%d,%d)-(%d,%d), tread (%d,%d)-(%d,%d)\n",
 			LevelNames[city], i, p[2].texture_set, wt->set,
@@ -2891,9 +3650,9 @@ static void BuildCarImportWheels(int city)
 
 	printInfo("cross-city: %s wheels - host meshes, imported textures: clean %s, damaged %s, fast %s\n",
 		LevelNames[city],
-		imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present ? "yes" : "host",
-		imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present ? "yes" : "host",
-		imp->wheelTex[CAR_IMPORT_WHEEL_FAST].present ? "yes" : "host");
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->present ? "yes" : "host",
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->present ? "yes" : "host",
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_FAST)->present ? "yes" : "host");
 }
 
 MODEL* GetCarImportWheel(int city, int kind)
@@ -2910,42 +3669,175 @@ int GetCarImportWheelTex(int city, int kind, JER_WHEEL_TEX* out)
 		out == NULL)
 		return 0;
 
-	*out = gCarImports[city].wheelTex[kind];
+	*out = CAR_WHEEL(&gCarImports[city], -1, kind)->tex;
 
 	return out->present;
 }
 
+// JERICHO: the per-MODEL wheel set, when the bank carries one (LUMP_CAR_WHEELS2).
+// A model the v2 segment does not name - and every model of a v1 bank - answers
+// from the bank default above, so a caller never branches on the layout.
+MODEL* GetCarImportWheelFor(int city, int model, int kind)
+{
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS)
+		return NULL;
+
+	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
+		CAR_WHEEL_ROW_PRESENT(&gCarImports[city], model))
+		return gCarImports[city].wheelsModel[model][kind];
+
+	return gCarImports[city].wheels[kind];
+}
+
+int GetCarImportWheelTexFor(int city, int model, int kind, JER_WHEEL_TEX* out)
+{
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL)
+		return 0;
+
+	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
+		CAR_WHEEL_ROW_PRESENT(&gCarImports[city], model))
+	{
+		*out = CAR_WHEEL(&gCarImports[city], model, kind)->tex;
+		return out->present;
+	}
+
+	*out = CAR_WHEEL(&gCarImports[city], -1, kind)->tex;
+
+	return out->present;
+}
+
+// One wheel record plus where it came from, for the palette code that is keyed by
+// page set rather than by model: the page loader knows a (city, set) and nothing
+// about models, so it has to find EVERY record that names that set.
+typedef struct CAR_WHEEL_REF
+{
+	CAR_WHEEL_REC* rec;
+	int model;			// -1 = the bank default row, else the source model slot
+	int kind;			// CAR_IMPORT_WHEEL_
+} CAR_WHEEL_REF;
+
+// The i-th wheel record this city holds: row 0 (the bank default) first, then one
+// row per model the segment named. Returns 0 past the end.
+static int CarImportWheelRef(int city, int i, CAR_WHEEL_REF* out)
+{
+	int row, kind, n = 0;
+
+	if (city < 0 || city >= CITY_COUNT || out == NULL || i < 0)
+		return 0;
+
+	for (row = 0; row < CAR_IMPORT_WHEEL_ROWS; row++)
+	{
+		int model = row - 1;
+
+		if (row > 0 && !CAR_WHEEL_ROW_PRESENT(&gCarImports[city], model))
+			continue;			// a model the segment did not name
+
+		for (kind = 0; kind < CAR_IMPORT_WHEEL_VARIANTS; kind++, n++)
+		{
+			if (n != i)
+				continue;
+
+			out->rec = &gCarImports[city].wheel[row][kind];
+			out->model = model;
+			out->kind = kind;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int CarImportWheelRefCount(int city)
+{
+	CAR_WHEEL_REF ref;
+	int n = 0;
+
+	while (CarImportWheelRef(city, n, &ref))
+		n++;
+
+	return n;
+}
+
+// The record of `kind` (any row) that was built from `sourceSet`, or NULL.
+static int CarImportWheelRefNamesSet(const CAR_WHEEL_REF* ref, int sourceSet);
+
+static CAR_WHEEL_REC* CarImportWheelRecFor(int city, int sourceSet, int kind)
+{
+	CAR_WHEEL_REF ref;
+	int i;
+
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
+	{
+		if (ref.kind == kind && CarImportWheelRefNamesSet(&ref, sourceSet))
+			return ref.rec;
+	}
+
+	return NULL;
+}
+
+// The record whose page carries the rect a hub/tyre derivation needs: the damaged
+// variant holds the WHLBOTH hubcap rect, the clean variant the tyre, and either
+// may be the one that names this set.
+static CAR_WHEEL_REC* CarImportWheelRecForSet(int city, int sourceSet, int wantHub)
+{
+	CAR_WHEEL_REC* rec = CarImportWheelRecFor(city, sourceSet,
+		wantHub ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN);
+
+	if (rec != NULL && rec->present)
+		return rec;
+
+	rec = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_CLEAN);
+
+	return (rec != NULL && rec->present) ? rec : NULL;
+}
+
+// Does this record name `sourceSet` among the source sets it was built from?
+static int CarImportWheelRefNamesSet(const CAR_WHEEL_REF* ref, int sourceSet)
+{
+	int k;
+
+	if (ref == NULL || ref->rec == NULL)
+		return 0;
+
+	for (k = 0; k < ref->rec->setCount; k++)
+		if (ref->rec->sets[k] == sourceSet)
+			return 1;
+
+	return 0;
+}
+
 // The page loader knows how many CLUT rows the source wheel page really has.
-// The WHLBOTH (hubcap) palette is the page's last row; record it for the wheel
-// structs that name this source set.
+// The WHLBOTH (hubcap) palette is the page's last row; record it for every wheel
+// record that names this source set - the bank default AND each per-model set, so
+// a second tri-set's records get it too.
 void CarImportSetWheelPageCluts(int city, int sourceSet, int cluts)
 {
-	int v;
+	CAR_WHEEL_REF ref;
+	int i;
 
 	if (city < 0 || city >= CITY_COUNT || cluts <= 0)
 		return;
 
-	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
 	{
-		CAR_IMPORT* imp = &gCarImports[city];
-
-		if (imp->wheelSetCount[v] > 0 && imp->wheelSet[v][0] == sourceSet)
-			imp->wheelTex[v].hubClut = (cluts > 32) ? 31 : cluts - 1;
+		if (CarImportWheelRefNamesSet(&ref, sourceSet))
+			ref.rec->tex.hubClut = (cluts > 32) ? 31 : cluts - 1;
 	}
 }
 
 int CarImportIsWheelSet(int city, int sourceSet)
 {
-	int v, k;
+	CAR_WHEEL_REF ref;
+	int i;
 
 	if (city < 0 || city >= CITY_COUNT)
 		return 0;
 
-	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
 	{
-		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
-			if (gCarImports[city].wheelSet[v][k] == sourceSet)
-				return 1;
+		if (CarImportWheelRefNamesSet(&ref, sourceSet))
+			return 1;
 	}
 
 	return 0;
@@ -2953,23 +3845,21 @@ int CarImportIsWheelSet(int city, int sourceSet)
 
 void CarImportSetWheelPaletteClut(int city, int sourceSet, int clut, int hub)
 {
-	int v, k;
+	CAR_WHEEL_REF ref;
+	int i;
 
 	if (city < 0 || city >= CITY_COUNT || clut <= 0)
 		return;
 
-	for (v = 0; v < CAR_IMPORT_WHEEL_VARIANTS; v++)
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
 	{
-		for (k = 0; k < gCarImports[city].wheelSetCount[v]; k++)
-		{
-			if (gCarImports[city].wheelSet[v][k] == sourceSet)
-			{
-				if (hub)
-					gCarImports[city].wheelTex[v].reservedHubClut = clut;
-				else
-					gCarImports[city].wheelTex[v].reservedClut = clut;
-			}
-		}
+		if (!CarImportWheelRefNamesSet(&ref, sourceSet))
+			continue;
+
+		if (hub)
+			ref.rec->tex.reservedHubClut = clut;
+		else
+			ref.rec->tex.reservedClut = clut;
 	}
 }
 
@@ -3007,7 +3897,7 @@ int CarImportWheelPaletteRow(int city, int cluts)
 // unpack, or a sprite no row paints.
 int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char* page, int size, int hub)
 {
-	CAR_IMPORT* imp;
+	CAR_WHEEL_REC* rec;
 	const JER_WHEEL_TEX* wt;
 	const unsigned char* pix;
 	int npal, hist[16];
@@ -3021,27 +3911,25 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
 		return -1;
 
-	imp = &gCarImports[city];
-	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
+	/* hub: the WHLBOTH hubcap rect (on the damaged variant's page), else the
+	 * WHLCLEAN tyre rect (on the clean one). The record is picked by the SET, so
+	 * a bank with a wheel set per car derives each car's page from its own
+	 * record instead of always the bank default. */
+	dam = hub;
+	rec = CarImportWheelRecForSet(city, sourceSet, dam);
 
-	/* D1 baked cities have no D2-style wheelTex metadata for DAM/FAST.
+	/* D1 baked cities have no D2-style wheel metadata for DAM/FAST.
 	 * Fall back to the measured table row instead of bailing. -1 is the
 	 * caller's "use CarImportWheelPaletteRow()" sentinel; 0 would select
 	 * page row 0, which is not a wheel row. */
-	if (city >= CITY_D2_COUNT && !wt->present)
+	if (rec == NULL)
+	{
+		printInfo("cross-city: %s no wheel record names page set %d - keeping the page's own colours for the %s\n",
+			LevelNames[city], sourceSet, dam ? "hubcap" : "tyre");
 		return -1;
+	}
 
-	if (!wt->present)
-		return -1;
-
-	/* hub: the WHLBOTH hubcap rect (on the damaged variant's last source set),
-	 * else the WHLCLEAN tyre rect (on the clean set). */
-	dam = hub;
-
-	if (imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] <= 0 ||
-		imp->wheelSet[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN]
-			[imp->wheelSetCount[dam ? CAR_IMPORT_WHEEL_DAMAGED : CAR_IMPORT_WHEEL_CLEAN] - 1] != sourceSet)
-		return -1;
+	wt = &rec->tex;
 
 	if (dam)
 	{
@@ -3054,6 +3942,20 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 
 	if (u0 < 0 || v0 < 0 || u1 > 256 || v1 > 256 || u1 <= u0 || v1 <= v0)
 		return -1;
+
+	/* The bake now writes the wheel's own page row into poly 2's texture id.
+	 * Trust it as authoritative: it is the row the sprite was quantised
+	 * against, and the smoothness search below can disagree (CIVICOPS set 58:
+	 * assigned rows 27/28, search picked 29). A record with no valid assigned
+	 * row falls through to the search. Baked cities only: a vanilla Driver 2
+	 * city's WHLCLEAN/WHLBOTH record (BuildD2WheelTextureRects) leaves clut 0
+	 * as "unset", and trusting it painted the wheel with page row 0. */
+	if (city >= CITY_D2_COUNT && wt->clut >= 0 && wt->clut < npal)
+	{
+		printInfo("cross-city: %s wheel %s sprite (%d,%d)-(%d,%d) uses bake-assigned row %d\n",
+			LevelNames[city], dam ? "hubcap" : "tyre", u0, v0, u1, v1, wt->clut);
+		return wt->clut;
+	}
 
 	memset(hist, 0, sizeof(hist));
 
@@ -3070,7 +3972,11 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 
 		memset(sUnpacked, 0, 0x10000);
 		if (decomp_asm_n((char*)sUnpacked, (char*)page + 4 + npal * 32, size - 4 - npal * 32) == NULL)
+		{
+			printInfo("cross-city: %s wheel page set %d does not unpack - keeping the page's own colours for the %s\n",
+				LevelNames[city], sourceSet, dam ? "hubcap" : "tyre");
 			return -1;
+		}
 
 		pix = sUnpacked;
 	}
@@ -3195,13 +4101,14 @@ int CarImportDeriveWheelPaletteRow(int city, int sourceSet, const unsigned char*
 // blur). A host whose FASTWHEEL polys are semi-transparent (CHICAGO) hid it by
 // blending; HAVANA's are opaque and drew it. Give the fast variant a copy of the
 // tyre row with its background cleared to 0x0000 (transparent).
-void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
+void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow)
 {
-	CAR_IMPORT* imp;
+	CAR_WHEEL_REC* rec;
+	CAR_WHEEL_REC* dam;
 	JER_WHEEL_TEX* wt;
 	static unsigned char* sUnpacked = NULL;
 	unsigned short row[16];
-	int npal, cu[4], cv[4], votes[16] = { 0 }, i, bg = 0, clut;
+	int npal, cu[4], cv[4], votes[16] = { 0 }, i, bg = 0, clut, srcRow;
 
 	if (city < 0 || city >= CITY_COUNT || page == NULL || size < 4)
 		return;
@@ -3213,33 +4120,32 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 	if (city < CITY_D2_COUNT)
 		return;
 
-	imp = &gCarImports[city];
-	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_FAST];
 	npal = *(const int*)page;
 
-	/* A D1 bake has no D2-style wheelTex metadata for FASTWHEEL. Use the
-	 * tyre row that was already derived for the clean wheel instead of
-	 * leaving the fast wheel on the host palette. */
-	if (!wt->present || imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] <= 0 ||
-		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] != sourceSet)
+	/* The FAST record built from THIS page's set: a bank may carry a wheel set
+	 * per car, so the fast sprite belongs to a page, not to the city. A D1 bake
+	 * with no such metadata uses the tyre row already derived for the clean wheel
+	 * instead of leaving the fast wheel on the host palette. */
+	rec = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_FAST);
+
+	if (rec == NULL || !rec->present || rec->setCount <= 0)
 	{
 		if (npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
 			tyreRow >= 0 && tyreRow < npal)
 		{
 			memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
-			clut = CarImportReserveWheelPalette(city, 0, (const unsigned char*)row);
+			clut = CarImportReserveWheelPalette(city, sourceSet, 0, (const unsigned char*)row);
 
 			if (clut != 0)
-			{
 				CarImportSetWheelPaletteClut(city, sourceSet, clut, 0);
-				wt->reservedClut = clut;
-			}
 		}
 
 		return;
 	}
 
-	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32 || tyreRow < 0 || tyreRow >= npal)
+	wt = &rec->tex;
+
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
 		return;
 
 	if (wt->u0 < 0 || wt->v0 < 0 || wt->u1 > 256 || wt->v1 > 256 || wt->u1 <= wt->u0 || wt->v1 <= wt->v0)
@@ -3268,31 +4174,52 @@ void CarImportReserveFastWheelPalette(int city, int sourceSet, const unsigned ch
 		if (votes[i] > votes[bg])
 			bg = i;
 
-	/* The fast face names its own row (MIAMI's FASTWHEEL: 8). The clean
-	 * sprite's tyre row (6) painted it colour-inverted. */
-	if (wt->clut >= 0 && wt->clut < npal)
-		tyreRow = wt->clut;
+	/* The bake writes this island's page row into poly 2's texture id, the
+	 * same field CarImportDeriveWheelPaletteRow trusts for the hubcap and
+	 * tyre. Use it when it is a real page row. A fast sprite that shares the
+	 * damaged island (byte-identical png) has no assigned row of its own:
+	 * its pixels were quantised for the hubcap row, so use hubRow when the
+	 * fast rect matches the damaged face or hub rect. Fall back to the clean
+	 * tyre row only when neither is available. */
+	srcRow = tyreRow;
+	dam = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_DAMAGED);
+	if (hubRow >= 0 && hubRow < npal && dam != NULL && dam->present &&
+		((wt->u0 == dam->tex.u0 && wt->v0 == dam->tex.v0 &&
+		  wt->u1 == dam->tex.u1 && wt->v1 == dam->tex.v1) ||
+		 (wt->u0 == dam->tex.hubU0 && wt->v0 == dam->tex.hubV0 &&
+		  wt->u1 == dam->tex.hubU1 && wt->v1 == dam->tex.hubV1)))
+	{
+		srcRow = hubRow;
+	}
+	else if (wt->clut >= 0 && wt->clut < npal)
+	{
+		srcRow = wt->clut;
+	}
 
-	memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
+	if (srcRow < 0 || srcRow >= npal)
+		return;
+
+	memcpy(row, page + 4 + srcRow * 32, sizeof(row));
 
 	printInfo("cross-city: %s fast wheel sprite (%d,%d)-(%d,%d) row %d, background index %d is %04x - cleared in a fast-only row\n",
-		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, tyreRow, bg, row[bg]);
+		LevelNames[city], wt->u0, wt->v0, wt->u1, wt->v1, srcRow, bg, row[bg]);
 
 	row[bg] = 0;
-	clut = CarImportReserveWheelPalette(city, 2, (const unsigned char*)row);
+	clut = CarImportReserveWheelPalette(city, sourceSet, 2, (const unsigned char*)row);
 
 	if (clut != 0)
 		wt->reservedClut = clut;
 }
 
-// The damaged wheel's face names its OWN CLUT row, which need not be the clean
-// tyre's: MIAMI's DAMWHEEL is row 5 while the clean wheel is row 6. The clean
-// palette reservation sets every variant that names the page to row 6, so the
-// damaged wheel needs its own row or it draws the clean wheel's colours.
-void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow)
+// The damaged wheel's face names its OWN palette row, which need not be the
+// clean tyre's: MIAMI's DAMWHEEL is row 5 while the clean wheel is row 6. That
+// row is DERIVED from the damaged sprite's pixels (`hubRow`); the record's
+// `tex.clut` is a texture id, not a page row, for a baked wheel carrier. A
+// split page (VEGAS set 4) would otherwise copy row 0 - the body palette - and
+// draw the damaged wheel in the car's colours.
+void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned char* page, int size, int tyreRow, int hubRow)
 {
-	CAR_IMPORT* imp;
-	JER_WHEEL_TEX* wt;
+	CAR_WHEEL_REC* rec;
 	unsigned short row[16];
 	int npal, clut;
 
@@ -3303,23 +4230,25 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 	if (city < CITY_D2_COUNT)
 		return;
 
-	imp = &gCarImports[city];
-	wt = &imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED];
 	npal = *(const int*)page;
 
-	if (wt->present && imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] > 0 &&
-		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] == sourceSet &&
+	/* The DAMAGED record built from THIS page's set. A bank may carry a wheel set
+	 * per car, so the damaged sprite belongs to a page: without the lookup every
+	 * tri-set after the first kept the page's raw palette. */
+	rec = CarImportWheelRecFor(city, sourceSet, CAR_IMPORT_WHEEL_DAMAGED);
+
+	if (rec != NULL && rec->present && rec->setCount > 0 &&
 		npal > 0 && npal <= 32 && size > 4 + npal * 32 &&
-		wt->clut >= 0 && wt->clut < npal)
+		hubRow >= 0 && hubRow < npal)
 	{
-		memcpy(row, page + 4 + wt->clut * 32, sizeof(row));
-		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+		memcpy(row, page + 4 + hubRow * 32, sizeof(row));
+		clut = CarImportReserveWheelPalette(city, sourceSet, 3, (const unsigned char*)row);
 
 		if (clut != 0)
-			wt->reservedClut = clut;
+			rec->tex.reservedClut = clut;
 
 		printInfo("cross-city: %s damaged wheel palette row %d reserved (clut %04x)\n",
-			LevelNames[city], wt->clut, clut);
+			LevelNames[city], hubRow, clut);
 		return;
 	}
 
@@ -3329,13 +4258,115 @@ void CarImportReserveDamagedWheelPalette(int city, int sourceSet, const unsigned
 		tyreRow >= 0 && tyreRow < npal)
 	{
 		memcpy(row, page + 4 + tyreRow * 32, sizeof(row));
-		clut = CarImportReserveWheelPalette(city, 3, (const unsigned char*)row);
+		clut = CarImportReserveWheelPalette(city, sourceSet, 3, (const unsigned char*)row);
 
 		if (clut != 0)
-			wt->reservedClut = clut;
+			CarImportSetWheelPaletteClut(city, sourceSet, clut, 0);
 
 		printInfo("cross-city: %s damaged wheel palette fell back to tyre row %d (clut %04x)\n",
 			LevelNames[city], tyreRow, clut);
+	}
+}
+
+// JERICHO: every wheel RECORD of a baked bank gets the palette of its OWN page row.
+//
+// The set-level pass above derives one tyre/hubcap/damaged/fast palette per page set
+// from the first record that names the set, then stamps it on every record naming the
+// set (CarImportSetWheelPaletteClut). That is right for a Driver 2 page, which carries
+// one wheel design. A baked page can carry several: COPSNRBRS set 1 held the Rio
+// Benz/pickup wheels at x 0..128 and the Chicago GSX/armour-truck wheels at 128..256,
+// each quantised against its own row (9/10 and 11/12) - and the Chicago cars drew with
+// the Rio rows. The bake writes each island's page row into the record's `tex.clut`
+// (texture id == CLUT row), so here each record reserves that row for itself; the
+// palette cache is keyed by content, so records that share a row share one CLUT.
+// Driver 2 cities keep the set-level behaviour (their tex.clut is not a page row).
+void CarImportReserveRecordWheelPalettes(int city, int sourceSet, const unsigned char* page, int size)
+{
+	static unsigned char* sUnpacked = NULL;
+	CAR_WHEEL_REF ref;
+	int npal, i, unpacked = 0;
+
+	if (city < CITY_D2_COUNT || city >= CITY_COUNT || page == NULL || size < 4)
+		return;
+
+	npal = *(const int*)page;
+
+	if (npal <= 0 || npal > 32 || size <= 4 + npal * 32)
+		return;
+
+	for (i = 0; CarImportWheelRef(city, i, &ref); i++)
+	{
+		JER_WHEEL_TEX* wt;
+		unsigned short row[16];
+		int srcRow, hub, clut;
+
+		if (ref.rec == NULL || !ref.rec->present || !CarImportWheelRefNamesSet(&ref, sourceSet))
+			continue;
+
+		wt = &ref.rec->tex;
+		srcRow = wt->clut;
+
+		if (srcRow < 0 || srcRow >= npal)
+			continue;
+
+		memcpy(row, page + 4 + srcRow * 32, sizeof(row));
+
+		hub = (ref.kind == CAR_IMPORT_WHEEL_FAST) ? 2 :
+			(ref.kind == CAR_IMPORT_WHEEL_DAMAGED) ? 3 : 0;
+
+		/* the fast sprite's backdrop must be see-through even where the row keeps
+		 * that index opaque (CarImportReserveFastWheelPalette explains why) */
+		if (ref.kind == CAR_IMPORT_WHEEL_FAST &&
+			wt->u0 >= 0 && wt->v0 >= 0 && wt->u1 <= 256 && wt->v1 <= 256 &&
+			wt->u1 > wt->u0 && wt->v1 > wt->v0)
+		{
+			int cu[4], cv[4], votes[16] = { 0 }, c, bg = 0;
+
+			if (!unpacked)
+			{
+				if (sUnpacked == NULL)
+					sUnpacked = (unsigned char*)malloc(0x10000);
+
+				if (sUnpacked == NULL)
+					continue;
+
+				memset(sUnpacked, 0, 0x10000);
+
+				if (decomp_asm_n((char*)sUnpacked, (char*)page + 4 + npal * 32, size - 4 - npal * 32) == NULL)
+					continue;
+
+				unpacked = 1;
+			}
+
+			cu[0] = wt->u0; cu[1] = wt->u1 - 1; cu[2] = wt->u0; cu[3] = wt->u1 - 1;
+			cv[0] = wt->v0; cv[1] = wt->v0; cv[2] = wt->v1 - 1; cv[3] = wt->v1 - 1;
+
+			for (c = 0; c < 4; c++)
+			{
+				unsigned char cb = sUnpacked[cv[c] * 128 + (cu[c] >> 1)];
+				votes[(cu[c] & 1) ? (cb >> 4) : (cb & 15)]++;
+			}
+
+			for (c = 1; c < 16; c++)
+				if (votes[c] > votes[bg])
+					bg = c;
+
+			row[bg] = 0;
+		}
+
+		clut = CarImportReserveWheelPalette(city, sourceSet, hub, (const unsigned char*)row);
+
+		if (clut == 0)
+			continue;
+
+		wt->reservedClut = clut;
+
+		/* a baked wheel's face IS its tread sprite: the hubcap poly reads the same row */
+		if (wt->hubU0 == wt->u0 && wt->hubV0 == wt->v0 && wt->hubU1 == wt->u1 && wt->hubV1 == wt->v1)
+			wt->reservedHubClut = clut;
+
+		printInfo("cross-city: %s model %d wheel %d (set %d, (%d,%d)-(%d,%d)) owns page row %d -> clut %04x\n",
+			LevelNames[city], ref.model, ref.kind, sourceSet, wt->u0, wt->v0, wt->u1, wt->v1, srcRow, clut);
 	}
 }
 
@@ -3504,48 +4535,52 @@ static int BuildD2WheelTextureRects(int city)
 		CarSetRemapEnable(0, -1);
 
 		/* SOURCE sets for the pin walk, not the remapped draw indices. */
-		imp->wheelSet[CAR_IMPORT_WHEEL_CLEAN][0] = (unsigned char)cleanSource;
-		imp->wheelSetCount[CAR_IMPORT_WHEEL_CLEAN] = 1;
-		imp->wheelSet[CAR_IMPORT_WHEEL_FAST][0] = (unsigned char)cleanSource;
-		imp->wheelSetCount[CAR_IMPORT_WHEEL_FAST] = 1;
-		imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][0] = (unsigned char)cleanSource;
-		imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 1;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->sets[0] = (unsigned char)cleanSource;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->setCount = 1;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_FAST)->sets[0] = (unsigned char)cleanSource;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_FAST)->setCount = 1;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->sets[0] = (unsigned char)cleanSource;
+		CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->setCount = 1;
 
 		if (damSource != cleanSource)
 		{
-			imp->wheelSet[CAR_IMPORT_WHEEL_DAMAGED][1] = (unsigned char)damSource;
-			imp->wheelSetCount[CAR_IMPORT_WHEEL_DAMAGED] = 2;
+			CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->sets[1] = (unsigned char)damSource;
+			CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->setCount = 2;
 		}
 	}
 
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].present = 1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].set = cleanSet;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].clut = 0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u0 = cleanU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v0 = cleanV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].u1 = cleanU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].v1 = cleanV1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubU0 = damU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubV0 = damV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubU1 = damU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].hubV1 = damV1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->present = 1;
+	// JERICHO: the draw asks tex.present (GetCarImportWheelTexFor), not the record's
+	// present - left 0, every vanilla D2 car drew the host's wheels
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.present = 1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.set = cleanSet;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.clut = 0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.u0 = cleanU0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.v0 = cleanV0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.u1 = cleanU1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.v1 = cleanV1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.hubU0 = damU0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.hubV0 = damV0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.hubU1 = damU1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.hubV1 = damV1;
 
-	imp->wheelTex[CAR_IMPORT_WHEEL_FAST] = imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN];
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_FAST)->tex = CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex;
 
 	/* A damaged wheel keeps the CLEAN tyre sprite and takes only its hubcap
 	 * poly from WHLBOTH. Using WHLBOTH for the whole wheel is what garbled
 	 * the tyre (a hubcap image stretched over it). */
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].present = 1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set = cleanSet;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].clut = 0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u0 = cleanU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v0 = cleanV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].u1 = cleanU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].v1 = cleanV1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubU0 = damU0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubV0 = damV0;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubU1 = damU1;
-	imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].hubV1 = damV1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->present = 1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.present = 1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.set = cleanSet;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.clut = 0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.u0 = cleanU0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.v0 = cleanV0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.u1 = cleanU1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.v1 = cleanV1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.hubU0 = damU0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.hubV0 = damV0;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.hubU1 = damU1;
+	CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.hubV1 = damV1;
 
 	return 1;
 }
@@ -3581,8 +4616,8 @@ static void BuildD2WheelTextureSources(int city)
 	{
 		printInfo("cross-city: %s wheels - WHLCLEAN/WHLBOTH TEXINF sprites (sets %d/%d)\n",
 			LevelNames[city],
-			imp->wheelTex[CAR_IMPORT_WHEEL_CLEAN].set,
-			imp->wheelTex[CAR_IMPORT_WHEEL_DAMAGED].set);
+			CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_CLEAN)->tex.set,
+			CAR_WHEEL(imp, -1, CAR_IMPORT_WHEEL_DAMAGED)->tex.set);
 		return;
 	}
 
@@ -3652,7 +4687,7 @@ static void BuildD2WheelTextureSources(int city)
 
 				if (m != NULL)
 				{
-					imp->wheelSetCount[v] = CollectWheelSets(m, imp->wheelSet[v], 8);
+					CAR_WHEEL(imp, -1, v)->setCount = CollectWheelSets(m, CAR_WHEEL(imp, -1, v)->sets, 8);
 					RemapWheelSets(m, city);
 					imp->wheels[v] = m;
 					imp->wheelTexMem[v] = (char*)m;
@@ -3682,13 +4717,49 @@ int GetCarImportWheelSets(int city, int kind, unsigned char* out, int max)
 		out == NULL || max <= 0)
 		return 0;
 
-	n = gCarImports[city].wheelSetCount[kind];
+	n = CAR_WHEEL(&gCarImports[city], -1, kind)->setCount;
 
 	if (n > max)
 		n = max;
 
 	for (i = 0; i < n; i++)
-		out[i] = gCarImports[city].wheelSet[kind][i];
+		out[i] = CAR_WHEEL(&gCarImports[city], -1, kind)->sets[i];
+
+	return n;
+}
+
+// JERICHO: the same for ONE model of the import (LUMP_CAR_WHEELS2), falling back
+// to the bank default when the segment names no set for that model.
+int GetCarImportWheelSetsFor(int city, int model, int kind, unsigned char* out,
+                             int max)
+{
+	int i, n;
+
+	if (city < 0 || city >= CITY_COUNT || kind < 0 || kind >= CAR_IMPORT_WHEEL_VARIANTS ||
+		out == NULL || max <= 0)
+		return 0;
+
+	if (model >= 0 && model < CAR_IMPORT_MODEL_SLOTS &&
+		CAR_WHEEL_ROW_PRESENT(&gCarImports[city], model))
+	{
+		n = CAR_WHEEL(&gCarImports[city], model, kind)->setCount;
+
+		if (n > max)
+			n = max;
+
+		for (i = 0; i < n; i++)
+			out[i] = CAR_WHEEL(&gCarImports[city], model, kind)->sets[i];
+
+		return n;
+	}
+
+	n = CAR_WHEEL(&gCarImports[city], -1, kind)->setCount;
+
+	if (n > max)
+		n = max;
+
+	for (i = 0; i < n; i++)
+		out[i] = CAR_WHEEL(&gCarImports[city], -1, kind)->sets[i];
 
 	return n;
 }
@@ -3716,7 +4787,7 @@ char* GetCarImportCosmetics(int slot)
 // live with its own allocations. JerHotLoadCarModel builds one such slot from its
 // IMPORT data into this pool instead, which lives until the next level load
 // (ProcessCarModelLump resets it). See models.h.
-#define JER_HOT_CAR_POOL_BYTES	(512 * 1024)
+#define JER_HOT_CAR_POOL_BYTES	(MAX_CAR_RESIDENT_MODELS * 64 * 1024)	/* one block per resident slot */
 
 // One car's worth of pool. Deliberately far above the level loader's specMemReq
 // figure for the same model: that figure is the SPOOL requirement (the largest single
@@ -3735,17 +4806,22 @@ char* GetCarImportCosmetics(int slot)
 // must hand its resources back. JER_HOT_CAR_BLOCKS blocks fit the pool by construction.
 #define JER_HOT_CAR_BLOCKS		(JER_HOT_CAR_POOL_BYTES / JER_HOT_CAR_BLOCK_BYTES)
 
-/* The eight-player guest-import budget: 16 resident models - 5 domestic - 2 mp spares
- * (5/6) - 1 special (11) = 8 hot-load blocks. A player whose car cannot get a block is
- * left drawn as the level's own car, so this is a build error, not a runtime surprise. */
-#if JER_HOT_CAR_BLOCKS < 8
-#error "the hot-load pool must cover the eight guest import slots"
+/* One block per resident slot, so no slot that can be hot-loaded is ever left without one.
+ * The old budget (16 - 5 domestic - 2 mp spares - 1 special = 8) undercounted: a level-built
+ * spare released and rebuilt in place, plus the slots above it, wanted 9-10 at once, and a
+ * spawner cycling cars ran the pool dry ("8 of 8 in use"). A player whose car cannot get a
+ * block is left drawn as the level's own car, so this is a build error, not a runtime
+ * surprise. */
+#if JER_HOT_CAR_BLOCKS < MAX_CAR_RESIDENT_MODELS
+#error "the hot-load pool must cover every resident slot"
 #endif
 
 static char* gJerHotCarPool;
 static int   gJerHotCarSize;
 static int   gJerHotCarUsed;					// blocks in use, for the log line
 static int   gJerHotCarBlockOf[MAX_CAR_RESIDENT_MODELS];	// slot -> block, -1 = none
+int          gJerHotRefusedNoPages[MAX_CAR_RESIDENT_MODELS];	// the last hot load of this slot was
+								// refused for texture pool room (step 6)
 
 int ProcessCarModelLump(char *lump_ptr, int lump_size)
 {
@@ -4080,6 +5156,81 @@ int JerHotLoadCarModel(int slot)
 		printInfo("cross-city: %s model %d has no geometry to build for slot %d\n",
 			LevelNames[GetCarModelSourceCity(slot)], model_number, slot);
 		return 0;
+	}
+
+	/* JERICHO: STEP 6 - refuse BEFORE building when the car's texture pages cannot get room
+	 * in the lower-half pool. Built anyway, the car took a slot, a hot-load block and page
+	 * handles and was then simply not drawn (its pages unplaced): a silent failure. Now it
+	 * is turned away up front, with a reason on screen, and holds nothing. */
+	{
+		int sets[64], nsets = 0, needPages = 0, availPages = 0;
+		int ofsList[2], k;
+
+		ofsList[0] = cleanOfs;
+		ofsList[1] = lowOfs;
+
+		for (k = 0; k < 2; k++)
+		{
+			MODEL* sm;
+			char* p;
+			int i;
+
+			if (ofsList[k] == -1)
+				continue;
+
+			sm = (MODEL*)(slot_models_offset + ofsList[k]);
+
+			if (sm->poly_block == 0 || sm->num_polys <= 0)
+				continue;
+
+			p = (char*)sm + sm->poly_block;
+
+			for (i = 0; i < sm->num_polys; i++)
+			{
+				int type = (u_char)*p & 0x1f;
+				int step = (type >= 0 && type < 56) ? PolySizes[type] : 0;
+				int set, j;
+
+				if (step <= 0)
+					break;
+
+				set = (u_char)p[1];
+
+				if (JerPedIsTexturedPoly(type) && set < 128)
+				{
+					for (j = 0; j < nsets && sets[j] != set; j++)
+						;
+
+					if (j == nsets && nsets < 64)
+						sets[nsets++] = set;
+				}
+
+				p += step;
+			}
+		}
+
+		gJerHotRefusedNoPages[slot] = 0;
+
+		if (!JerImportPoolHeadroom(GetCarModelSourceCity(slot), sets, nsets, &needPages, &availPages))
+		{
+			gJerHotRefusedNoPages[slot] = 1;	// JerCarSlotRefusal names the real reason
+
+			static int sLastRefuseKey = -1, sLastRefuseAvail = -1;
+			int key = GetCarModelSourceCity(slot) * 64 + model_number;
+
+			printInfo("cross-city: %s model %d refused before building - it needs %d new texture page(s) and the lower-half pool can give %d (free + pages of imports with no car on them); slot %d keeps the car it has\n",
+				LevelNames[GetCarModelSourceCity(slot)], model_number, needPages, availPages, slot);
+
+			if (key != sLastRefuseKey || availPages != sLastRefuseAvail)
+			{
+				sLastRefuseKey = key;
+				sLastRefuseAvail = availPages;
+				jer_console_log("[jericho] %s car %d not loaded: needs %d texture page(s), %d free",
+					LevelNames[GetCarModelSourceCity(slot)], model_number, needPages, availPages);
+			}
+
+			return 0;
+		}
 	}
 
 	if (gJerHotCarPool == NULL)

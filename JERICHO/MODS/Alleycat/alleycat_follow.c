@@ -1,0 +1,406 @@
+/*
+ * alleycat_follow.c -- who the AI car chases in multiplayer. See alleycat_follow.h.
+ *
+ * The pursuit behavior owns WHAT to do with the answer (drive to the target,
+ * idle within the clearance). This file only answers "which car, and how far
+ * away is it" - and it is the one place that knows about the mp module.
+ *
+ * It is a COMPILED-IN sibling of mp, so it calls mp's own accessors directly
+ * (the build puts JERICHO/MODS on every module's include path). That is safe
+ * with no session: jer_net_is_active() is a plain SDK call and only mp's
+ * registry is consulted after it says a session is live.
+ */
+#include "alleycat_internal.h"
+#include "alleycat_follow.h"
+
+#include "cars.h"	/* car_data, MAX_CARS */
+#include "jer_net.h"	/* jer_net_is_active / jer_net_is_host */
+#include "cop_ai.h"	/* copsAreInPursuit - the engine's own "they are after us" */
+#include "felony.h"	/* CopsCanSeePlayer */
+#include "mp/mp.h"	/* MpGetPlayer, MP_PLAYER - the compiled-in mp module */
+
+/* A DEDICATED server has no player of its own, so no row has id 0 (dediserver
+ * test_plugins.py: "no row for id 0 (the server has no player)") and
+ * MpGetPlayer(0) answers NULL. There, "the host" to chase or run from is the
+ * NEAREST other connected player with a car. A listen server's host row is
+ * always there, so this never runs on one. -1 when nobody qualifies. */
+static int AlleycatNearestPeerCar(CAR_DATA* car)
+{
+	int best = -1, i;
+	long long bestD2 = 0;
+
+	if (car == NULL)
+		return -1;
+
+	for (i = 0; i < MP_MAX_PLAYERS; i++)
+	{
+		MP_PLAYER* p = MpGetPlayer(i);
+		long long d2;
+		int slot;
+
+		if (p == NULL || p->isLocal || !p->connected || p->onFoot)
+			continue;
+
+		slot = p->carId;
+
+		if (slot < 0 || slot >= MAX_CARS || &car_data[slot] == car)
+			continue;
+
+		d2 = AlleycatDist2(car_data[slot].hd.where.t[0], car_data[slot].hd.where.t[2],
+			car->hd.where.t[0], car->hd.where.t[2]);
+
+		if (best < 0 || d2 < bestD2)
+		{
+			best = slot;
+			bestD2 = d2;
+		}
+	}
+
+	return best;
+}
+
+/* Which CAR_DATA index should be followed right now, or -1 for "nothing".
+ *
+ * Order matters: the single-player test lever wins, because it is exactly the
+ * "pretend there is a target, with no session" case. */
+static int AlleycatResolveTargetCar(CAR_DATA* car)
+{
+	int slot;
+
+	/* the test lever: follow a named car unconditionally (see Alleycat.ini
+	 * `follow_car`). It is how the approach + clearance + idle are exercised
+	 * in SINGLE PLAYER, where no session exists. */
+	if (gAlleycat.followCar >= 0)
+	{
+		slot = gAlleycat.followCar;
+	}
+	else
+	{
+		MP_PLAYER* host;
+
+		if (!jer_net_is_active())
+			return -1;
+
+		/* The AI drives THIS machine's own car. If WE are the host there is
+		 * nobody to chase, so answer "none" and the normal wander resumes. */
+		if (jer_net_is_host())
+			return -1;
+
+		host = MpGetPlayer(0);	/* player id 0 = the host */
+
+		/* No player 0 at all: a dedicated server. Follow the nearest player. */
+		if (host == NULL)
+			return AlleycatNearestPeerCar(car);
+
+		/* No car yet (they have not picked), gone, or on foot: nothing to
+		 * drive after this frame. */
+		if (!host->connected || host->onFoot || host->carId < 0)
+			return -1;
+
+		slot = host->carId;
+	}
+
+	if (slot < 0 || slot >= MAX_CARS)
+		return -1;
+
+	/* never target our own car: the client's own slot and the host's can
+	 * resolve to the same index in a single-player arena, and a car cannot
+	 * follow itself */
+	if (car != NULL && &car_data[slot] == car)
+		return -1;
+
+	return slot;
+}
+
+int AlleycatFollowTarget(CAR_DATA* car, int* x, int* z, long long* dist2)
+{
+	int slot;
+	long long dx, dz, d2;
+
+	if (car == NULL)
+		return 0;
+
+	slot = AlleycatResolveTargetCar(car);
+
+	if (slot < 0)
+		return 0;
+
+	/* 64-bit on purpose: a 32-bit squared world distance wraps NEGATIVE on a
+	 * city-sized map (past ~46,000 units), so a host across the level would read
+	 * as "right next to us" and the car would idle in the distance instead of
+	 * driving over. */
+	dx = (long long)car_data[slot].hd.where.t[0] - (long long)car->hd.where.t[0];
+	dz = (long long)car_data[slot].hd.where.t[2] - (long long)car->hd.where.t[2];
+	d2 = dx * dx + dz * dz;
+
+	/* An optional RANGE. 0 - the default - means NO LIMIT, and that is the point:
+	 * the chase is CHUNKED, not truncated. The behavior clamps the plan goal to
+	 * the planner's window and re-plans as the car closes, so an unlimited chase
+	 * still crosses a whole city to rendezvous. A non-zero range makes the AI
+	 * give the target up (and wander again) once they are farther than that. */
+	if (gAlleycat.followRange > 0)
+	{
+		long long r = (long long)gAlleycat.followRange;
+
+		if (d2 > r * r)
+			return 0;
+	}
+
+	if (x != NULL) *x = car_data[slot].hd.where.t[0];
+	if (z != NULL) *z = car_data[slot].hd.where.t[2];
+	if (dist2 != NULL) *dist2 = d2;
+
+	/* tell the driver this car is a DESTINATION, not traffic - see AlleycatCarAhead */
+	gAlleycat.followCarId = slot;
+
+	return 1;
+}
+
+/* The car to RUN FROM: the nearest other player's, on the host only. See
+ * alleycat_follow.h - this is the host's half of the multiplayer pairing, the
+ * mirror of AlleycatFollowTarget's client half. */
+int AlleycatThreatTarget(CAR_DATA* car, int* x, int* z)
+{
+	int best = -1;
+	long long bestD2 = 0;
+	int i;
+
+	if (car == NULL)
+		return 0;
+
+	if (gAlleycat.fleeCar >= 0)
+	{
+		best = gAlleycat.fleeCar;
+	}
+	else
+	{
+		/* In a session only the HOST runs: a client is the one CHASING, and
+		 * giving it a threat as well would have it flee from the car it was
+		 * told to follow. */
+		if (!jer_net_is_active() || !jer_net_is_host())
+			return 0;
+
+		for (i = 0; i < MP_MAX_PLAYERS; i++)
+		{
+			MP_PLAYER* p = MpGetPlayer(i);
+			long long dx, dz, d2;
+			int slot;
+
+			if (p == NULL || p->isLocal || !p->connected || p->onFoot)
+				continue;
+
+			slot = p->carId;
+
+			if (slot < 0 || slot >= MAX_CARS || &car_data[slot] == car)
+				continue;
+
+			dx = (long long)car_data[slot].hd.where.t[0] - (long long)car->hd.where.t[0];
+			dz = (long long)car_data[slot].hd.where.t[2] - (long long)car->hd.where.t[2];
+			d2 = dx * dx + dz * dz;
+
+			if (best < 0 || d2 < bestD2)
+			{
+				best = slot;
+				bestD2 = d2;
+			}
+		}
+	}
+
+	if (best < 0 || best >= MAX_CARS)
+		return 0;
+
+	if (&car_data[best] == car)
+		return 0;	/* never run from ourselves */
+
+	gAlleycat.followCarId = best;	/* a destination, not traffic - see AlleycatCarAhead */
+
+	if (x != NULL) *x = car_data[best].hd.where.t[0];
+	if (z != NULL) *z = car_data[best].hd.where.t[2];
+
+	return 1;
+}
+
+/* The CLIENT's half of the multiplayer flee (config flee_host): run FROM the host.
+ *
+ * AlleycatThreatTarget above is deliberately the host's half and returns 0 on a client,
+ * because a client's job was to CHASE the host (AlleycatFollowTarget). With flee_host on
+ * it is the other way round, and this answers "who am I running from" the same way -
+ * player 0 - so the caller's flee block, and AlleycatLocalFleeGoal behind it (which
+ * scores the bolt-hole on the reachable grid rather than a straight line away through
+ * a building), are reused as they are.
+ *
+ * Off by default: a joining AI car still chases. */
+/* the last reason AlleycatHostThreatTarget logged, so it says each one once */
+static const char* sHostThreatWhy;
+
+int AlleycatHostThreatTarget(CAR_DATA* car, int* x, int* z)
+{
+	MP_PLAYER* host;
+	int slot;
+	const char* why = NULL;
+
+	if (car == NULL)
+		return 0;
+
+	/* The host has AlleycatThreatTarget; a single-player run has nobody to run from. */
+	if (!jer_net_is_active() || jer_net_is_host())
+		return 0;
+
+	host = MpGetPlayer(0);		/* the host's row is id 0 on every machine */
+
+	/* no player 0 at all: a dedicated server - run from the nearest player */
+	if (host == NULL)
+	{
+		slot = AlleycatNearestPeerCar(car);
+
+		if (slot >= 0)
+		{
+			gAlleycat.followCarId = slot;	/* a destination, not traffic - see AlleycatCarAhead */
+			sHostThreatWhy = NULL;
+
+			if (x != NULL) *x = car_data[slot].hd.where.t[0];
+			if (z != NULL) *z = car_data[slot].hd.where.t[2];
+
+			return 1;
+		}
+
+		why = "dedicated server and no other player has a car";
+	}
+	else if (host->isLocal)
+		why = "the host row is this machine";
+	else if (!host->connected)
+		why = "the host row is not connected";
+	else if (host->onFoot)
+		why = "the host is on foot";
+	else
+	{
+		slot = host->carId;
+
+		if (slot < 0 || slot >= MAX_CARS)
+			why = "the host has no car slot yet";
+		else if (&car_data[slot] == car)
+			why = "the host's car slot is our own";
+		else
+		{
+			gAlleycat.followCarId = slot;	/* a destination, not traffic - see AlleycatCarAhead */
+			sHostThreatWhy = NULL;
+
+			if (x != NULL) *x = car_data[slot].hd.where.t[0];
+			if (z != NULL) *z = car_data[slot].hd.where.t[2];
+
+			return 1;
+		}
+	}
+
+	/* A CLIENT in a live session that cannot name the host is worth one line: it is
+	 * the whole reason the flee silently does nothing. Once per reason (a state
+	 * change), not every few seconds; only reachable on the client side. */
+	if (gAlleycat.ctx != NULL && why != sHostThreatWhy)
+		gAlleycat.ctx->jer_log(gAlleycat.ctx,
+			"[Alleycat] flee_host is on but cannot run from the host: %s (local player %d)\n",
+			why, jer_net_local_player());
+
+	sHostThreatWhy = why;
+
+	return 0;
+}
+
+/* The nearest police car, when the police are actually after this car. See
+ * alleycat_follow.h - the flags are the engine's own pursuit state, so a police car
+ * merely parked nearby is not a threat. */
+int AlleycatPoliceThreat(CAR_DATA* car, int* x, int* z)
+{
+	int best = -1;
+	long long bestD2 = 0;
+	int i;
+
+	if (car == NULL)
+		return 0;
+
+	/* The engine's own answer to "are they after us": either a pursuit is
+	 * running or a cop has line of sight. Both are cleared by Alleycat's `immune`
+	 * option, which is why immunity makes this unreachable (see the header). */
+	if (!copsAreInPursuit && !CopsCanSeePlayer)
+		return 0;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* o = &car_data[i];
+		long long dx, dz, d2;
+
+		if (o == car || o->controlType != CONTROL_TYPE_PURSUER_AI)
+			continue;
+
+		dx = (long long)o->hd.where.t[0] - (long long)car->hd.where.t[0];
+		dz = (long long)o->hd.where.t[2] - (long long)car->hd.where.t[2];
+		d2 = dx * dx + dz * dz;		/* 64-bit: see AlleycatFollowTarget */
+
+		if (best < 0 || d2 < bestD2)
+		{
+			best = i;
+			bestD2 = d2;
+		}
+	}
+
+	if (best < 0)
+		return 0;
+
+	gAlleycat.followCarId = best;	/* a destination, not traffic - see AlleycatCarAhead */
+
+	if (x != NULL) *x = car_data[best].hd.where.t[0];
+	if (z != NULL) *z = car_data[best].hd.where.t[2];
+
+	return 1;
+}
+
+/* Evade's threat: the nearest police car inside `radius`, pursuing or not. A
+ * police car is a pursuer (CONTROL_TYPE_PURSUER_AI) or any car flagged
+ * CONTROL_FLAG_COP - a patrolling civ-AI cop car, or a multiplayer cop player.
+ * Writes its position and squared distance (even when it is outside `radius`,
+ * for the readout, as long as there is one). */
+int AlleycatCopNear(CAR_DATA* car, int radius, int* x, int* z, long long* dist2)
+{
+	int best = -1, i;
+	long long bestD2 = 0;
+
+	if (dist2 != NULL)
+		*dist2 = -1;
+
+	if (car == NULL)
+		return 0;
+
+	for (i = 0; i < MAX_CARS; i++)
+	{
+		CAR_DATA* o = &car_data[i];
+		long long d2;
+
+		if (o == car || o->controlType == CONTROL_TYPE_NONE)
+			continue;
+
+		if (o->controlType != CONTROL_TYPE_PURSUER_AI && (o->controlFlags & CONTROL_FLAG_COP) == 0)
+			continue;
+
+		d2 = AlleycatDist2(o->hd.where.t[0], o->hd.where.t[2], car->hd.where.t[0], car->hd.where.t[2]);
+
+		if (best < 0 || d2 < bestD2)
+		{
+			best = i;
+			bestD2 = d2;
+		}
+	}
+
+	if (best < 0)
+		return 0;
+
+	if (dist2 != NULL) *dist2 = bestD2;
+
+	if (radius <= 0 || bestD2 > (long long)radius * radius)
+		return 0;
+
+	gAlleycat.followCarId = best;	/* a threat, not traffic - see AlleycatCarAhead */
+
+	if (x != NULL) *x = car_data[best].hd.where.t[0];
+	if (z != NULL) *z = car_data[best].hd.where.t[2];
+
+	return 1;
+}

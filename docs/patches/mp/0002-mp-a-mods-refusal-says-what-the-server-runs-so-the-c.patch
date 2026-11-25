@@ -1,0 +1,548 @@
+From 4aefbc184fee1d2a8d658907cfdb84e946753ec2 Mon Sep 17 00:00:00 2001
+From: z-Vibes <180806113+z-Vibes@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 04:48:04 +0000
+Subject: [PATCH 2/2] mp: a mods refusal says what the server runs, so the
+ client can fetch it
+
+A join refused for mods was a dead end ("mod list does not match"). The
+refusal now carries the server's list, and the client hands it to JERICHO's
+jer_joinmods, which compares it with the player's saved mod set, checks their
+configured mod repos and asks before downloading anything (Download & Join /
+No / Keep Them On).
+
+- mp_proto.h: MP_REJECT_MODLIST ('JPMR'), an optional trailer after the
+  MP_REJECT of an MP_REJECT_MODS refusal: modCheck, flags (EXACT_SET), count,
+  then MP_MOD_INFO rows. No protocol bump: MpHandleReject has always read
+  only sizeof(MP_REJECT), so older clients show the refusal as before, and a
+  newer client facing an older server finds no tag.
+- Listen host: MpSendRejectMods sends its enabled mods without tooling, with
+  EXACT_SET (its own rule: the client's set must be the host's).
+- Client: MpBeginJoinAsync keeps the address it dialled; MpOfferServerMods
+  forwards the rows, MpModIsTooling's ids as `ignore`, and EXACT / EXACT_SET
+  to jer_joinmods_offer.
+- MpBuildManifest and MpModHash describe what RUNS this boot
+  (jer_module_running) instead of what modlist.ini says. They used
+  jer_module_list, which ignores -mod / -nomod / -nomods, so a relaunch for a
+  server's mods (or -testmode / -mod) told the server the saved set, and it
+  refused the very set it had asked for.
+- Dedicated server: reject_modlist(cfg) sends mods_match's own requirements
+  (core_mods + mods, mod_versions under check 2; EXACT_SET when `mods` is set).
+- Python mirror (mp_test.py) and proto_check cover the struct and constants.
+- test_plugins.py: the list's contents, bounds and terminators, and that a
+  client acting on it is then admitted by mods_match.
+
+Needs the JERICHO core with jer_joinmods.h and jer_module_running.
+
+---
+ docs/ARCHITECTURE.md                     |   2 +-
+ docs/JERICHO-MP.md                       |   9 ++
+ mp_config.c                              |   8 +-
+ mp_lobby.c                               | 114 ++++++++++++++++++++++-
+ mp_proto.h                               |  27 ++++++
+ tools/mp_test.py                         |  44 +++++++++
+ tools/servers/dediserver/README.md       |   7 ++
+ tools/servers/dediserver/dedi/core.py    |  36 ++++++-
+ tools/servers/dediserver/test_plugins.py |  46 +++++++++
+ tools/servers/proto_check.py             |   3 +
+ 10 files changed, 288 insertions(+), 8 deletions(-)
+
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index a734b37..e71c6ea 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -192,7 +192,7 @@ flushed as the socket accepts them (§10, trap 2).
+ | --- | --- | --- |
+ | `JPHL` | C→H | HELLO: identity + mod manifest |
+ | `JPWL` | H→C | WELCOME: player id + lobby + live state |
+-| `JPRJ` | H→C | REJECT: why, in text |
++| `JPRJ` | H→C | REJECT: why, in text. A mods refusal adds a `JPMR` list of what the server runs (`MP_REJECT_MODLIST`), so the client can offer to fetch it |
+ | `JPRS` | H→all | ROSTER: who is in the match, ascending id, host first |
+ | `JPST` | H→all | START: begin the level launch |
+ | `JPIN` | C→H, H→all | INPUT: this frame's pad set |
+diff --git a/docs/JERICHO-MP.md b/docs/JERICHO-MP.md
+index 2812b69..6978826 100644
+--- a/docs/JERICHO-MP.md
++++ b/docs/JERICHO-MP.md
+@@ -254,6 +254,15 @@ Every join is checked by the **host**, on its side, in this order:
+ | enabled-mod manifest | per `mod_check` in `mp.ini` | `OFF` admits anyone, `VERSION` wants the same enabled mod ids, `EXACT` their versions too |
+ | build identity | only with `Strict Version` on — **default off** | same **release series** |
+ 
++A mod refusal now says **what the host runs**: the `JPRJ` carries a `JPMR` list
++after it (`MP_REJECT_MODLIST`, `mp_proto.h`), and the client hands that list
++to JERICHO's `jer_joinmods`, which compares it with the player's saved mod set. That checks the player's configured mod
++repos and **asks first**: *Download & Join* fetches what is missing and relaunches
++with `-join` and one `-mod` / `-nomod` per change (for that session only), *Keep
++Them On* also enables the server's mods for good, *No* does nothing. A mod no repo
++offers, or one built into the game, is named instead. An older client ignores the
++list and just shows the refusal.
++
+ The build identity compares the **series** of `JERICHO_BUILD_VERSION`, not the
+ string. That string is `git describe --tags --match 'v*' --always --dirty`, so one release
+ reads differently depending on who built it and how — and comparing it raw
+diff --git a/mp_config.c b/mp_config.c
+index 7e1d6fc..0412945 100644
+--- a/mp_config.c
++++ b/mp_config.c
+@@ -536,7 +536,8 @@ unsigned short MpModHash(void)
+ 	{
+ 		const char* s;
+ 
+-		if (!info[i].enabled)
++		/* what RUNS, as MpBuildManifest - not what modlist.ini says */
++		if (!jer_module_running(info[i].id))
+ 			continue;
+ 
+ 		for (s = info[i].id; s != NULL && *s != '\0'; s++)
+@@ -570,7 +571,10 @@ int MpBuildManifest(MP_MOD_INFO* out, int max)
+ 
+ 	for (i = 0; i < n && count < max; i++)
+ 	{
+-		if (!info[i].enabled)
++		/* What RUNS this boot, not what modlist.ini says: a relaunch for a server's
++		 * mods (-mod / -nomod), or -testmode / -mod, changes the first only, and the
++		 * server must be told the truth or it refuses the very set it asked for. */
++		if (!jer_module_running(info[i].id))
+ 			continue;
+ 
+ 		memset(&out[count], 0, sizeof(out[count]));
+diff --git a/mp_lobby.c b/mp_lobby.c
+index 03afd1e..e7c15d2 100644
+--- a/mp_lobby.c
++++ b/mp_lobby.c
+@@ -9,6 +9,12 @@
+  * Shared session state and helpers are declared in mp_session_int.h.
+  */
+ #include "mp_session_int.h"
++#include "jer_joinmods.h"	/* a mods refusal becomes an offer to fetch what we lack */
++
++/* What this client last dialled (MpBeginJoinAsync), so a refusal can name the
++ * server to rejoin after its mods are fetched. */
++static char sJoinHost[64];
++static int sJoinPort;
+ 
+ /* ------------------------------------------------------------------ */
+ /* LISTEN-HOST VOTE AND MAP ROTATION (0.24.0)                          */
+@@ -115,6 +121,8 @@ int MpStartMatch(void);
+ static int MpModIsTooling(const char* id);
+ static int MpModsMatchHost(const MP_MOD_INFO* cm, int cn, int strict);
+ static void MpSendReject(int connIndex, int reason, const char* text);
++static void MpSendRejectMods(int connIndex);
++static void MpOfferServerMods(const unsigned char* q, int n);
+ static int MpAllocPlayerId(void);
+ static void MpSendWelcome(int connIndex, int playerId, int matched);
+ static int MpRotStopCount(void);
+@@ -225,6 +233,9 @@ int MpBeginJoinAsync(const char* host, int port)
+ 	MpSessionReset();
+ 	MpResetPlayers();
+ 
++	snprintf(sJoinHost, sizeof(sJoinHost), "%s", host);
++	sJoinPort = port;
++
+ 	gMp.role = MP_ROLE_CLIENT;
+ 	gMp.localPlayerId = -1;
+ 
+@@ -1274,6 +1285,102 @@ static void MpSendReject(int connIndex, int reason, const char* text)
+ 	MpSendConn(connIndex, MP_TAG_REJECT, 0, &r, sizeof(r));
+ }
+ 
++/* The mods refusal, followed by what this host runs (MP_REJECT_MODLIST, mp_proto.h):
++ * a newer client offers to fetch what it lacks, an older one reads the MP_REJECT
++ * alone. The rows are the host's enabled mods without the tooling MpModsMatchHost
++ * ignores, and EXACT_SET is this host's rule: the client's set must be ours. */
++static void MpSendRejectMods(int connIndex)
++{
++	unsigned char buf[sizeof(MP_REJECT) + sizeof(MP_REJECT_MODLIST) + MP_MAX_MODS * sizeof(MP_MOD_INFO)];
++	MP_MOD_INFO hm[MP_MAX_MODS];
++	MP_REJECT r;
++	MP_REJECT_MODLIST t;
++	int hn = MpBuildManifest(hm, MP_MAX_MODS);
++	int i, len, count = 0;
++
++	memset(&r, 0, sizeof(r));
++	r.reason = (uint8_t)MP_REJECT_MODS;
++	snprintf(r.text, sizeof(r.text), "%s", "mod list does not match the host");
++	memcpy(buf, &r, sizeof(r));
++	len = (int)(sizeof(r) + sizeof(t));
++
++	for (i = 0; i < hn && count < MP_MAX_MODS; i++)
++	{
++		if (MpModIsTooling(hm[i].id))
++			continue;
++
++		memcpy(buf + len, &hm[i], sizeof(hm[i]));
++		len += (int)sizeof(hm[i]);
++		count++;
++	}
++
++	memset(&t, 0, sizeof(t));
++	memcpy(t.tag, MP_REJECT_MODLIST_TAG, sizeof(t.tag));
++	t.modCheck = (uint8_t)gMp.config.modCheck;
++	t.flags = MP_REJECT_MODLIST_F_EXACT_SET;
++	t.count = (uint8_t)count;
++	memcpy(buf + sizeof(r), &t, sizeof(t));
++
++	MpSendConn(connIndex, MP_TAG_REJECT, 0, buf, len);
++}
++
++/* What a mods refusal says the server runs, handed to jer_joinmods, which works
++ * out what would let us in, checks the player's mod repos and ASKS before fetching
++ * anything. The comparison is made there, against the SAVED mod set (what the
++ * relaunch will start from), with MpModsMatchHost's rules: tooling never counts
++ * (MpModIsTooling's ids go along as `ignore`), under MP_MODCHECK_EXACT a version
++ * must match (an empty one: any), and EXACT_SET means our other mods must be off.
++ * `q`/`n` are the bytes after the MP_REJECT - nothing from an older server. */
++static void MpOfferServerMods(const unsigned char* q, int n)
++{
++	static const char* const tooling[] = { "bake", "d1cars" };	/* = MpModIsTooling */
++	MP_REJECT_MODLIST t;
++	JER_JOIN_MOD rows[MP_MAX_MODS];
++	int sn, i, flags = 0;
++	char addr[96];
++
++	if (q == NULL || n < (int)sizeof(t))
++		return;
++
++	memcpy(&t, q, sizeof(t));
++
++	if (memcmp(t.tag, MP_REJECT_MODLIST_TAG, sizeof(t.tag)) != 0)
++		return;
++
++	/* a wire count: bounded by the rows array and by the bytes that came */
++	sn = t.count;
++	if (sn > MP_MAX_MODS)
++		sn = MP_MAX_MODS;
++	if (sn > (n - (int)sizeof(t)) / (int)sizeof(MP_MOD_INFO))
++		sn = (n - (int)sizeof(t)) / (int)sizeof(MP_MOD_INFO);
++
++	for (i = 0; i < sn; i++)
++	{
++		MP_MOD_INFO row;
++
++		memcpy(&row, q + sizeof(t) + (size_t)i * sizeof(MP_MOD_INFO), sizeof(MP_MOD_INFO));
++		memset(&rows[i], 0, sizeof(rows[i]));
++		snprintf(rows[i].id, sizeof(rows[i].id), "%.*s", MP_MOD_ID_MAX - 1, row.id);	/* never trusted terminated */
++		snprintf(rows[i].version, sizeof(rows[i].version), "%.*s", MP_MOD_VER_MAX - 1, row.version);
++	}
++
++	if (t.modCheck == MP_MODCHECK_EXACT)
++		flags |= JER_JOIN_EXACT;
++	if (t.flags & MP_REJECT_MODLIST_F_EXACT_SET)
++		flags |= JER_JOIN_EXACT_SET;
++
++	if (sJoinPort > 0)
++		snprintf(addr, sizeof(addr), "%s:%d", sJoinHost, sJoinPort);
++	else
++		snprintf(addr, sizeof(addr), "%s", sJoinHost);
++
++	if (gMpCtx)
++		gMpCtx->jer_log(gMpCtx, "[mp] the server runs %d mod(s)%s%s - offering what would let us in\n", sn,
++			(flags & JER_JOIN_EXACT) ? ", versions exact" : "", (flags & JER_JOIN_EXACT_SET) ? ", no others" : "");
++
++	jer_joinmods_offer(addr, rows, sn, tooling, (int)(sizeof(tooling) / sizeof(tooling[0])), flags);
++}
++
+ static int MpAllocPlayerId(void)
+ {
+ 	int id;
+@@ -1459,7 +1566,7 @@ void MpHandleHello(int connIndex, const unsigned char* p, int len)
+ 			if (gMpCtx)
+ 				gMpCtx->jer_log(gMpCtx, "[mp] reject: mod mismatch (enforcement=%d)\n", gMp.config.modCheck);
+ 
+-			MpSendReject(connIndex, MP_REJECT_MODS, "mod list does not match the host");
++			MpSendRejectMods(connIndex);	/* the refusal plus what we run (JPMR) */
+ 			MpConnShutdownGraceful(connIndex);
+ 			return;
+ 		}
+@@ -2759,6 +2866,11 @@ void MpHandleReject(const unsigned char* p, int len)
+ 	MpClientDisconnect();
+ 	gMp.role = MP_ROLE_NONE;
+ 	MpJoinStateSet(MP_JOIN_FAILED);	/* the UI shows the refusal, not "Connecting..." */
++
++	/* A mods refusal may say what the server runs: offer to fetch what we lack
++	 * (the player is asked first - see jer_joinmods.h). */
++	if (r.reason == MP_REJECT_MODS)
++		MpOfferServerMods(p + sizeof(MP_REJECT), len - (int)sizeof(MP_REJECT));
+ }
+ 
+ /* The addon net bridge: deliver an inbound MP_CHANNEL to modules (and, on the
+diff --git a/mp_proto.h b/mp_proto.h
+index 6eb56a3..c1e0358 100644
+--- a/mp_proto.h
++++ b/mp_proto.h
+@@ -450,6 +450,32 @@ typedef struct MP_REJECT
+ 	char     text[MP_REJECT_TEXT_MAX];
+ } MP_REJECT;
+ 
++/* An MP_REJECT_MODS refusal may be followed by WHAT THE SERVER RUNS: this header
++ * (MP_REJECT_MODLIST), then `count` MP_MOD_INFO rows -- the mods a client must
++ * have switched on (the listen host's own enabled mods; a dedicated server's
++ * core_mods + mods), tooling (bake) left out. With it the client can offer to fetch what it lacks from the
++ * player's mod repos instead of stopping at "mod list does not match"
++ * (JERICHO jer_joinmods).
++ *
++ * No protocol bump. MpHandleReject has always required len >= sizeof(MP_REJECT)
++ * and read nothing past it, so an older client still shows the refusal and stops;
++ * a newer client talking to an older server finds no tag and does the same.
++ *
++ * A row's version binds only when modCheck is MP_MODCHECK_EXACT, and an empty one
++ * means any version will do (a dedicated server that names no version for it). */
++#define MP_REJECT_MODLIST_TAG	"JPMR"
++#define MP_REJECT_MODLIST_F_EXACT_SET	0x1	/* the client's OTHER mods are refused too: its
++						 * enabled set must be the server's (the listen
++						 * host's rule; a dedicated server with `mods`) */
++typedef struct MP_REJECT_MODLIST
++{
++	char     tag[4];	/* MP_REJECT_MODLIST_TAG */
++	uint8_t  modCheck;	/* MP_MODCHECK_* the server enforces */
++	uint8_t  flags;		/* MP_REJECT_MODLIST_F_* */
++	uint8_t  count;		/* MP_MOD_INFO rows that follow, at most MP_MAX_MODS */
++	uint8_t  reserved;
++} MP_REJECT_MODLIST;
++
+ /* The host's SESSION RULES, packed into ONE byte. They travel three ways and the
+  * three must stay in step: MP_WELCOME.rules (join in progress), the free bits
+  * of MP_SESSION.spare (the launch path, shifted up by one because spare's bit 0
+@@ -969,6 +995,7 @@ static_assert(sizeof(MP_MOD_INFO) == 42, "MP_MOD_INFO layout");
+ static_assert(sizeof(MP_HELLO) == 44, "MP_HELLO layout");
+ static_assert(sizeof(MP_WELCOME) == 18, "MP_WELCOME layout");	/* 18 since v11 (rules) */
+ static_assert(sizeof(MP_REJECT) == 68, "MP_REJECT layout");
++static_assert(sizeof(MP_REJECT_MODLIST) == 8, "MP_REJECT_MODLIST layout");	/* the JPMR trailer */
+ static_assert(sizeof(MP_SESSION) == 12, "MP_SESSION layout");
+ static_assert(sizeof(MP_PLAYER_INPUT) == 4, "MP_PLAYER_INPUT layout");
+ static_assert(sizeof(MP_INPUT) == 4, "MP_INPUT layout");
+diff --git a/tools/mp_test.py b/tools/mp_test.py
+index 62441d2..1935852 100644
+--- a/tools/mp_test.py
++++ b/tools/mp_test.py
+@@ -188,6 +188,13 @@ HELLO = struct.Struct("<HHHH32s4B")      # 44 bytes
+ MODI = struct.Struct("<24s16sBB")        # 42 bytes
+ WELCOME = struct.Struct("<12BIBB")      # 18 bytes: 12xu8, u32 seed, u8 hostCar, u8 rules (mp_proto.h static_assert -- v11 ADDED `rules`; a 17-byte <12BIB is refused by MpHandleWelcome's length gate)
+ REJECT = struct.Struct("<4B64s")         # 68 bytes
++# The trailer an MP_REJECT_MODS refusal may carry (mp_proto.h MP_REJECT_MODLIST): what
++# the server runs, so the client can offer to fetch what it lacks. Tag, modCheck,
++# flags, count, reserved -- then `count` MODI rows. Old clients read REJECT alone.
++REJECT_MODLIST = struct.Struct("<4sBBBB")  # 8 bytes
++REJECT_MODLIST_TAG = b"JPMR"               # mp_proto.h MP_REJECT_MODLIST_TAG
++REJECT_MODLIST_F_EXACT_SET = 0x1           # mp_proto.h MP_REJECT_MODLIST_F_EXACT_SET
++MAX_MODS = 32                              # mp_proto.h MP_MAX_MODS
+ BEACON = struct.Struct("<IHH32s6BHH")    # 50 bytes; the last u16 is `rules` (mp_proto.h renamed MP_BEACON's `spare` to it -- same offset, same size, so the wire is unchanged)
+ CHANNEL = struct.Struct("<16sHIBB2B")    # 26 bytes
+ # Byte offset of MP_CHANNEL.fromPlayer. A relay must stamp this with the sender's real
+@@ -334,6 +341,43 @@ REJECT_NAMES = {0: "NONE", 1: "FULL", 2: "VERSION", 3: "MODS", 4: "INPROGRESS",
+ REJECT_IDS = {v.lower(): k for k, v in REJECT_NAMES.items() if k != 0}
+ 
+ 
++def pack_reject_modlist(mod_check, rows, exact_set):
++    """The JPMR trailer for an MP_REJECT_MODS refusal (mp_proto.h MP_REJECT_MODLIST).
++
++    `rows` are (id, version) the client must have switched on, at most MAX_MODS; an
++    empty version means any. `exact_set`: the client's OTHER mods are refused too.
++    A field keeps one byte for its terminator, as the C side expects.
++    """
++    rows = list(rows)[:MAX_MODS]
++    out = REJECT_MODLIST.pack(REJECT_MODLIST_TAG, int(mod_check) & 0xFF,
++                              REJECT_MODLIST_F_EXACT_SET if exact_set else 0, len(rows), 0)
++    for mod_id, version in rows:
++        out += MODI.pack(str(mod_id).encode("latin1", "replace")[:MOD_ID_MAX - 1],
++                         str(version or "").encode("latin1", "replace")[:MOD_VER_MAX - 1], 1, 0)
++    return out
++
++
++def parse_reject_modlist(payload):
++    """(mod_check, exact_set, [(id, version)]) from a whole REJECT payload, or None
++    when it carries no JPMR trailer (an older server). Rows are bounded by the count,
++    by MAX_MODS and by the bytes that came -- the same rules as MpOfferServerMods."""
++    off = REJECT.size
++    if len(payload) < off + REJECT_MODLIST.size:
++        return None
++    tag, check, flags, count, _res = REJECT_MODLIST.unpack_from(payload, off)
++    if tag != REJECT_MODLIST_TAG:
++        return None
++    rows = []
++    pos = off + REJECT_MODLIST.size
++    for _ in range(min(count, MAX_MODS)):
++        if pos + MODI.size > len(payload):
++            break
++        mod_id, version, _en, _r = MODI.unpack_from(payload, pos)
++        rows.append((cstr(mod_id), cstr(version)))
++        pos += MODI.size
++    return check, bool(flags & REJECT_MODLIST_F_EXACT_SET), rows
++
++
+ def cstr(raw):
+     return raw.split(NUL)[0].decode(errors="replace")
+ 
+diff --git a/tools/servers/dediserver/README.md b/tools/servers/dediserver/README.md
+index 4a59da2..da0a9de 100644
+--- a/tools/servers/dediserver/README.md
++++ b/tools/servers/dediserver/README.md
+@@ -298,6 +298,13 @@ beside them, and the core suite is ordered first in the client's `modlist.ini`
+ `mods` empty unless you want to forbid extras as well.
+ 
+ A server that names neither `core_mods` nor `mods` matches everyone.
++
++A refused client is told what to switch on: the refusal carries `core_mods` plus
++`mods` (tooling left out, with `mod_versions` under check 2) as a `JPMR` list
++(`reject_modlist`, `mp_proto.h` `MP_REJECT_MODLIST`), and says whether `mods` makes
++it an exact set. A current game offers to fetch the missing ones from the player's
++mod repos and rejoin, after asking. So list the version the repos actually offer in
++`mod_versions`, or leave it out to accept any.
+ A client that does not match is refused with `REJECT: MODS` and the text "mod list
+ does not match the server", which the game shows as a toast — and the refusal is
+ written so the reason actually arrives (the socket is half-closed before it is
+diff --git a/tools/servers/dediserver/dedi/core.py b/tools/servers/dediserver/dedi/core.py
+index 026489a..3fbdbd3 100644
+--- a/tools/servers/dediserver/dedi/core.py
++++ b/tools/servers/dediserver/dedi/core.py
+@@ -225,6 +225,31 @@ def parse_manifest(payload):
+     return rows
+ 
+ 
++def reject_modlist(cfg):
++    """The JPMR trailer for this server's mods refusal (mp_proto.h MP_REJECT_MODLIST).
++
++    It tells the client what to switch on so it can offer to fetch the rest from the
++    player's mod repos (JERICHO jer_joinmods) instead of stopping at "mod list does
++    not match". The rows are mods_match's own requirements: core_mods plus `mods`,
++    tooling left out, each with its mod_versions entry when the check is exact (an
++    empty version means any). `mods` non-empty is mods_match's equal-set rule, so it
++    also says the client's other mods are refused. Old clients ignore the trailer.
++    """
++    tooling = ("bake", "d1cars")
++    level = int(cfg.get("mod_check", 0) or 0)
++    required = list(cfg.get("mods") or [])
++    versions = cfg.get("mod_versions") or {}
++    rows, seen = [], set()
++
++    for mod_id in list(cfg.get("core_mods") or []) + required:
++        if mod_id in tooling or mod_id in seen:
++            continue
++        seen.add(mod_id)
++        rows.append((mod_id, versions.get(mod_id, "") if level >= 2 else ""))
++
++    return m.pack_reject_modlist(level, rows, exact_set=bool(required))
++
++
+ def mods_match(declared, required, versions, level, core=None):
+     """The mod-check policy, exactly as the real host applies it, plus CORE mods.
+ 
+@@ -1223,7 +1248,9 @@ class Dedicated:
+                              % (who, ", ".join(sorted(x[0] for x in mods if x[2])) or "none",
+                                 ", ".join(sorted(self.cfg.get("core_mods", []))) or "none",
+                                 ", ".join(sorted(self.cfg["mods"])) or "any"))
+-            self._reject(conn, 3, "mod list does not match the server")
++            # ...with what this server runs, so the client can offer to fetch it
++            self._reject(conn, 3, "mod list does not match the server",
++                         tail=reject_modlist(self.cfg))
+             return
+ 
+         if mods:
+@@ -1467,16 +1494,17 @@ class Dedicated:
+             except OSError:
+                 pass
+ 
+-    def _reject(self, conn, reason, text):
++    def _reject(self, conn, reason, text, tail=b""):
+         """Refuse, and let the client READ the reason.
+ 
+         The old path sent the frame and closed the socket at once, so the peer often
+         got 0 bytes back -- "a refused client is told nothing" (TESTING.md, F3). The
+         real host half-closes, lets the peer drain, then closes; this does the same,
+-        and every refusal in this file goes through it.
++        and every refusal in this file goes through it. `tail` rides after the
++        MP_REJECT (the mods refusal's JPMR list); a client reads only what it knows.
+         """
+         try:
+-            _send(conn, m.TAG["reject"], m.REJECT.pack(reason, 0, 0, 0, text.encode()))
++            _send(conn, m.TAG["reject"], m.REJECT.pack(reason, 0, 0, 0, text.encode()) + tail)
+         except OSError:
+             pass
+ 
+diff --git a/tools/servers/dediserver/test_plugins.py b/tools/servers/dediserver/test_plugins.py
+index 893cc40..e6e2007 100644
+--- a/tools/servers/dediserver/test_plugins.py
++++ b/tools/servers/dediserver/test_plugins.py
+@@ -6,6 +6,8 @@
+   * routing: '!'/'/' lines are consumed and answered privately, ordinary chat is
+     relayed, admin commands are refused to players and allowed to admins;
+   * identity: the JPID block in a HELLO, and admins recognised by it;
++  * the mods refusal's JPMR list: what it says, and that a client acting on it
++    the way MpOfferServerMods does is then admitted by mods_match;
+   * !login: right/wrong password and the rate limit.
+ 
+ No sockets: sends are captured by replacing Dedicated.send_to / broadcast.
+@@ -128,6 +130,50 @@ def main():
+                            player_id=bytes.fromhex(pid_hex), version="0.10.4-dev")
+         check("JPVR parses after JPID", m.parse_hello_version(vh) == "0.10.4-dev", m.parse_hello_version(vh))
+         check("JPVR is not read as a mod row", len(d.parse_manifest(vh)) == 2)
++
++        # -- the mods refusal's JPMR list (mp_proto.h MP_REJECT_MODLIST)
++        def refusal(cfg):
++            return m.REJECT.pack(3, 0, 0, 0, b"mod list does not match the server") + d.reject_modlist(cfg)
++
++        def client_fix(declared, trailer):
++            """MpOfferServerMods' rule, applied: switch on what is needed, off what is extra."""
++            check_level, exact_set, rows = trailer
++            mine = {mid: ver for mid, ver, en in declared if en}
++            for mid, ver in rows:
++                if mid not in mine or (check_level == 2 and ver and mine[mid] != ver):
++                    mine[mid] = ver or "1.0"
++            if exact_set:
++                listed = {mid for mid, _v in rows}
++                mine = {k: v for k, v in mine.items() if k in listed or k in ("bake", "d1cars")}
++            return [(k, v, 1) for k, v in mine.items()]
++
++        core_cfg = {"mod_check": 1, "core_mods": ["mp", "carhacks", "pedhacks", "bake"],
++                    "mods": [], "mod_versions": {}}
++        got = m.parse_reject_modlist(refusal(core_cfg))
++        check("JPMR: core servers list the core suite, tooling left out",
++              got == (1, False, [("mp", ""), ("carhacks", ""), ("pedhacks", "")]), got)
++        exact_cfg = {"mod_check": 2, "core_mods": ["mp"], "mods": ["mp", "crumple"],
++                     "mod_versions": {"crumple": "1.2.0"}}
++        got = m.parse_reject_modlist(refusal(exact_cfg))
++        check("JPMR: an exact set says so, with its versions",
++              got == (2, True, [("mp", ""), ("crumple", "1.2.0")]), got)
++        check("JPMR: an old-style refusal carries none",
++              m.parse_reject_modlist(m.REJECT.pack(3, 0, 0, 0, b"x")) is None)
++        lying = m.REJECT.pack(3, 0, 0, 0, b"x") + m.REJECT_MODLIST.pack(m.REJECT_MODLIST_TAG, 1, 0, 200, 0) \
++            + m.MODI.pack(b"mp", b"1", 1, 0) + b"\x01" * 10
++        check("JPMR: the count is bounded by the bytes that came",
++              m.parse_reject_modlist(lying) == (1, False, [("mp", "1")]), m.parse_reject_modlist(lying))
++        long_id = m.parse_reject_modlist(m.REJECT.pack(3, 0, 0, 0, b"x") +
++                                         m.pack_reject_modlist(1, [("a" * 40, "9" * 40)], False))[2][0]
++        check("JPMR: a field keeps its terminator", len(long_id[0]) == 23 and len(long_id[1]) == 15, long_id)
++        for name, cfg, declared in (
++                ("core", core_cfg, [("mp", "0.24.0", 1), ("crumple", "1.0", 1)]),
++                ("exact set", exact_cfg, [("mp", "0.24.0", 1), ("crumple", "1.1.0", 1), ("jerai", "0.2", 1),
++                                          ("bake", "1", 1)])):
++            before = d.mods_match(declared, cfg["mods"], cfg["mod_versions"], cfg["mod_check"], cfg["core_mods"])
++            fixed = client_fix(declared, m.parse_reject_modlist(refusal(cfg)))
++            after = d.mods_match(fixed, cfg["mods"], cfg["mod_versions"], cfg["mod_check"], cfg["core_mods"])
++            check("JPMR: acting on the %s list gets the client in" % name, not before and after, fixed)
+         check("no JPVR -> None", m.parse_hello_version(hello) is None)
+         check("JPID+JPVR stay under one manifest row (old servers)",
+               len(m.build_hello("x", player_id=bytes(16), version="9" * 40)) - m.HELLO.size < m.MODI.size)
+diff --git a/tools/servers/proto_check.py b/tools/servers/proto_check.py
+index b08188b..2bfae4d 100644
+--- a/tools/servers/proto_check.py
++++ b/tools/servers/proto_check.py
+@@ -46,6 +46,7 @@ MIRROR = {
+     "MP_HELLO": "HELLO",
+     "MP_WELCOME": "WELCOME",
+     "MP_REJECT": "REJECT",
++    "MP_REJECT_MODLIST": "REJECT_MODLIST",
+     "MP_SESSION": "SESSION",
+     "MP_INPUT": "INPUT",
+     "MP_PLAYER_INPUT": "PLAYER_INPUT",
+@@ -73,6 +74,8 @@ CONSTANTS = {
+     "MP_NAME_MAX": "NAME_MAX",
+     "MP_MOD_ID_MAX": "MOD_ID_MAX",
+     "MP_MOD_VER_MAX": "MOD_VER_MAX",
++    "MP_MAX_MODS": "MAX_MODS",
++    "MP_REJECT_MODLIST_F_EXACT_SET": "REJECT_MODLIST_F_EXACT_SET",
+     "MP_CARSTATE_LEFT_CAR": "CARSTATE_LEFT_CAR",
+     "MP_ROUND_TEAM_NONE": "ROUND_TEAM_NONE",
+     "MP_MARK_NONE": "MARK_NONE",
+-- 
+2.43.0
+

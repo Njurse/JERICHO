@@ -1,49 +1,62 @@
 # JERICHO mods
 
-Most mods live in their own repositories; this folder is where they are checked
-out. The superproject records a commit ("pin") for each one in the index, and
-`.gitmodules` records where it comes from and which branch it tracks.
+Mods live in their own repositories; this folder is where they are checked
+out. Core uses **no submodules** for them: [`mods.json`](mods.json) records each
+mod's repository, the commit core was last built against (`ref`) and the branch
+that commit is followed on. Every listed folder is ignored by core's
+`.gitignore`, so each one is simply that mod's own clone.
 
-| mod | repository | tracks |
+| mod | repository | branch |
 | --- | --- | --- |
-| `mp` | `Njurse/JERICHO-Mod-MP` | `main` |
-| `carhacks` | `Njurse/JERICHO-Mod-carhacks` | `main` |
-| `crumple` | `Njurse/Jericho-Mod-CRUMPLE` | `main` |
-| `bake` (Driver 1 tooling) | `Njurse/JERICHO-D1` | `betamiami` |
-| `antfarm` | `Njurse/JERICHO-Mod-Antfarm` | `0.12` (screensaver; not a core release mod) |
+| `mp` | `Njurse/JERICHO-Mod-MP` | `main` (required, release) |
+| `carhacks` | `Njurse/JERICHO-Mod-carhacks` | `main` (required, release) |
+| `crumple` | `Njurse/Jericho-Mod-CRUMPLE` | `main` (required, release) |
+| `bake` (Driver 1 tooling) | `Njurse/JERICHO-D1` | `betamiami` (release) |
+| `antfarm` | `Njurse/JERICHO-Mod-Antfarm` | `0.12` (screensaver; store-only) |
+| `cainescrossfire` | `Njurse/JERICHO-Mod-CainesCrossfire` | `jer/standalone` |
+| `civviecops` | `Njurse/JERICHO-Mod-CivvieCops` | `main` |
+| `democars` | `Njurse/JERICHO-Mod-DemoCars` | `main` |
 
-`gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 and is not a submodule of this tree.
+`gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2 and is not listed.
 
-The rest (`cainescrossfire`, `d2pl`, `JerAI`, `sandbox`, …) are
-ordinary folders tracked by this repository.
+The rest (`Alleycat`, `sandbox`, `pedhacks`, `fulltwist`, …) are still ordinary
+folders tracked by this repository.
 
 ## Fetching them
 
 ```bat
-git submodule update --init --recursive
+python tools/fetch_mods.py              :: clone every missing mod at its pin
+python tools/fetch_mods.py --release    :: only mp, carhacks, crumple, bake
+python tools/fetch_mods.py --status     :: what is on disk vs mods.json
 ```
 
-A release does not depend on the pins being current: CI and
-`tools/publish_release.ps1` both run `git submodule update --remote` before
-building, so a release carries the latest commit of each tracked branch.
-`tools/update_mod_submodules.sh` advances the pins in the working tree so they
-match what a release actually built (it prints the diff and stages nothing).
+A folder that already exists is never re-cloned, reset or deleted. `--update`
+(move to `ref`) and `--advance` (move to the branch tip) only touch checkouts with
+no modified tracked files, and only with `checkout --detach`, so untracked work
+survives. `--pin` writes each checkout's HEAD into `mods.json`.
+
+CI runs `fetch_mods.py --release --depth 1`, so a build carries the commits
+`mods.json` pins. `tools/publish_release.ps1` runs `--advance` first, so a local
+release carries each branch tip. To change what CI ships, run `--pin` and commit
+`mods.json`.
 
 ## A mod that is not there must not build a smaller game
 
-`mp`, `carhacks` and `crumple` are **required**. If one is missing the build
+`mp`, `carhacks`, `crumple` and `bake` are **required**. If one is missing the build
 stops, twice over:
 
-* `premake5.lua` errors at generation — `mp is a submodule and was not fetched;
-  run: git submodule update --init JERICHO/MODS/mp`
+* `premake5.lua` errors at generation — `mp is its own repository and was not
+  fetched; run: python tools/fetch_mods.py mp`
 * `src/jer_required_mods.h` raises the same `#error` at compile time, so an IDE
   or a plain `msbuild` run cannot skip it.
 
 `gaildrv2` is not on that list: it is hibernated and is not part of this tree.
+(`bake`, formerly `d1cars`, used to be exempt too; it is a release mod now, so it
+is required.)
 
 ## Conventions
 
-* **Never force-push a branch that a pin points at.** The superproject records a
+* **Never force-push a branch that a pin points at.** `mods.json` records a
   commit; rewriting it leaves every clone unable to check the mod out. Land work
   as new commits on the tracked branch (`main`, or `betamiami` for `bake`).
 * **Never commit build output inside a mod repo.** `lib/`, `obj/`, `*.exp`,

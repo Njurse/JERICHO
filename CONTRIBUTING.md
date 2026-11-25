@@ -7,6 +7,8 @@
   and [events.md](src_rebuild/Game/C/JERICHO/docs/events.md).
 - **Before a pull request:** `python tools/doccheck.py` must pass, and record user-facing
   changes in [CHANGELOG.md](CHANGELOG.md).
+- **Git hooks (optional, local):** `git config core.hooksPath .githooks` so
+  commits and pushes are checked for disallowed agent attribution.
 - Bugs and requests: https://github.com/Njurse/JERICHO/issues
 
 The upstream REDRIVER2 project's guidelines still apply to stock engine code:

@@ -28,6 +28,8 @@
 #include "jer_rebake.h"	/* the one Driver 1 re-bake prompt; re-armed after an install */
 #include "jer_screen.h"	/* jer_screen_active: never prompt over a presentation screen */
 #include "jer_text.h"
+#include "jer_internal.h"	/* jer_config_set_line: one key, the file's comments kept */
+#include "jer_joinmods.h"	/* a refused join's addon offer runs in this tick */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -127,6 +129,9 @@ typedef struct STORE_MOD
 	int  size;
 	int  defaultEnabled;
 	int  bakeVersion;
+	char runtime[16];		/* the index entry's `runtime` ("dll" for a loadable addon).
+							 * Empty = not declared, or built in / a data pack: only
+							 * the installed files tell those apart. */
 } STORE_MOD;
 
 /* What the store installed for one id (CONFIG/modstore/installed/<id>.json). */
@@ -203,6 +208,12 @@ static struct
  * here because the public predicate reads them. */
 static int  gStartupUpdate;		/* 0 = unchecked, 1 = fetching the index, 2 = done */
 static int  gUpdateAll;			/* the prompt was answered Yes: apply updates in turn */
+
+/* CONFIG/modstore.ini startup_update_prompt (default 1 = ask) */
+static int StoreStartupPromptOn(void)
+{
+	return jer_config_get_int("modstore", "startup_update_prompt", 1) != 0;
+}
 
 /* A compiled-in mod is not in the running exe just because its folder landed in
  * MODS/: premake generates the module registry from that folder at build time.
@@ -695,7 +706,12 @@ static void StoreWriteIniTemplate(void)
 		";\n"
 		"; A repo is a URL to a mods.json. The packages it names are downloaded from\n"
 		"; the URLs it gives; a package named with no URL is looked for next to the\n"
-		"; index. See JERICHO/CORE/modstore/ and docs/mod-repo.md for the format.\n");
+		"; index. See JERICHO/CORE/modstore/ and docs/mod-repo.md for the format.\n"
+		";\n"
+		"; startup_update_prompt: 1 = at startup, ask to update installed mods that\n"
+		"; have an update; 0 = never ask (\"Don't ask again\"). Mods -> Get Mods\n"
+		"; still lists and installs updates.\n"
+		"startup_update_prompt=1\n");
 
 	fclose(f);
 	jer_log("[modstore] wrote a starter %s\n", path);
@@ -982,6 +998,7 @@ static int StoreIndexParse(const char* json, int len, int repo)
 		JsonString(JsonFindValue(objStart, objEnd, "sha256"), objEnd, m->sha, sizeof(m->sha));
 		JsonString(JsonFindValue(objStart, objEnd, "requires"), objEnd, m->requires, sizeof(m->requires));
 		JsonString(JsonFindValue(objStart, objEnd, "min_jericho"), objEnd, m->minCore, sizeof(m->minCore));
+		JsonString(JsonFindValue(objStart, objEnd, "runtime"), objEnd, m->runtime, sizeof(m->runtime));
 		/* a number in the index (the packager writes it unquoted), so read it as one
 		 * and keep the text for the row note */
 		{
@@ -1163,87 +1180,14 @@ static int StoreToolingBakeVersion(void)
 	return -1;
 }
 
-/* Is there anything in this folder? Used for "a bake exists but predates the
- * stamp", which is a real state on machines baked before BAKE_VERSION existed. */
-static int StoreDirHasEntries(const char* path)
-{
-#if defined(_WIN32)
-	{
-		char pattern[STORE_PATH_MAX + 8];
-		WIN32_FIND_DATAA fd;
-		HANDLE hFind;
-		int found = 0;
-
-		snprintf(pattern, sizeof(pattern), "%s/*", path);
-		hFind = FindFirstFileA(pattern, &fd);
-		if (hFind == INVALID_HANDLE_VALUE)
-			return 0;
-
-		do
-		{
-			if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0)
-				continue;
-			found = 1;
-			break;
-		}
-		while (FindNextFileA(hFind, &fd));
-
-		FindClose(hFind);
-		return found;
-	}
-#else
-	{
-		DIR* d = opendir(path);
-		struct dirent* e;
-		int found = 0;
-
-		if (d == NULL)
-			return 0;
-
-		while ((e = readdir(d)) != NULL)
-		{
-			if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
-				continue;
-			found = 1;
-			break;
-		}
-		closedir(d);
-		return found;
-	}
-#endif
-}
-
-/* What is baked on THIS machine. -1 = no bake at all (nothing to report), 0 = a
- * bake from before the stamp existed (so older than any tooling that has one). */
+/* What is baked on THIS machine: the bake jer_d1cars.c found from the LEV files
+ * (carhacks/D1CARS, the jericho.ini d1cars_path, the legacy DRIVER/D1CARS or a
+ * sibling install), the same one the engine loads the cars from. -1 = no valid
+ * LEV anywhere (nothing to report), 0 = a valid bake from before the stamp
+ * existed (so older than any tooling that has one). */
 static int StoreBakedVersion(void)
 {
-	char path[STORE_PATH_MAX];
-	char dir[STORE_PATH_MAX];
-	int v;
-
-	/* <install>/JERICHO is the root, so the baked car data sits in the game's
-	 * own tree: JERICHO/MODS/carhacks/D1CARS (carhacks owns it - the blobs are
-	 * its modded LEVs, not part of the player's Driver 1 disc). */
-	snprintf(dir, sizeof(dir), "%s/MODS/carhacks/D1CARS", gStore.root);
-	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
-
-	v = StoreFileInt(path, NULL);
-	if (v >= 0)
-		return v;
-
-	/* A bake from a build before the move lived in DRIVER/D1CARS. Still report
-	 * it (unstamped if it has no stamp), so an update sees an old bake and asks
-	 * for a re-bake into the new folder instead of treating it as "no bake". */
-	snprintf(dir, sizeof(dir), "%s/../DRIVER/D1CARS", gStore.root);
-	snprintf(path, sizeof(path), "%s/BAKE_VERSION", dir);
-
-	v = StoreFileInt(path, NULL);
-	if (v >= 0)
-		return v;
-
-	/* unstamped: a bake from the tooling that predates the version, which is by
-	 * definition older than the tooling beside the game now */
-	return StoreDirHasEntries(dir) ? 0 : -1;
+	return jer_d1cars_baked_version();
 }
 
 /* The version the repo's own bake entry asks for (a release that changes the
@@ -1308,6 +1252,7 @@ static void StoreRowStateBase(STORE_MOD* m, JER_MODSTORE_ITEM* it, char* note, i
 	it->version = m->version;
 	it->author = m->author;
 	it->description = m->description;
+	it->runtime = m->runtime;
 	it->note = note;
 	it->canInstall = 1;
 	it->canRemove = 0;
@@ -1728,11 +1673,12 @@ static void StoreTestTick(void)
 				gStore.testStage = 2;
 				/* the Mods menu advertises waiting updates on its Mod Repo item, so a
 				 * player notices without opening the browser */
-				jer_log("[modstore][test] Mod Repo item: \"%s\" (updates=%d)\n",
-					gLabelRepoItem[0] != 0 ? gLabelRepoItem : "Browse Mod Repo", StoreCountUpdates());
+				jer_log("[modstore][test] Get Mods item: \"%s\" (updates=%d)\n",
+					gLabelRepoItem[0] != 0 ? gLabelRepoItem : "Get Mods", StoreCountUpdates());
 
-				jer_log("[modstore][test] screen->menu: current=%d jericho.mods=%d repo=%d modules=%d\n",
+				jer_log("[modstore][test] screen->menu: current=%d hub=%d installed=%d repo=%d modules=%d\n",
 					jer_frontend_current_menu(), jer_frontend_find("jericho.mods"),
+					jer_frontend_find("jericho.mods.installed"),
 					jer_frontend_find("jericho.mods.repo"), jer_modstore_module_count());
 
 				rows = jer_modstore_module_count();
@@ -1817,9 +1763,9 @@ static void StoreTestTick(void)
 				JER_MODSTORE_MODULE after;
 
 				if (jer_modstore_module_at(0, &after))
-					jer_log("[modstore][test] after toggle: %s enabled=%d; current menu=%d (mods=%d)\n",
+					jer_log("[modstore][test] after toggle: %s enabled=%d; current menu=%d (installed=%d)\n",
 						after.name, after.enabled, jer_frontend_current_menu(),
-						jer_frontend_find("jericho.mods"));
+						jer_frontend_find("jericho.mods.installed"));
 
 				/* Left/Right on a row: the same callback the menu wires up */
 				jer_log("[modstore][test] moving row 0 down one\n");
@@ -1833,9 +1779,9 @@ static void StoreTestTick(void)
 
 				gStore.testStage = 7;
 				if (jer_modstore_module_at(0, &m0) && jer_modstore_module_at(1, &m1))
-					jer_log("[modstore][test] after move: row0=%s row1=%s; current menu=%d (mods=%d)\n",
+					jer_log("[modstore][test] after move: row0=%s row1=%s; current menu=%d (installed=%d)\n",
 						m0.name, m1.name, jer_frontend_current_menu(),
-						jer_frontend_find("jericho.mods"));
+						jer_frontend_find("jericho.mods.installed"));
 			}
 			break;
 
@@ -2313,6 +2259,28 @@ void jer_modstore_init(const char* rootDir)
 	{
 		jer_log("[modstore] modstore.sh/.bat must sit beside the game exe for installs to work\n");
 	}
+
+	/* The startup update check, started HERE rather than on the first main-menu
+	 * frame: the index fetch is a background child, so it runs while the game
+	 * loads, and the frontend (held hidden by jer_rebake_boot_hold until this is
+	 * settled) usually finds the answer already in. Off ("Don't ask again"):
+	 * finished before it starts. A store test run never asks (frontend tick). */
+	if (gStartupUpdate == 0 && gStore.testLever == STORE_TEST_NONE)
+	{
+		if (!StoreStartupPromptOn())
+		{
+			gStartupUpdate = 2;
+			jer_log("[modstore] startup update question is off (CONFIG/modstore.ini startup_update_prompt=0)\n");
+		}
+		else
+		{
+			int r = jer_modstore_refresh();
+
+			gStartupUpdate = (r == JER_MODSTORE_OK || r == JER_MODSTORE_BUSY) ? 1 : 2;
+			jer_log("[modstore] startup: %s\n", gStartupUpdate == 1
+				? "fetching the repo index at boot" : "no index fetch (no helper or no repo); not asking");
+		}
+	}
 }
 
 int jer_modstore_busy(void)
@@ -2323,6 +2291,11 @@ int jer_modstore_busy(void)
 int jer_modstore_startup_update_pending(void)
 {
 	return gStartupUpdate != 2 || gUpdateAll;
+}
+
+int jer_modstore_startup_update_off(void)
+{
+	return gStore.testLever != STORE_TEST_NONE;
 }
 
 const char* jer_modstore_status(void)
@@ -2344,7 +2317,7 @@ int jer_modstore_script_mismatch(int* seen, int* expected)
 	return gStore.scriptMismatch;
 }
 
-/* Re-read CONFIG/modstore.ini (the browser's "Reload repos"). */
+/* Re-read CONFIG/modstore.ini (the browser's "Reload repos file"). */
 void jer_modstore_repos_reload(void)
 {
 	StoreReposLoad();
@@ -2492,16 +2465,18 @@ int jer_modstore_rebake(void)
 /* ================================================================== */
 /* The menus                                                           */
 /*                                                                     */
-/* Two registered frontend menus, in the shape the mp server browser    */
+/* Three registered frontend menus, in the shape the mp server browser  */
 /* uses (mp_ui.c):                                                     */
 /*                                                                     */
-/*   jericho.mods       the installed modules, as a table              */
-/*   jericho.mods.repo  what a repo offers: install, update, remove    */
+/*   jericho.mods            the HUB: a plain list of destinations     */
+/*   jericho.mods.installed  the installed modules, as a table         */
+/*   jericho.mods.repo       what a repo offers: install, update, ...  */
 /*                                                                     */
-/* Rows carry a NULL label and are painted in the draw below: the       */
-/* engine still lays them out, highlights them, navigates them and      */
-/* pages them, it just has nothing of its own to write in them. That    */
-/* is what lets a row be four columns instead of one centred string.    */
+/* The two tables' rows carry a NULL label and are painted in the draw  */
+/* below: the engine still lays them out, highlights them, navigates    */
+/* them and pages them, it just has nothing of its own to write in      */
+/* them. That is what lets a row be four columns instead of one centred */
+/* string. The hub's rows carry labels and the engine draws them.       */
 /* ================================================================== */
 
 #define MODS_ROWS_MAX	7	/* table rows a page of the mods list shows */
@@ -2521,10 +2496,12 @@ static char gPromptText[200];
 static char gLabelMore[48];
 static char gLabelRepo[STORE_ID_MAX + 16];
 
-static JER_FE_ITEM gModsItems[JER_FE_MAX_ITEMS];
-static JER_FE_ITEM gRepoItems[JER_FE_MAX_ITEMS];
-static JER_FE_MENU gModsMenu;
-static JER_FE_MENU gRepoMenu;
+static JER_FE_ITEM gModsItems[JER_FE_MAX_ITEMS];	/* installed-mod table rows */
+static JER_FE_ITEM gRepoItems[JER_FE_MAX_ITEMS];	/* repo browser rows */
+static JER_FE_ITEM gHubItems[JER_FE_MAX_ITEMS];		/* the hub's own rows */
+static JER_FE_MENU gModsMenu;				/* the hub (jericho.mods) */
+static JER_FE_MENU gInstalledMenu;			/* installed table (jericho.mods.installed) */
+static JER_FE_MENU gRepoMenu;				/* repo browser (jericho.mods.repo) */
 static int gMenusBuilt;
 
 /* ------------------------------------------------------------------ */
@@ -2582,11 +2559,8 @@ static int ModsRowAdjust(void* ud, int dir)
  * is overrun. */
 static int ModsFitStride(int count)
 {
-	int fixed = 4;
+	int fixed = 1;	/* just Back: Browse/Compile/Bake/Credits moved up to the hub */
 	int cap = MODS_ROWS_MAX;
-
-	if (jer_mods_compile_available())
-		fixed++;
 
 	while (cap > 1 && cap + (count > cap ? 1 : 0) + fixed > JER_FE_MAX_ITEMS)
 		cap--;
@@ -2846,11 +2820,89 @@ static int RepoPageAdjust(void* ud, int dir)
 /* Building the rows                                                   */
 /* ------------------------------------------------------------------ */
 
-static void ModsMenuEnter(void* ud)
+/* The HUB (jericho.mods): a plain list of destinations, drawn by the engine's
+ * own rows. Its only job is to give the two tables and the maintenance actions a
+ * front door, so a player is never asked to learn that Cross toggles a mod while
+ * "Bake" sits on the same list. The "Get Mods" row carries the update count the
+ * old table pinned to its bottom edge. */
+static void HubMenuEnter(void* ud)
+{
+	int installed = jer_frontend_find("jericho.mods.installed");
+	int repo = jer_frontend_find("jericho.mods.repo");
+	int ups = StoreCountUpdates();
+	int n = 0;
+
+	(void)ud;
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Installed Mods";
+		it->submenu = installed;
+	}
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		if (ups > 0)
+		{
+			snprintf(gLabelRepoItem, sizeof(gLabelRepoItem), "Get Mods (%d update%s)",
+				ups, ups == 1 ? "" : "s");
+			it->label = gLabelRepoItem;
+		}
+		else
+		{
+			it->label = "Get Mods";
+		}
+		it->submenu = repo;
+	}
+
+	if (jer_mods_compile_available())
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Compile Mods";
+		it->on_activate = ModsCompile;
+		it->submenu = -1;
+	}
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Bake Cars & Peds";
+		it->on_activate = ModsBake;
+		it->submenu = -1;
+	}
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Credits";
+		it->on_activate = ModsCredits;
+		it->submenu = -1;
+	}
+
+	{
+		JER_FE_ITEM* it = &gHubItems[n++];
+
+		memset(it, 0, sizeof(*it));
+		it->label = "Back";
+		it->is_back = 1;
+		it->submenu = -1;
+	}
+
+	gModsMenu.item_count = n;
+}
+
+static void InstalledMenuEnter(void* ud)
 {
 	int count = jer_modstore_module_count();
 	int pages, start, rows, i, n = 0, controls = 0;
-	int repoMenu = jer_frontend_find("jericho.mods.repo");
 
 	(void)ud;
 
@@ -2893,62 +2945,7 @@ static void ModsMenuEnter(void* ud)
 		it->submenu = -1;
 	}
 
-	/* controls, pinned to the bottom edge */
-	{
-		JER_FE_ITEM* it = &gModsItems[n++];
-
-		int ups = StoreCountUpdates();
-
-		memset(it, 0, sizeof(*it));
-
-		/* "Mod Repo (2 updates)" - the store works without anyone opening the
-		 * browser, and a quiet store is a store nobody updates */
-		if (ups > 0)
-		{
-			snprintf(gLabelRepoItem, sizeof(gLabelRepoItem), "Browse Mod Repo (%d update%s)",
-				ups, ups == 1 ? "" : "s");
-			it->label = gLabelRepoItem;
-		}
-		else
-		{
-			it->label = "Browse Mod Repo";
-		}
-
-		it->submenu = repoMenu;			/* engine navigation */
-		controls++;
-	}
-
-	if (jer_mods_compile_available())
-	{
-		JER_FE_ITEM* it = &gModsItems[n++];
-
-		memset(it, 0, sizeof(*it));
-		it->label = "Compile Mods";
-		it->on_activate = ModsCompile;
-		it->submenu = -1;
-		controls++;
-	}
-
-	{
-		JER_FE_ITEM* it = &gModsItems[n++];
-
-		memset(it, 0, sizeof(*it));
-		it->label = "Bake";
-		it->on_activate = ModsBake;
-		it->submenu = -1;
-		controls++;
-	}
-
-	{
-		JER_FE_ITEM* it = &gModsItems[n++];
-
-		memset(it, 0, sizeof(*it));
-		it->label = "Credits";
-		it->on_activate = ModsCredits;
-		it->submenu = -1;
-		controls++;
-	}
-
+	/* one pinned control: Back. Browse/Compile/Bake/Credits live in the hub. */
 	{
 		JER_FE_ITEM* it = &gModsItems[n++];
 
@@ -2959,8 +2956,8 @@ static void ModsMenuEnter(void* ud)
 		controls++;
 	}
 
-	gModsMenu.item_count = n;
-	gModsMenu.bottom_items = controls;
+	gInstalledMenu.item_count = n;
+	gInstalledMenu.bottom_items = controls;
 }
 
 static void RepoMenuEnter(void* ud)
@@ -2977,7 +2974,7 @@ static void RepoMenuEnter(void* ud)
 	/* The row budget: the menu holds JER_FE_MAX_ITEMS, and the repos, the pager
 	 * and the controls all come out of it before the mods get a row. With
 	 * three repos configured that leaves six mod rows, which is still a page. */
-	controls = 3;		/* Refresh, Reload repos, Back */
+	controls = 3;		/* Check for Updates, Reload repos file, Back */
 	budget = JER_FE_MAX_ITEMS - repoN - controls - 1;
 	if (budget > REPO_ROWS_MAX)
 		budget = REPO_ROWS_MAX;
@@ -3049,7 +3046,7 @@ static void RepoMenuEnter(void* ud)
 		JER_FE_ITEM* it = &gRepoItems[n++];
 
 		memset(it, 0, sizeof(*it));
-		it->label = "Refresh";
+		it->label = "Check for Updates";
 		it->on_activate = RepoRefresh;
 		it->submenu = -1;
 	}
@@ -3058,7 +3055,7 @@ static void RepoMenuEnter(void* ud)
 		JER_FE_ITEM* it = &gRepoItems[n++];
 
 		memset(it, 0, sizeof(*it));
-		it->label = "Reload repos";	/* re-read CONFIG/modstore.ini */
+		it->label = "Reload repos file";	/* re-read CONFIG/modstore.ini */
 		it->on_activate = RepoReload;
 		it->submenu = -1;
 	}
@@ -3087,19 +3084,28 @@ static void StoreEnsureMenus(void)
 {
 	if (!gMenusBuilt)
 	{
+		/* The HUB: a plain list, drawn by the engine. A stock title works here --
+		 * the rows are short and never lift into the heading. */
 		memset(&gModsMenu, 0, sizeof(gModsMenu));
 		gModsMenu.id = "jericho.mods";
-		gModsMenu.items = gModsItems;
-		gModsMenu.on_enter = ModsMenuEnter;
-		/* NO stock title: it is drawn at (100,150) at 1.5x, exactly where a tall
-		 * table's rows get lifted to. The heading is ours, above the header row. */
-		gModsMenu.title = NULL;
-		gModsMenu.row_w = 560;
-		gModsMenu.row_step = 28;
-		gModsMenu.row_top = 130;
-		gModsMenu.row_bottom = 470;
-		gModsMenu.list_align = 0;	/* hang the rows off the top: a table with a
-									 * heading reads wrong centred (mp's reason) */
+		gModsMenu.items = gHubItems;
+		gModsMenu.on_enter = HubMenuEnter;
+		gModsMenu.title = "JERICHO MODS";
+
+		/* The installed-mod table. No stock title: it is drawn at (100,150) at
+		 * 1.5x, exactly where a tall table's rows get lifted to. The heading is
+		 * ours, above the header row. */
+		memset(&gInstalledMenu, 0, sizeof(gInstalledMenu));
+		gInstalledMenu.id = "jericho.mods.installed";
+		gInstalledMenu.items = gModsItems;
+		gInstalledMenu.on_enter = InstalledMenuEnter;
+		gInstalledMenu.title = NULL;
+		gInstalledMenu.row_w = 560;
+		gInstalledMenu.row_step = 28;
+		gInstalledMenu.row_top = 130;
+		gInstalledMenu.row_bottom = 470;
+		gInstalledMenu.list_align = 0;	/* hang the rows off the top: a table with a
+										 * heading reads wrong centred (mp's reason) */
 
 		memset(&gRepoMenu, 0, sizeof(gRepoMenu));
 		gRepoMenu.id = "jericho.mods.repo";
@@ -3117,6 +3123,8 @@ static void StoreEnsureMenus(void)
 
 	if (jer_frontend_find("jericho.mods") < 0)
 		jer_frontend_register_menu(&gModsMenu);
+	if (jer_frontend_find("jericho.mods.installed") < 0)
+		jer_frontend_register_menu(&gInstalledMenu);
 	if (jer_frontend_find("jericho.mods.repo") < 0)
 		jer_frontend_register_menu(&gRepoMenu);
 }
@@ -3218,22 +3226,34 @@ static void ModsDrawTable(void)
 			(mod.version != NULL) ? mod.version : "?", 200, 200, 200);
 
 		if (mod.refusal != NULL)
-			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "BLOCKED", 255, 128, 128);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "Blocked", 255, 128, 128);
 		else if (mod.core)
-			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "CORE", 255, 200, 64);
+			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "Required", 255, 200, 64);
 		else if (mod.enabled)
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "ON", 128, 255, 128);
 		else
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, "OFF", 150, 150, 150);
 
 		if (mod.replaced)
-			snprintf(buf, sizeof(buf), "store %s (replaced)", (mod.storeVersion != NULL) ? mod.storeVersion : "?");
+			snprintf(buf, sizeof(buf), "downloaded %s (replaced)", (mod.storeVersion != NULL) ? mod.storeVersion : "?");
 		else if (mod.fromStore)
-			snprintf(buf, sizeof(buf), "store %s", (mod.storeVersion != NULL) ? mod.storeVersion : "");
+			snprintf(buf, sizeof(buf), "downloaded %s", (mod.storeVersion != NULL) ? mod.storeVersion : "");
 		else
-			snprintf(buf, sizeof(buf), "bundled");
+			snprintf(buf, sizeof(buf), "included");
 
 		jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 80), ry + 4, buf, 170, 190, 210);
+	}
+
+	/* How to drive the table: Cross toggles and Left/Right reorders, the two
+	 * interactions that used to be invisible. Pinned just above the Back control
+	 * so it is always on screen and never covers a row. */
+	{
+		int controlsTop = gInstalledMenu.row_bottom - gInstalledMenu.bottom_items * gInstalledMenu.row_step;
+		int hintY = controlsTop - 26;
+
+		if (hintY >= 2)
+			jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), hintY,
+				"Cross = On/Off    Left/Right = move", 150, 150, 150);
 	}
 }
 
@@ -3329,6 +3349,19 @@ static void StoreUpdateAllYes(void)
 	gUpdateAll = 1;
 }
 
+/* "Don't ask again" on the startup update question. In place, so the file's
+ * comments and the player's repo lines stay as they are. */
+static void StoreUpdateNeverAsk(void)
+{
+	if (jer_config_set_line("modstore", "startup_update_prompt", "0"))
+	{
+		jer_log("[modstore] startup update question off (CONFIG/modstore.ini startup_update_prompt=0)\n");
+		jer_notify("Mod update prompt off. Mods -> Get Mods shows updates.", 1, 6);
+	}
+	else
+		jer_log("[modstore] could not write startup_update_prompt=0 to CONFIG/modstore.ini\n");
+}
+
 static const char* StoreStateText(int state)
 {
 	switch (state)
@@ -3336,7 +3369,7 @@ static const char* StoreStateText(int state)
 		case JER_MODSTORE_ST_INSTALLED:		return "installed";
 		case JER_MODSTORE_ST_UPDATE:		return "update";
 		case JER_MODSTORE_ST_REPLACED:		return "replaced";
-		case JER_MODSTORE_ST_BUNDLED_NEWER:	return "newer here";
+		case JER_MODSTORE_ST_BUNDLED_NEWER:	return "up to date";
 		case JER_MODSTORE_ST_NEEDS_CORE:	return "needs newer";
 		case JER_MODSTORE_ST_NEEDS_DEP:		return "needs a mod";
 		default:							return "available";
@@ -3497,6 +3530,18 @@ static void StoreDrawRepoTable(void)
 		else
 			jer_text_draw_at(JER_TEXT_FE, 130, StoreTextX(rx, rw, 64), ry + 4, it->author, 170, 190, 210);
 	}
+
+	/* The repo browser's two interactions, spelled out, pinned above the
+	 * Check for Updates / Reload repos file / Back controls, just like the
+	 * installed table's hint. */
+	{
+		int controlsTop = gRepoMenu.row_bottom - gRepoMenu.bottom_items * gRepoMenu.row_step;
+		int hintY = controlsTop - 26;
+
+		if (hintY >= 2)
+			jer_text_draw_at(JER_TEXT_FE, 110, StoreTextX(x, w, 2), hintY,
+				"Cross = install/update    Left/Right = remove", 150, 150, 150);
+	}
 }
 
 /* Wrap `text` to `width` and draw at most `maxLines` lines from (x, y). Our own
@@ -3566,7 +3611,7 @@ static void StoreDrawWrapped(int x, int y, int width, const char* text, int maxL
 static void StoreDraw(void)
 {
 	int menu = jer_frontend_current_menu();
-	int mods = jer_frontend_find("jericho.mods");
+	int installed = jer_frontend_find("jericho.mods.installed");
 	int repo = jer_frontend_find("jericho.mods.repo");
 
 	if (menu < 0)
@@ -3578,9 +3623,11 @@ static void StoreDraw(void)
 	if (jer_prompt_active())
 		return;
 
-	if (menu == mods)
+	/* The hub is drawn by the engine (its rows carry labels); only the two
+	 * tables paint themselves. */
+	if (menu == installed)
 		ModsDrawTable();
-	else if (menu >= 0 && menu == repo)
+	else if (menu == repo)
 		StoreDrawRepoTable();
 }
 
@@ -3649,11 +3696,55 @@ int jer_modstore_module_at(int index, JER_MODSTORE_MODULE* out)
 	return 1;
 }
 
+/* What an INSTALLED mod is: something a restart can run (a DLL addon or a data
+ * pack), or code that has to be linked into the exe. The same tests the row
+ * state uses (StoreRowState), for a folder that is on disk now. */
+int jer_modstore_installed_kind(const char* id)
+{
+	char path[STORE_PATH_MAX];
+	STORE_RECORD* rec;
+	FILE* f;
+
+	if (!StoreValidId(id))
+		return JER_MODSTORE_KIND_NONE;
+
+	snprintf(path, sizeof(path), "%s/%s/mod.toml", gStore.modsDir, id);
+	f = fopen(path, "rb");
+	if (f == NULL)
+		return JER_MODSTORE_KIND_NONE;
+	fclose(f);
+
+#if defined(_WIN32)
+	snprintf(path, sizeof(path), "%s/%s/%s.dll", gStore.modsDir, id, id);
+#else
+	snprintf(path, sizeof(path), "%s/%s/%s.so", gStore.modsDir, id, id);
+#endif
+	f = fopen(path, "rb");
+	if (f != NULL)
+	{
+		fclose(f);
+		return JER_MODSTORE_KIND_LOADABLE;
+	}
+
+	if (StoreIsDataPack(id))
+		return JER_MODSTORE_KIND_LOADABLE;
+
+	/* No binary and no data pack: source that has to be built - linked into the
+	 * exe, or a DLL addon shipped without its DLL. Its record's `runtime = "dll"`
+	 * does not change that: the loader needs the file, not the promise of one. */
+	(void)rec;
+	return JER_MODSTORE_KIND_BUILTIN;
+}
+
 void jer_modstore_frontend_tick(int onMainMenu)
 {
 	int reopen;
 
 	StoreJobPoll();
+
+	/* a server's "you need these mods" offer (jer_joinmods.c): it only ever has
+	 * work after mp passed one on, so an ordinary frame costs a branch */
+	jer_joinmods_tick();
 
 	/* the registry is cleared by every module reload, so this is not a one-off */
 	StoreEnsureMenus();
@@ -3671,7 +3762,9 @@ void jer_modstore_frontend_tick(int onMainMenu)
 		gModsReopen = 0;
 		StoreEnsureMenus();
 
-		idx = jer_frontend_find("jericho.mods");
+		/* re-open the table the player was editing, not the hub: toggling a mod
+		 * from the installed list must land them back on that list */
+		idx = jer_frontend_find("jericho.mods.installed");
 		if (idx >= 0)
 		{
 			gModsReopen = 0;
@@ -3729,7 +3822,8 @@ void jer_modstore_frontend_tick(int onMainMenu)
 			{
 				StoreBuildUpdateQuestion(n);
 				jer_log("[modstore] startup: %d mod update(s) available\n", n);
-				jer_prompt_begin(gPromptText, StoreUpdateAllYes);
+				jer_prompt_begin3(gPromptText, NULL, NULL, "Don't ask again",
+					StoreUpdateAllYes, NULL, StoreUpdateNeverAsk);
 			}
 		}
 	}

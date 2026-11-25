@@ -85,6 +85,15 @@ void jer_screen_tick(void);
  * and safe to apply unconditionally. */
 int  jer_screen_remap_x(int x);
 
+/* Host-side (engine): the framebuffer x of the screen's visible LEFT and RIGHT
+ * edges, for 2D HUD drawn against the screen's sides. 0 and 320 at 4:3; wider
+ * than 320 under widescreen (16:9 is about -53 and 373), where the 2D framebuffer
+ * is drawn at its own aspect and the extra width sits either side. It is the
+ * mapped viewport DisplayOverlays aligns the damage bar and the map to
+ * (overlay.c, [game] widescreenOverlays), so a HUD anchored here lines up with
+ * them. Either pointer may be NULL. */
+void jer_screen_edges(int* left, int* right);
+
 /* Host-side (engine): non-zero while a screen should be drawn. */
 int  jer_screen_active(void);
 

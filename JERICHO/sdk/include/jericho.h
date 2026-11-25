@@ -491,6 +491,14 @@ void jer_disable_all_modules(void);
 /* Non-zero when every module was force-disabled via jer_disable_all_modules. */
 int jer_modules_disabled(void);
 
+/* Non-zero when module `id` is ON THIS BOOT: the decision after modlist.ini, the
+ * mod.toml default, -mod / -nomod and -nomods, for a module that passed
+ * validation and (when it has code) whose entry ran. jer_module_list reports what
+ * modlist.ini SAYS - the Mods menu's state - so anything that must describe what
+ * is actually running (a multiplayer manifest, a row that calls a module) asks
+ * this instead. */
+int jer_module_running(const char* id);
+
 /*
  * Force ONE module on (or off) for this boot, before jer_init: a hard override
  * that beats both modlist.ini and the module's own `default-enabled`. Used by the

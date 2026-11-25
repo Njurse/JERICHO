@@ -12,21 +12,24 @@ Repo-wide maintenance tools. Mod-specific tooling lives next to its mod
 | `check_release_mods.py` | Assert `JERICHO_RELEASE_MODS` has manifests and that every compiled-in release mod is in the generated Release registry; runtime DLL addons are manifest-only, so they must not be in the table. A release cannot silently omit a named mod |
 | `check_mod_api.py` | Keep runtime DLL addons on the host API: refuse engine headers/globals in `runtime = "dll"` modules; `--gap` prints the direct-engine use of compiled-in modules |
 | `check_host_api_abi.py` | Lock `jer_host_api.h` to append-only growth: a field or function may not be removed, renamed, reordered or retyped; new entries must be appended |
-| `update_mod_submodules.sh` | Advance the `mp`, `carhacks` and `crumple` submodule pins to their repositories' `main`, printing the gitlink diff to review and commit |
+| `fetch_mods.py` | Clone the mods listed in `JERICHO/MODS/mods.json` (each its own repo; no submodules). `--release`, `--status`, `--update`, `--advance`, `--pin`; never touches a dirty checkout |
+| `ci/no_cursor_attribution.sh` | Fail if a commit's author, committer, trailers or message credit a banned coding agent. Used by `.github/workflows/no-cursor-attribution.yml` and `.githooks/` |
 
-## Updating the mod source pins
+## Fetching mods and updating their pins
 
-`JERICHO/MODS/mp`, `carhacks` and `crumple` are git submodules. Their sources
-change in their own repositories; JERICHO keeps a pinned commit so a build and a
-release are reproducible. After a mod repo changes:
+Every mod under `JERICHO/MODS` that has its own repository is listed in
+`JERICHO/MODS/mods.json` (repo, pinned `ref`, `branch`) and ignored by core's
+`.gitignore`. Core uses no submodules for mods.
 
 ```sh
-sh tools/update_mod_submodules.sh
+python tools/fetch_mods.py              # clone what is missing, at the pins
+python tools/fetch_mods.py --advance    # clean checkouts -> their branch tips
+python tools/fetch_mods.py --pin        # record each checkout's HEAD in mods.json
 ```
 
-Review the printed status and submodule log, then stage the three paths and
-commit. The helper never commits: a pin is a reviewed change. Pushing a mod repo
-on its own does not alter what JERICHO builds.
+Review the `mods.json` diff and commit it: a pin is a reviewed change. Pushing a
+mod repo on its own does not alter what JERICHO builds. A checkout with modified
+tracked files is skipped, never reset.
 
 ## Checking the documentation
 
@@ -48,8 +51,8 @@ the roster) parting company with it; and a doc that nothing links to. So it chec
   in the repo and mean nothing;
 - the counted claims agree with the code they describe: `MAX_CAR_RESIDENT_MODELS` in
   `dr2limits.h` vs the number `PROFILES.md` states (and that `AI.md` does not restate it),
-  the guest-city ceiling derived from `cars.h` vs `PROFILES.md`, and the length of the
-  profile manifest `gVehRows[]` vs the count the docs advertise.
+  the guest-city ceiling derived from `cars.h` vs `PROFILES.md`, and the number of
+  vehicle-profile JSON files vs the count the docs advertise.
 
 **Only tracked files are read.** That is deliberate: `bin/Release` and `bin/Release_dev`
 carry untracked mirror copies of the docs from the last build, so anything walking the
@@ -111,7 +114,7 @@ name, which is what the rolling `alpha` needs on every refresh.
 ### What it cannot do
 
 Only the **Windows x64** half of a release. There is no Linux toolchain
-here, so `REDRIVER2_*_linux-x64.tar.gz` can only come from CI. The two paths
+here, so `JERICHO_Release_linux-x64.tar.gz` can only come from CI. The two paths
 are complementary — a release simply carries whatever it got, because the
 `publish` job runs when *either* platform built.
 
@@ -138,36 +141,31 @@ permanent release for any `v*` tag.
 
 Three things about it are deliberate, and each is easy to undo by accident.
 
-### Submodules are an explicit allow-list, not `--recursive`
+### Mods come from a manifest, not submodules
 
-`actions/checkout` runs with `submodules: false`, and a following step clones
-each path the build actually needs:
+`actions/checkout` runs with `submodules: false`. A following step fetches the
+engine's one submodule and then the release mods from `JERICHO/MODS/mods.json`:
 
 ```bash
-for path in src_rebuild/PsyCross JERICHO/MODS/mp JERICHO/MODS/carhacks JERICHO/MODS/crumple; do
-  git submodule update --init --depth=1 "$path"
-done
+git submodule update --init --depth=1 src_rebuild/PsyCross
+python tools/fetch_mods.py --release --depth 1
 ```
 
-`submodules: recursive` walks *every* entry in `.gitmodules`, and a single
-unfetchable one fails the whole checkout before any build step runs. That is
-how both platforms used to fail at step 2, with
+`submodules: recursive` used to walk every `.gitmodules` entry, and a single
+unfetchable one failed the whole checkout before any build step ran. That is how
+both platforms once failed at step 2 with
 `fatal: repository 'https://github.com/Njurse/gailredriver2.git/' not found`.
-`gaildrv2` is no longer a submodule; it is hibernated at
-https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2. `JERICHO/MODS/d1cars` is fetched as a release mod;
-its folder is still dropped from the mirror by `JER_MIRROR_EXCLUDE` (so its Driver 1
-data never ships) and the packaging step pulls its bake tools. The rule to keep:
-adding a submodule to `.gitmodules` must not be able to break the build by itself.
-Add a path to that loop only when a build genuinely needs it.
+`gaildrv2` is hibernated at https://github.com/Njurse/JERICHO-Mod-GAIL-DRV2.
+`JERICHO/MODS/bake` is fetched as a release mod; its folder is still dropped from
+the mirror by `JER_MIRROR_EXCLUDE` (so its Driver 1 data never ships) and the
+packaging step pulls its bake tools. The rule to keep: listing a mod in
+`mods.json` must not be able to break the build by itself. Mark it `release` only
+when a release build genuinely needs it.
 
-The four public mod source repos (`JERICHO/MODS/mp`, `carhacks`, `crumple`,
-`d1cars`) are release mods and are fetched by every build. Every build and release
-advances each to the latest commit of its tracking branch (`.gitmodules`
-`branch =`; d1cars tracks `betamiami`, the rest `main`), so a mod fix pushed after
-the last gitlink bump still reaches the next download without a JERICHO commit.
-`tools/update_mod_submodules.sh` makes the same advance in the working tree and
-prints the pins for review/commit; pushing a mod repo alone does not change the
-recorded pin, but it DOES change what the next release builds.
+The release mods are built at the commit `mods.json` pins;
+`tools/publish_release.ps1` advances each to the tip of its manifest `branch`
+(bake tracks `betamiami`, the rest `main`) before it builds. `fetch_mods.py --pin`
+records the new commits for review; commit `mods.json` to change what CI ships.
 
 ### Each configuration links twice
 
@@ -208,27 +206,31 @@ behind.
 
 ## The release profile
 
-A release **runs**, and **contains**, exactly three modules: `carhacks`,
-`crumple` and `mp`. That is a **build** property, not just an activation one —
+A release **contains** exactly five modules: `carhacks`, `crumple`, `mp` and
+`pedhacks` compiled in, and `bake` as a runtime addon (`bake.dll`/`bake.so`). That is
+a **build** property, not just an activation one —
 `JERICHO_RELEASE_MODS` (near the top of `src_rebuild/premake5.lua`) names the set,
 and the Release configuration applies it in three places so they cannot drift:
 
 - the generated registry (`JERICHO/gen/jer_registry.c`) carries a second table
-  under `#ifdef JERICHO_RELEASE_MODS`, so a release registers only the three;
+  under `#ifdef JERICHO_RELEASE_MODS`, so a release registers only the four
+  compiled-in ones (bake is a runtime addon, so it has no registry entry);
 - the link set is per configuration — Dev/`Release_dev` link every module,
-  `Release` links just the three;
+  `Release` links just those four;
 - a Release-only mirror pass drops the other `JERICHO/MODS/<id>` folders from
   `bin/Release`, and a Release-only post-build DELETES the mirrored
   `CONFIG/modlist.ini`, so a release cannot replace a player's own module toggles;
   with no modlist each module runs from its `mod.toml` `default-enabled`, which the
-  generated registry bakes in (carhacks and mp on, crumple off).
+  generated registry bakes in (carhacks, mp and pedhacks on, crumple off; bake's
+  manifest says off).
 
-`gaildrv2` and `d1cars` are additionally dropped from every mirror
+`gaildrv2` and `bake` are additionally dropped from every mirror
 (`JER_MIRROR_EXCLUDE` in `src_rebuild/premake5.lua`). `gaildrv2` is not a
 submodule of this tree; the exclude key stays so a local checkout at that path
-is not mirrored. `d1cars` is fetched as a release mod but its folder is
-dropped and only `mod.toml` is restored, so a released tree reports the module
-without carrying its Driver 1 data. The baked Driver 1 car data lives in
+is not mirrored. `bake` is fetched as a release mod, but its folder is dropped
+and the mirror restores only its `mod.toml`; the addon build and packaging then
+add `bake.dll`/`bake.so` and the bake tools, so a released tree carries the
+module without any Driver 1 data. The baked Driver 1 car data lives in
 `JERICHO/MODS/carhacks/D1CARS` (carhacks owns it); a generated folder is stripped
 from every mirror too (`JER_MIRROR_STRIP`), because it is derived from the player's
 own copyrighted Driver 1 files. `MIAMI.RAW` is written there by the bake from
@@ -236,11 +238,11 @@ the PNGs under `assets/portraits`, and it is stripped with the rest of the folde
 
 A **dev** build is unchanged: it compiles and mirrors every installed module, and
 the repo's own `JERICHO/CONFIG/modlist.ini` pins every installed module
-explicitly — the three shipped ones on, the rest off, so nothing runs
+explicitly — the shipped ones (and crumple) on, the rest off, so nothing runs
 unannounced (absence used to mean "silently on"). Local development is free to
 differ; the frontend's Options → JERICHO rewrites the file on toggle.
 
-So a locally built `Release` and a CI `Release` agree (three modules; `gaildrv2`
+So a locally built `Release` and a CI `Release` agree (five modules; `gaildrv2`
 is not in this tree); it is `Release_dev` that differs, carrying every module
 that is present.
 
@@ -270,8 +272,8 @@ stamped into the generated project. Re-run premake after a commit or tag — a
 rebuild alone keeps the previous string.
 
 An exact `v*` tag on HEAD wins: premake strips the leading `v`, so the binary
-and the boot log say `0.13.11`, not `v0.13.11`. Off the tag, the build reports
-`JERICHO_BASE_VERSION` in `premake5.lua` (`0.13.11`) — this line — not `0.13.10`
+and the boot log say `0.14.0`, not `v0.14.0`. Off the tag, the build reports
+`JERICHO_BASE_VERSION` in `premake5.lua` (`0.14.0`) — this line — not `0.13.11`
 from the previous release. Release tags are spelled `v0.9.0` because the
 workflow triggers on `v*` — the repo's older REDRIVER2 tags carry no prefix
 at all.
