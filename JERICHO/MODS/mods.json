@@ -15,7 +15,7 @@
       "name": "mp",
       "path": "JERICHO/MODS/mp",
       "repo": "https://github.com/Njurse/JERICHO-Mod-MP.git",
-      "ref": "56d675373684625a2787a965e3bed47f6e603e85",
+      "ref": "42b8df4a1243a3da1bcdefd38a2252c76e8cc514",
       "branch": "jer/cnr-carselect",
       "required": true,
       "release": true
@@ -24,7 +24,7 @@
       "name": "carhacks",
       "path": "JERICHO/MODS/carhacks",
       "repo": "https://github.com/Njurse/JERICHO-Mod-carhacks.git",
-      "ref": "14528f8350acbc01560be2f37d12677df4858c6c",
+      "ref": "18393f35c2e0e1f32df3d01c0a4fc3b4395a6adc",
       "branch": "jer/cnr-role-cars",
       "required": true,
       "release": true
@@ -33,7 +33,7 @@
       "name": "crumple",
       "path": "JERICHO/MODS/crumple",
       "repo": "https://github.com/Njurse/Jericho-Mod-CRUMPLE.git",
-      "ref": "8a39cd2a83d7f59358362465168c04df019108de",
+      "ref": "84db59b63138ed982df3e2c45da3a4f5febcfc0d",
       "branch": "main",
       "required": true,
       "release": true
@@ -71,7 +71,7 @@
       "name": "civviecops",
       "path": "JERICHO/MODS/civviecops",
       "repo": "https://github.com/Njurse/JERICHO-Mod-CivvieCops.git",
-      "ref": "9994b635dc9b71b10af372fbad8fe7c30c8a12c2",
+      "ref": "5cf5ac64789ffa1c0eaf9a32f1e3078e2b3712d0",
       "branch": "main",
       "required": false,
       "release": false
@@ -80,7 +80,7 @@
       "name": "democars",
       "path": "JERICHO/MODS/democars",
       "repo": "https://github.com/Njurse/JERICHO-Mod-DemoCars.git",
-      "ref": "8423e893f8738205c3821fe8b2303c07c58cfbda",
+      "ref": "8719701ff8ca76c4b2fdb2ae67232dac5fdef8dc",
       "branch": "main",
       "required": false,
       "release": false
