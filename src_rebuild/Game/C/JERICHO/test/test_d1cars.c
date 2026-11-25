@@ -31,7 +31,7 @@ static int gFails, gChecks;
 #define CHECK(cond) do { gChecks++; if (!(cond)) { gFails++; \
 	printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
 
-/* ---- the three runtime calls jer_d1cars.c makes ---- */
+/* ---- the runtime calls jer_d1cars.c makes ---- */
 static char gConfigPath[1024];
 
 void jer_log(const char* fmt, ...)
@@ -53,6 +53,16 @@ const char* jer_config_get_str(const char* mod, const char* key, const char* def
 	if (strcmp(mod, "jericho") == 0 && strcmp(key, JER_D1CARS_PATH_KEY) == 0 && gConfigPath[0])
 		return gConfigPath;
 	return def;
+}
+
+/* the "found, not converted" console hint: nothing to show in a test. C linkage, as
+ * jer_console.h declares it, so the C++ build of this test links too. */
+#ifdef __cplusplus
+extern "C"
+#endif
+void jer_console_log(const char* fmt, ...)
+{
+	(void)fmt;
 }
 
 /* ---- sandbox ---- */
