@@ -4,6 +4,42 @@ User-facing changes per release. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
+## v0.14.1
+
+*Hotpatch, not released yet. Multiplayer stays mp 0.24.1, protocol 24: 0.14.0 and
+0.14.1 players can still join each other (unless the host turns Strict Version on).*
+
+### Multiplayer
+
+- **Type your player name.** The name field takes typed text (up to 31
+  characters), and the first run asks for a name before you go online. The same
+  field is on JMP Options; the per-letter pad editor is gone.
+- **`!vote <city> [mp 0|1]`** is the form the help, usage lines and docs show.
+  `!vote city <city>` still works.
+- **Each timed mode keeps its own round length**, in seconds.
+- **Allow cheats per mode.** The host decides whether the pause-menu cheats work
+  in a session (Take a Ride on, the contests off by default). Older peers keep the
+  mode's default.
+- **Distance-probe contacts push but no longer tag.**
+- **Super Turbo** has an adjustable boost factor and anti-wheelie forces, so a
+  launch no longer lifts the front wheels.
+- **Cops n Robbers:** the cop players' own sirens sound on every machine (the two
+  nearest), and the police radio reaches every cop the getaway has not escaped
+  and no longer stalls behind the speech queue.
+- **Host commands.** A game host and the dedicated server take `!map`, `!mode`,
+  `!endvote`, `!endround`, `!restart` and (game host) `!kick`, plus `!help`. A
+  vote's cooldown is 15 s.
+- **Other players' cars have engine sound.** A peer's car and mirrored traffic
+  now rev and idle like any other car near you. A car whose own engine bank did
+  not load plays the level's first car engine instead of nothing, and your own
+  engine follows a car change or reload.
+
+### Police radio
+
+- **A car pack's per-car police voice (lump 207) is used for that car** whatever
+  city it came from. A cop city whose lines could not load is tried again on the
+  next car load, and the log names the radio each cop slot speaks.
+
 ## Unreleased
 
 ### Imported cars: refused up front, banks found on their own, easy colour variants
