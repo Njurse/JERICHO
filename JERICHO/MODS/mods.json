@@ -15,8 +15,8 @@
       "name": "mp",
       "path": "JERICHO/MODS/mp",
       "repo": "https://github.com/Njurse/JERICHO-Mod-MP.git",
-      "ref": "7f8e0ef6e7ae0bf5387130fa69dc71d896cc28cc",
-      "branch": "main",
+      "ref": "56d675373684625a2787a965e3bed47f6e603e85",
+      "branch": "jer/cnr-carselect",
       "required": true,
       "release": true
     },
@@ -24,8 +24,8 @@
       "name": "carhacks",
       "path": "JERICHO/MODS/carhacks",
       "repo": "https://github.com/Njurse/JERICHO-Mod-carhacks.git",
-      "ref": "3f4e60b5607f81134a3943ed7c1c03a745a61b21",
-      "branch": "main",
+      "ref": "14528f8350acbc01560be2f37d12677df4858c6c",
+      "branch": "jer/cnr-role-cars",
       "required": true,
       "release": true
     },
@@ -33,7 +33,7 @@
       "name": "crumple",
       "path": "JERICHO/MODS/crumple",
       "repo": "https://github.com/Njurse/Jericho-Mod-CRUMPLE.git",
-      "ref": "4d30154d124634be62c5143889cadaa71e73175a",
+      "ref": "8a39cd2a83d7f59358362465168c04df019108de",
       "branch": "main",
       "required": true,
       "release": true
@@ -42,8 +42,8 @@
       "name": "bake",
       "path": "JERICHO/MODS/bake",
       "repo": "https://github.com/Njurse/JERICHO-D1.git",
-      "ref": "a68bc810f40cce6c06e93ec767168c069057e71c",
-      "branch": "betamiami",
+      "ref": "d07e05e53a540d87dd0c44fb018d6023b02f582c",
+      "branch": "0.14",
       "required": true,
       "release": true,
       "_note": "Driver 1 bake toolkit. Its folder is excluded from the build mirror (JER_MIRROR_EXCLUDE); CI packages only its tools."
