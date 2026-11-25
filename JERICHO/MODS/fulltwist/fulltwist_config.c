@@ -51,7 +51,7 @@ static void ftCfgSetBool(const char* mod, const char* key, int value)
 #define FT_DEF_WINDOW		180
 #define FT_DEF_TRIP			20
 #define FT_DEF_LAUNCH		40
-#define FT_DEF_ROLLOVER_DAMPING	50
+#define FT_DEF_ROLLOVER_DAMPING	70
 #define FT_DEF_SPIN_RETENTION	0
 #define FT_DEF_FREE_SPIN		1
 #define FT_DEF_ANGULAR_DAMPING	6
@@ -196,6 +196,12 @@ void ftLoadConfig(void)
 	if (c->preset == FT_PRESET_CINEMATIC || c->preset == FT_PRESET_ARCADE)
 		c->preset = FT_PRESET_FREE_PHYSICS;
 
+	/* Free Physics IS its numbers: re-apply them so a retune of the preset
+	 * (0.4.5: more rollover damping) reaches an ini saved by an older build.
+	 * Custom keeps every saved value. */
+	if (c->preset == FT_PRESET_FREE_PHYSICS)
+		ftApplyPreset();
+
 	ftClampConfig();
 }
 
@@ -220,11 +226,11 @@ void ftApplyPreset(void)
 		c->window = 180;
 		c->trip = 20;
 		c->launch = 40;
-		c->rolloverDamping = 50;
+		c->rolloverDamping = 70;	/* was 50: cartwheels ran on too long */
 		c->spinRetention = 0;
 		c->freeSpin = 1;
-		c->angularDamping = 16;
-		c->cancelExtraDamping = 100;
+		c->angularDamping = 24;	/* was 16 */
+		c->cancelExtraDamping = 60;	/* was 100: keep some of the stock ground-contact damping */
 		c->keepSpinAtRest = 1;
 		c->freeSpinWindow = 120;
 		c->hullContact = 0;

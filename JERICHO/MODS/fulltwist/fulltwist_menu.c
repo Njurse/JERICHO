@@ -840,15 +840,32 @@ static const JER_PAUSE_MENU ftPhysicsMenu =
 	"fulltwist.physics"
 };
 
+/* The expert pages, one level down: the main page keeps only what a player
+ * actually changes. */
+static const JER_PAUSE_MENU_ITEM ftAdvancedItems[] =
+{
+	{ "Physics",              NULL,              NULL, NULL, &ftPhysicsMenu, 0 },
+	{ "Tuning",               NULL,              NULL, NULL, &ftTuningMenu, 0 },
+	{ NULL, ftLabelScenery3d, ftToggleScenery3d, NULL, NULL, 0 },
+	{ "Debug",                NULL,              NULL, NULL, &ftDebugMenu, 0 },
+};
+
+static const JER_PAUSE_MENU ftAdvancedMenu =
+{
+	"Advanced",
+	ftAdvancedItems,
+	(int)(sizeof(ftAdvancedItems) / sizeof(ftAdvancedItems[0])),
+	"fulltwist.advanced"
+};
+
 static const JER_PAUSE_MENU_ITEM ftMainItems[] =
 {
 	{ NULL, ftLabelEnabled,   ftToggleEnabled,   NULL, NULL, 0 },
 	{ NULL, ftLabelPreset,    ftCyclePreset,     NULL, NULL, 0 },
-	{ "Physics",              NULL,              NULL, NULL, &ftPhysicsMenu, 0 },
-	{ "Tuning",               NULL,              NULL, NULL, &ftTuningMenu, 0 },
-	{ "Debug",                NULL,              NULL, NULL, &ftDebugMenu, 0 },
+	{ NULL, ftLabelIntensity, ftAdjIntensity,    NULL, NULL, 1 },
+	{ NULL, ftLabelRolloverDamping, ftAdjRolloverDamping, NULL, NULL, 1 },
 	{ NULL, ftLabelPlayerOnly, ftTogglePlayerOnly, NULL, NULL, 0 },
-	{ NULL, ftLabelScenery3d, ftToggleScenery3d, NULL, NULL, 0 },
+	{ "Advanced",             NULL,              NULL, NULL, &ftAdvancedMenu, 0 },
 	{ "Reset to Defaults",    NULL,              ftResetDefaults, NULL, NULL, 0 },
 };
 
