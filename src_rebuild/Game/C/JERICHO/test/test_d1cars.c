@@ -55,7 +55,11 @@ const char* jer_config_get_str(const char* mod, const char* key, const char* def
 	return def;
 }
 
-/* the "found, not converted" console hint: nothing to show in a test */
+/* the "found, not converted" console hint: nothing to show in a test. C linkage, as
+ * jer_console.h declares it, so the C++ build of this test links too. */
+#ifdef __cplusplus
+extern "C"
+#endif
 void jer_console_log(const char* fmt, ...)
 {
 	(void)fmt;
