@@ -24,7 +24,7 @@
       "name": "carhacks",
       "path": "JERICHO/MODS/carhacks",
       "repo": "https://github.com/Njurse/JERICHO-Mod-carhacks.git",
-      "ref": "18393f35c2e0e1f32df3d01c0a4fc3b4395a6adc",
+      "ref": "4a06002b0f6f03e1b498fe36d18598964f16419b",
       "branch": "jer/cnr-role-cars",
       "required": true,
       "release": true
