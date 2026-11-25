@@ -20,6 +20,7 @@ extern void SetupPedMotionData(LPPEDESTRIAN pPed); // 0x00069AB8
 extern void SetupPedestrian(LPPEDESTRIAN pedptr); // 0x00069B6C
 
 extern void StoreVertexLists(int entry); // 0x0006594C
+extern int vStored;	// JERICHO: 0 = take the Tanner rest snapshot on the next StoreVertexLists (InitTanner)
 
 extern void DrawCiv(LPPEDESTRIAN pPed); // 0x000670CC
 extern void SetSkelModelPointers(int type); // 0x00069AD8

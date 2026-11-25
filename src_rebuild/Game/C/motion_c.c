@@ -968,6 +968,13 @@ void StoreVertexLists(int entry)
 	MODEL* pModel;
 	int i,j,counter;
 
+	/* JERICHO: newRotateBones writes the posed vertices back into the model blobs,
+	 * and Skel[] stays bound to whatever ped drew last. So the Tanner list is only
+	 * valid when InitTanner takes it (fresh models, Tanner binding, vStored = 0);
+	 * a later JMPPED install must not re-take it from a posed/custom binding. */
+	if (vStored)
+		goto store_jericho;
+
 	// store Tanner vertices
 	counter = 0;
 	for (i = 0; i < 23; i++)
@@ -988,6 +995,12 @@ void StoreVertexLists(int entry)
 			continue;
 		}
 		
+		if (counter + pModel->num_vertices > (int)(sizeof(vTannerList) / sizeof(vTannerList[0])))
+		{
+			cTannerVNumbers[i] = -1;
+			continue;
+		}
+
 		// store start index
 		cTannerVNumbers[i] = counter;
 
@@ -1006,6 +1019,31 @@ void StoreVertexLists(int entry)
 		}
 	}
 
+store_jericho:
+	/* JERICHO: re-installing the same entry models after they have been drawn would
+	 * snapshot posed vertices (the exploded ped). Keep the first (rest) snapshot. */
+	{
+		static MODEL* snapped[JER_PED_MAX_ENTRIES][15];
+		MODEL* key[15];
+
+		if (!vStored)	/* new level (InitTanner): forget the last level's pointers */
+			memset(snapped, 0, sizeof(snapped));
+
+		for (i = 0; i < 6; i++)
+		{
+			key[i] = pmJerichoModels[entry][i];
+			key[6 + i] = pmJerichoLegModels[entry][i];
+		}
+		key[12] = pmJerichoHandModels[entry][0];
+		key[13] = pmJerichoHandModels[entry][1];
+		key[14] = pmJerichoHipsModels[entry];
+
+		if (vStored && key[0] != NULL && memcmp(snapped[entry], key, sizeof(key)) == 0)
+			return;
+
+		memcpy(snapped[entry], key, sizeof(key));
+	}
+
 	// Store Jericho vertices
 	counter = 0;
 	for (i = 0; i < 6; i++)
@@ -1013,6 +1051,12 @@ void StoreVertexLists(int entry)
 		pModel = pmJerichoModels[entry][i];
 
 		if (pModel == NULL)
+		{
+			cJerichoVNumbers[entry][i] = -1;
+			continue;
+		}
+
+		if (counter + pModel->num_vertices > (int)(sizeof(vJerichoList[0]) / sizeof(vJerichoList[0][0])))
 		{
 			cJerichoVNumbers[entry][i] = -1;
 			continue;
@@ -1042,20 +1086,31 @@ void StoreVertexLists(int entry)
 	 * the Jericho skeleton are not the static Tanner leg slots. */
 	{
 		static const int fallback[6] = { 11, 12, 7, 5, 6, 13 };
+		/* the Tanner bone each fallback model is bound to (SetSkelModelPointersForEntry) */
+		static const int fallbackBone[6] = { LKNEE, LFOOT, RTOE, RKNEE, RFOOT, LTOE };
 
 		counter = 0;
 
 		for (i = 0; i < 6; i++)
 		{
-			pModel = pmJerichoLegModels[entry][0] ? pmJerichoLegModels[entry][i] : pmTannerModels[fallback[i]];
+			/* per slot, the same choice SetSkelModelPointersForEntry binds; a Tanner
+			 * part comes from the rest list, not its (possibly posed) live blob */
+			pModel = pmJerichoLegModels[entry][i];
+			srcVerts = pModel ? GET_MODEL_DATA(SVECTOR, pModel, vertices) : NULL;
 
-			if (pModel == NULL)
+			if (pModel == NULL && cTannerVNumbers[fallbackBone[i]] != -1)
+			{
+				pModel = pmTannerModels[fallback[i]];
+				srcVerts = vTannerList + cTannerVNumbers[fallbackBone[i]];
+			}
+
+			if (pModel == NULL || srcVerts == NULL ||
+				counter + pModel->num_vertices > (int)(sizeof(vJerichoLegList[0]) / sizeof(vJerichoLegList[0][0])))
 			{
 				cJerichoLegVNumbers[entry][i] = -1;
 				continue;
 			}
 
-			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
 			cJerichoLegVNumbers[entry][i] = counter;
 			destVerts = &vJerichoLegList[entry][counter];
 
@@ -1097,15 +1152,24 @@ void StoreVertexLists(int entry)
 
 		for (i = 0; i < 2; i++)
 		{
-			pModel = pmJerichoHandModels[entry][i] ? pmJerichoHandModels[entry][i] : pmTannerModels[i == 0 ? 10 : 4];
+			int bone = (i == 0) ? LFINGERS : RFINGERS;
 
-			if (pModel == NULL)
+			pModel = pmJerichoHandModels[entry][i];
+			srcVerts = pModel ? GET_MODEL_DATA(SVECTOR, pModel, vertices) : NULL;
+
+			if (pModel == NULL && cTannerVNumbers[bone] != -1)
+			{
+				pModel = pmTannerModels[i == 0 ? 10 : 4];
+				srcVerts = vTannerList + cTannerVNumbers[bone];
+			}
+
+			if (pModel == NULL || srcVerts == NULL ||
+				counter + pModel->num_vertices > (int)(sizeof(vJerichoHandList[0]) / sizeof(vJerichoHandList[0][0])))
 			{
 				cJerichoHandVNumbers[entry][i] = -1;
 				continue;
 			}
 
-			srcVerts = GET_MODEL_DATA(SVECTOR, pModel, vertices);
 			cJerichoHandVNumbers[entry][i] = counter;
 			destVerts = &vJerichoHandList[entry][counter];
 
@@ -1656,20 +1720,23 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 
 	base = vJerichoList[entry];
 
+	/* JERICHO: -1 marks a slot StoreVertexLists did not fill; never index with it */
+#define JER_VERTS(list, idx) ((idx) != -1 ? (list) + (idx) : NULL)
+
 	switch (boneId)
 	{
 		case JOINT_1:
-			return base + cJerichoVNumbers[entry][0];
+			return JER_VERTS(base, cJerichoVNumbers[entry][0]);
 		case HEAD:
-			return base + cJerichoVNumbers[entry][1];
+			return JER_VERTS(base, cJerichoVNumbers[entry][1]);
 		case LELBOW:
-			return base + cJerichoVNumbers[entry][2];
+			return JER_VERTS(base, cJerichoVNumbers[entry][2]);
 		case LHAND:
-			return base + cJerichoVNumbers[entry][3];
+			return JER_VERTS(base, cJerichoVNumbers[entry][3]);
 		case RELBOW:
-			return base + cJerichoVNumbers[entry][4];
+			return JER_VERTS(base, cJerichoVNumbers[entry][4]);
 		case RHAND:
-			return base + cJerichoVNumbers[entry][5];
+			return JER_VERTS(base, cJerichoVNumbers[entry][5]);
 
 		case LHIP:
 			if (cJerichoHipsVNumber[entry] != -1)
@@ -1678,28 +1745,29 @@ SVECTOR* GetModelVertPtr(LPPEDESTRIAN pDrawingPed, int boneId, int modelType)
 				return vTannerList + cTannerVNumbers[LHIP];
 			return NULL;
 		case LKNEE:
-			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][0];
+			return JER_VERTS(vJerichoLegList[entry], cJerichoLegVNumbers[entry][0]);
 		case LFOOT:
-			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][1];
+			return JER_VERTS(vJerichoLegList[entry], cJerichoLegVNumbers[entry][1]);
 		case LTOE:	/* crossed like stock Tanner: LTOE draws FOOT_RIGHT */
-			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][5];
+			return JER_VERTS(vJerichoLegList[entry], cJerichoLegVNumbers[entry][5]);
 		case RHIP:
 			return NULL;
 		case RKNEE:
-			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][3];
+			return JER_VERTS(vJerichoLegList[entry], cJerichoLegVNumbers[entry][3]);
 		case RFOOT:
-			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][4];
+			return JER_VERTS(vJerichoLegList[entry], cJerichoLegVNumbers[entry][4]);
 		case RTOE:	/* crossed like stock Tanner: RTOE draws FOOT_LEFT */
-			return vJerichoLegList[entry] + cJerichoLegVNumbers[entry][2];
+			return JER_VERTS(vJerichoLegList[entry], cJerichoLegVNumbers[entry][2]);
 
 		case LFINGERS:
-			return vJerichoHandList[entry] + cJerichoHandVNumbers[entry][0];
+			return JER_VERTS(vJerichoHandList[entry], cJerichoHandVNumbers[entry][0]);
 		case RFINGERS:
-			return vJerichoHandList[entry] + cJerichoHandVNumbers[entry][1];
+			return JER_VERTS(vJerichoHandList[entry], cJerichoHandVNumbers[entry][1]);
 
 		default:
 			return NULL;
 	}
+#undef JER_VERTS
 }
 
 // [D] [T]
