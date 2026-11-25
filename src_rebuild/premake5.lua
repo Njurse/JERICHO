@@ -101,6 +101,8 @@ JERICHO_RELEASE_MODS = {
 	-- distributed through the official mod repo, not bundled with a release:
 	-- players who want it install it from Options -> JERICHO -> Mods -> Mod Repo.
 	-- Release_dev still compiles it in for development.
+	-- cainescrossfire is NOT here either: a separate project with its own repo
+	-- (JERICHO-Mod-CainesCrossfire), not ready for players. Dev builds only.
 }
 
 -- true when id is pre-included in a release build.

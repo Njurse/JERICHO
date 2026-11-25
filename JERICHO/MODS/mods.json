@@ -62,8 +62,8 @@
       "name": "cainescrossfire",
       "path": "JERICHO/MODS/cainescrossfire",
       "repo": "https://github.com/Njurse/JERICHO-Mod-CainesCrossfire.git",
-      "ref": "f2125ded1f006ee192c8f1334b2c5d16a73b604e",
-      "branch": "jer/standalone",
+      "ref": "01bdafc8664b6c9c33d9d655d3018e30dae5d7fd",
+      "branch": "main",
       "required": false,
       "release": false
     },
@@ -71,7 +71,7 @@
       "name": "civviecops",
       "path": "JERICHO/MODS/civviecops",
       "repo": "https://github.com/Njurse/JERICHO-Mod-CivvieCops.git",
-      "ref": "15049c51366defc41c7bccb4d2c285d6ba136263",
+      "ref": "9994b635dc9b71b10af372fbad8fe7c30c8a12c2",
       "branch": "main",
       "required": false,
       "release": false
@@ -80,7 +80,7 @@
       "name": "democars",
       "path": "JERICHO/MODS/democars",
       "repo": "https://github.com/Njurse/JERICHO-Mod-DemoCars.git",
-      "ref": "344414069b3aee8f3d43845516b9a02f1cb91539",
+      "ref": "8423e893f8738205c3821fe8b2303c07c58cfbda",
       "branch": "main",
       "required": false,
       "release": false
