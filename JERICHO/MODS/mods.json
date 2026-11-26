@@ -16,7 +16,7 @@
       "path": "JERICHO/MODS/mp",
       "repo": "https://github.com/Njurse/JERICHO-Mod-MP.git",
       "ref": "7603af899730a541daffa263fbfd8ed7bb081382",
-      "branch": "staging",
+      "branch": "jer/cnr-carselect",
       "required": true,
       "release": true
     },
