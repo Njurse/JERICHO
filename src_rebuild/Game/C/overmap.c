@@ -80,6 +80,14 @@ static int old_y_mod = 0;
 static int x_map = 0;
 static int y_map = 0;
 
+// JERICHO: the tile the 4x4 streaming window was last built around. The stock
+// streamer only shifts the window by one tile when the player crosses a half
+// tile, so a TELEPORT (a multiplayer spawn, respawn or warp; the level start
+// itself when mp places the car away from the mission start) left the window
+// showing the old place. A jump of more than one tile rebuilds it.
+static int jer_map_tile_x = 0;
+static int jer_map_tile_y = 0;
+
 static int map_x_offset = 0;
 static int map_z_offset = 0;
 int map_x_shift = 0;
@@ -971,6 +979,8 @@ void InitOverheadMap(void)
 
 	old_x_mod = x_map & 0x1f;
 	old_y_mod = y_map & 0x1f;
+	jer_map_tile_x = x_map >> 5;	// JERICHO: see jer_map_tile_x
+	jer_map_tile_y = y_map >> 5;
 }
 
 
@@ -1321,6 +1331,34 @@ void DrawOverheadMap(void)
 	x_mod = x_map & 31;
 	y_mod = y_map & 31;
 
+	// JERICHO: a teleport (more than a tile since the window was last moved)
+	// rebuilds the whole window around the new position, as InitOverheadMap does.
+	{
+		int dx = (x_map >> 5) - jer_map_tile_x;
+		int dy = (y_map >> 5) - jer_map_tile_y;
+
+		if (dx > 1 || dx < -1 || dy > 1 || dy < -1)
+		{
+			int c, d, tp = 0;
+
+			for (c = 0; c < 4; c++)
+			{
+				for (d = 0; d < 4; d++)
+				{
+					maptile[d][c] = tp;
+					LoadMapTile(tp, (x_map >> 5) + d, (y_map >> 5) + c);
+					tp++;
+				}
+			}
+
+			old_x_mod = x_mod;
+			old_y_mod = y_mod;
+		}
+
+		jer_map_tile_x = x_map >> 5;
+		jer_map_tile_y = y_map >> 5;
+	}
+
 	// next code loads map tiles depending on player position changes
 	
 	// X axis
@@ -1584,6 +1622,20 @@ void SetFullscreenMapMatrix(void)
 int FullscreenMapScale(void)
 {
 	return overlaidmaps[GameLevel].scale;
+}
+
+/* JERICHO-HOOK: a point on the fullscreen map's screen (sx, sz, in the 320x256 viewport) as
+ * a world position, however far the map has been scrolled. The inverse of
+ * WorldToFullscreenMap2 for the UNROTATED map (gUseRotatedMap == 0): the player's dot
+ * sits at (160 + map_x_offset, 128 + map_z_offset), the map is `scale` world units a
+ * pixel, and screen-down is -Z. Lets a module put a cursor anywhere on the whole map. */
+void FullscreenMapScreenToWorld(int sx, int sz, int* wx, int* wz)
+{
+	int scale = overlaidmaps[GameLevel].scale;
+	VECTOR* pos = (VECTOR*)player->pos;
+
+	*wx = pos->vx + (sx - 160 - map_x_offset) * scale;
+	*wz = pos->vz - (sz - 128 - map_z_offset) * scale;
 }
 
 void DrawFullscreenMap(void)

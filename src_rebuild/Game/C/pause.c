@@ -1114,6 +1114,8 @@ static MENU_HEADER gJerModuleHeaders[JER_PAUSE_MAX_MENUS];
 static MENU_ITEM gJerModulesItems[JER_PAUSE_MAX_MENUS + 1];	/* "Modules" container */
 static char gJerModulesText[JER_PAUSE_MAX_MENUS][JER_PAUSE_ITEM_TEXT];
 static MENU_HEADER gJerModulesHeader;				/* "Modules" container */
+static int gJerModulesRow[JER_PAUSE_MAX_MENUS];	/* top menu -> its row in the container, -1 = promoted */
+static int gJerModulesListed;				/* rows in the container */
 static MENU_ITEM gJerPauseRootItems[JER_PAUSE_ROOT_ITEMS];	/* root copy + Modules */
 static MENU_HEADER gJerPauseRoot;				/* dynamic root when modules exist */
 
@@ -1243,6 +1245,14 @@ static int JerPauseWriteAndDefer(const JER_PAUSE_MENU_ITEM* mi,
 
 	if (it == NULL)
 		return 0;
+
+	/* A HIDDEN ROW (jer_pause_menu.h): no static label and an empty dynamic one.
+	 * It was the last item written, so handing its slot back is exact. */
+	if (mi->label == NULL && mi->get_label != NULL && it->Text != NULL && it->Text[0] == '\0')
+	{
+		gJerBridgeCount--;
+		return 0;
+	}
 
 	if (mi->submenu != NULL && *deferred < JER_PAUSE_MAX_MENUS)
 	{
@@ -1396,6 +1406,11 @@ static int JerPauseBuildModuleMenus(void)
 	{
 		MENU_HEADER* h = JerPauseBuildMenuRec(jer_pause_menu_get(i), 0);
 
+		/* EVERY ROW HIDDEN: leave the page out rather than list an empty one
+		 * (sandbox outside Take a Ride). Its header is simply not used. */
+		if (h != NULL && h->MenuItems != NULL && h->MenuItems[0].Type == PAUSE_TYPE_ENDITEMS)
+			continue;
+
 		if (h != NULL)
 		{
 			gJerTopMenus[gJerTopCount] = jer_pause_menu_get(i);
@@ -1479,31 +1494,61 @@ static MENU_HEADER* JerPauseRootOr(MENU_HEADER* original)
 		gJerPauseRootItems[n++] = *src++;
 	}
 
-	/* "Modules" container: one SUBMENU entry per registered menu */
+	/* PROMOTED PAGES (jer_pause_menu_promote) go on the root itself, after
+	 * Continue and before JERICHO Addons */
+	for (i = 0; i < gJerTopCount && n < JER_PAUSE_ROOT_ITEMS - 3; i++)
+	{
+		if (!jer_pause_menu_is_promoted(gJerTopMenus[i]))
+			continue;
+
+		memset(&gJerPauseRootItems[n], 0, sizeof(MENU_ITEM));
+		gJerPauseRootItems[n].Text = gJerTopHeaders[i]->Title;
+		gJerPauseRootItems[n].Type = PAUSE_TYPE_SUBMENU;
+		gJerPauseRootItems[n].Justify = 2;
+		gJerPauseRootItems[n].ExitValue = MENU_QUIT_NONE;
+		gJerPauseRootItems[n].SubMenu = gJerTopHeaders[i];
+		n++;
+	}
+
+	/* "Modules" container: one SUBMENU entry per registered menu that was not
+	 * promoted. gJerModulesItems is indexed by top-menu number for the direct-open
+	 * walk, so a promoted page keeps its slot but is not listed (m counts rows). */
 	gJerModulesHeader.Title = "JERICHO Addons";
 	gJerModulesHeader.Bound.x = gJerModulesHeader.Bound.y = 0;
 	gJerModulesHeader.Bound.w = gJerModulesHeader.Bound.h = 0;
 	gJerModulesHeader.NumItems = 0;
 	gJerModulesHeader.MenuItems = gJerModulesItems;
 
-	for (i = 0; i < gJerTopCount; i++)
 	{
-		MENU_ITEM* it = &gJerModulesItems[i];
+		int m = 0;
 
-		memset(it, 0, sizeof(*it));
-		snprintf(gJerModulesText[i], JER_PAUSE_ITEM_TEXT, "%s", gJerTopHeaders[i]->Title);
-		it->Text = gJerModulesText[i];
-		it->Type = PAUSE_TYPE_SUBMENU;
-		it->Justify = 2;
-		it->ExitValue = MENU_QUIT_NONE;
-		it->SubMenu = gJerTopHeaders[i];
+		for (i = 0; i < gJerTopCount; i++)
+		{
+			MENU_ITEM* it = &gJerModulesItems[m];
+
+			gJerModulesRow[i] = -1;
+			if (jer_pause_menu_is_promoted(gJerTopMenus[i]))
+				continue;
+
+			memset(it, 0, sizeof(*it));
+			snprintf(gJerModulesText[m], JER_PAUSE_ITEM_TEXT, "%s", gJerTopHeaders[i]->Title);
+			it->Text = gJerModulesText[m];
+			it->Type = PAUSE_TYPE_SUBMENU;
+			it->Justify = 2;
+			it->ExitValue = MENU_QUIT_NONE;
+			it->SubMenu = gJerTopHeaders[i];
+			gJerModulesRow[i] = m;
+			m++;
+		}
+
+		memset(&gJerModulesItems[m], 0, sizeof(MENU_ITEM));
+		gJerModulesItems[m].Type = PAUSE_TYPE_ENDITEMS;
+		gJerModulesListed = m;
 	}
 
-	memset(&gJerModulesItems[gJerTopCount], 0, sizeof(MENU_ITEM));
-	gJerModulesItems[gJerTopCount].Type = PAUSE_TYPE_ENDITEMS;
-
-	/* the Modules entry inside the root copy (right after the first item) */
-	if (n < JER_PAUSE_ROOT_ITEMS - 2)
+	/* the Modules entry inside the root copy (after Continue and any promoted
+	 * page); left out when every page was promoted -- an empty submenu would wrap */
+	if (gJerModulesListed > 0 && n < JER_PAUSE_ROOT_ITEMS - 2)
 	{
 		memset(&gJerPauseRootItems[n], 0, sizeof(MENU_ITEM));
 		gJerPauseRootItems[n].Text = "JERICHO Addons";
@@ -1568,6 +1613,29 @@ static void JerPauseEnterRequestedPage(MENU_HEADER* root, PAUSEMODE mode)
 			break;
 	}
 
+	/* a PROMOTED page is a root row: root -> page */
+	if (k < gJerTopCount && gJerModulesRow[k] < 0)
+	{
+		for (a = 0; gJerPauseRootItems[a].Type != PAUSE_TYPE_ENDITEMS; a++)
+		{
+			if (gJerPauseRootItems[a].SubMenu == gJerTopHeaders[k])
+				break;
+		}
+
+		if (gJerPauseRootItems[a].Type == PAUSE_TYPE_ENDITEMS)
+		{
+			jer_log("[jericho] pause menu: no page '%s' to open - showing the normal pause\n", target);
+			return;
+		}
+
+		ActiveItem[0] = &gJerPauseRootItems[a];
+		VisibleMenu = 1;
+		VisibleMenus[1] = gJerTopHeaders[k];
+		SetupMenu(gJerTopHeaders[k], 0);
+		gJerPauseDirectLevel = 1;
+		return;
+	}
+
 	for (a = 0; gJerPauseRootItems[a].Type != PAUSE_TYPE_ENDITEMS; a++)
 	{
 		if (gJerPauseRootItems[a].SubMenu == &gJerModulesHeader)
@@ -1584,7 +1652,7 @@ static void JerPauseEnterRequestedPage(MENU_HEADER* root, PAUSEMODE mode)
 
 	VisibleMenu = 1;
 	VisibleMenus[1] = &gJerModulesHeader;
-	ActiveItem[1] = &gJerModulesItems[k];
+	ActiveItem[1] = &gJerModulesItems[gJerModulesRow[k]];
 	SetupMenu(&gJerModulesHeader, 1);		/* back = 1: the cursor sits on the page's row */
 
 	VisibleMenu = 2;

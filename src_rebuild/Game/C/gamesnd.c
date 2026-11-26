@@ -7,6 +7,7 @@
 #include "jer_events.h"	// JERICHO-HOOK: event argument structs
 #include "gamesnd.h"
 #include "jer_sound.h"
+#include "jer_net.h"		// JERICHO: jer_net_is_active - remote MP cars get engine noise
 #include "jer_music.h"
 
 #include "sound.h"
@@ -138,6 +139,7 @@ static int siren_noise_sample[MAX_SIREN_NOISES];	// packed CarHasSiren value; 0 
 static unsigned car_zero_siren_reported;	// one-shot log for a flagged car with no siren sample
 static unsigned imported_siren_reported;	// one-shot log for an imported slot using a siren
 static unsigned civilian_import_reported;	// one-shot log for a suppressed civilian-import siren
+static unsigned car_bank_fallback_reported;	// one-shot log for a slot whose engine block is not loaded
 static othercarsound car_noise[MAX_CAR_NOISES];
 
 /* JERICHO cross-city imports: the SOUND_BANK_CARS sample block each resident
@@ -482,73 +484,122 @@ static void LoadImportedCopPhrases(int city)
 		LevelNames[city], before, before + got - 1, how);
 }
 
-/* JERICHO: make sure the cop car in resident `slot` has its own city's radio
- * lines resident. A host-city car, a civilian, or a level that loaded no cop
- * speech of its own needs nothing. */
-// JERICHO: the voice city for the car in `slot`: the bank's per-car choice
-// (handling.policeVoice) when it made one, else the source-city rule. -1 = none.
-static int PoliceVoiceCityForSlot(int slot, int src)
+/* JERICHO: the voice city for the car in resident `slot`, or -1 for "the
+ * host's". *how says why: 1 = the bank's per-car choice (handling.policeVoice,
+ * LUMP_CAR_VOICE 207), 2 = the source-city rule (JerPoliceVoiceCity: a D2 city
+ * itself, a Driver 1 / bank city its own baked LUMP_POLICE_VOICES, else Driver 1
+ * Miami's), 0 = neither applies (the level's own car). Lump 207 wins whatever
+ * the slot's source city - the host's own city included - and whatever the
+ * police flag says. Never loads anything: CopPhraseCityForSlot asks it per line. */
+static int PoliceVoiceCityForSlot(int slot, int* how)
 {
-	int v = JerCarSlotPoliceVoice(slot);
+	int v, src;
 
-	if (v == JER_POLICE_VOICE_HOST)
-		return GameLevel;
+	if (how)
+		*how = 0;
 
-	if (v >= 0 && v < CITY_D2_COUNT)
-		return v;
+	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || residentCarModels[slot] < 0)
+		return -1;
+
+	v = JerCarSlotPoliceVoice(slot);
+
+	if (v == JER_POLICE_VOICE_HOST || (v >= 0 && v < CITY_D2_COUNT))
+	{
+		if (how)
+			*how = 1;
+
+		return v == JER_POLICE_VOICE_HOST ? GameLevel : v;
+	}
+
+	src = GetCarModelSourceCity(slot);
+
+	if (src < 0 || src == GameLevel)
+		return -1;
+
+	if (how)
+		*how = 2;
 
 	return JerPoliceVoiceCity(src);
 }
 
+/* One log line per slot per car (model + source + voice), so a playtest log
+ * names the radio each live cop slot speaks. Cleared by LoadLevelSFX. */
+static int cop_voice_logged[MAX_CAR_RESIDENT_MODELS];
+
+/* JERICHO: make sure the car in resident `slot` has its radio lines resident:
+ * the lump 207 city for ANY slot that names one (a cop pack's per-car voice,
+ * whatever JerCarSlotIsPolice's source rule says), else the source-city lines
+ * for a police car from another city. A city that failed to load (-2: bank or
+ * SPU room) is retried here, on the next car load, instead of never. */
 static void LoadCopPhrasesForSlot(int slot)
 {
-	int src, city;
+	int src, city, how, key, model;
+	const char* why;
 
 	if (slot < 0 || slot >= MAX_CAR_RESIDENT_MODELS || residentCarModels[slot] < 0)
 		return;
 
-	if (GameLevel < 0 || GameLevel >= CITY_D2_COUNT || cop_phrase_base[GameLevel] < 0)
+	if (!car_sound_ready)
 		return;
+
+	city = PoliceVoiceCityForSlot(slot, &how);
+
+	if (how == 0)
+		return;			/* the level's own car: the host's lines */
+
+	if (how == 2 && !JerCarSlotIsPolice(slot))
+		return;			/* a civilian from another city: no radio of its own */
+
+	if (city >= 0 && city < CITY_COUNT && city != GameLevel)
+	{
+		if (cop_phrase_base[city] == -2)
+			cop_phrase_base[city] = -1;
+
+		LoadImportedCopPhrases(city);
+	}
 
 	src = GetCarModelSourceCity(slot);
+	model = residentCarModels[slot];
+	key = ((model & 0xff) << 16) | (((src + 1) & 0xff) << 8) | ((city + 1) & 0xff);
 
-	if (src < 0 || src == GameLevel || !JerCarSlotIsPolice(slot))
+	if (cop_voice_logged[slot] == key)
 		return;
 
-	city = PoliceVoiceCityForSlot(slot, src);
+	cop_voice_logged[slot] = key;
+	why = (how == 1) ? "bank policeVoice (lump 207)" : "source-city rule";
 
-	if (city < 0)
+	if (city < 0 || city >= CITY_COUNT)
 	{
-		printInfo("gamesnd: slot %d (%s cop) has no baked police radio lines (own bank or Driver 1 Miami) - host city's lines\n",
-			slot, LevelNames[src] ? LevelNames[src] : "?");
+		printInfo("gamesnd: slot %d (%s model %d) police radio: no lines of its own (%s; no baked LUMP_POLICE_VOICES, own or Driver 1 Miami) - host city's lines\n",
+			slot, (src >= 0 && src < CITY_COUNT && LevelNames[src]) ? LevelNames[src] : "?", model, why);
 		return;
 	}
 
-	LoadImportedCopPhrases(city);
+	printInfo("gamesnd: slot %d (%s model %d) police radio: %s lines (%s)%s\n",
+		slot, (src >= 0 && src < CITY_COUNT && LevelNames[src]) ? LevelNames[src] : "host", model,
+		LevelNames[city] ? LevelNames[city] : "?", why,
+		cop_phrase_base[city] >= 0 ? "" : " - NOT resident, the host city's lines play");
 }
 
 /* The voice city whose lines the car in `slot` actually speaks: its own
- * (JerPoliceVoiceCity) when those are resident, else the host's; -1 when no
- * cop lines are loaded at all. */
+ * (PoliceVoiceCityForSlot) when those are resident, else the host's; -1 when no
+ * cop lines are loaded at all. A slot < 0 asks for the host's. */
 static int CopPhraseCityForSlot(int slot)
 {
-	if (!car_sound_ready || GameLevel < 0 || GameLevel >= CITY_D2_COUNT)
+	int city;
+
+	if (!car_sound_ready)
 		return -1;
 
-	if (slot >= 0 && slot < MAX_CAR_RESIDENT_MODELS && residentCarModels[slot] >= 0)
-	{
-		int src = GetCarModelSourceCity(slot);
+	city = PoliceVoiceCityForSlot(slot, NULL);
 
-		if (src >= 0 && src != GameLevel)
-		{
-			int city = PoliceVoiceCityForSlot(slot, src);
+	if (city >= 0 && city < CITY_COUNT && cop_phrase_base[city] >= 0)
+		return city;
 
-			if (city >= 0 && city < CITY_COUNT && cop_phrase_base[city] >= 0)
-				return city;
-		}
-	}
+	if (GameLevel >= 0 && GameLevel < CITY_COUNT && cop_phrase_base[GameLevel] >= 0)
+		return GameLevel;
 
-	return cop_phrase_base[GameLevel] >= 0 ? GameLevel : -1;
+	return -1;
 }
 
 /* Driver 2's own rule (CopSay): the stock chatter sets carry the heading
@@ -761,6 +812,29 @@ int GetCarBankSample(int slot)
 		bankStartSample = slot;
 	else
 		bankStartSample = slot - 1;
+
+	/* JERICHO: a slot whose own bank never loaded (bank or SPU room, or a hot
+	 * load that failed) falls to the stock formula above, and for a spare slot
+	 * that can name a block past the end of SOUND_BANK_CARS: zeroed samples,
+	 * which CompleteSoundSetup refuses (samplerate 0), so the car is silent.
+	 * Play the level's first car block instead - another car's engine beats
+	 * none. Blocks are 3 samples (engine, idle, horn). */
+	if (car_sound_ready && slot != SPECIAL_CAR_SLOT)
+	{
+		int blocks = GetSoundBankSampleCount(SOUND_BANK_CARS) / 3;
+
+		if (blocks > 0 && (bankStartSample < 0 || bankStartSample >= blocks))
+		{
+			if (slot >= 0 && slot < 32 && !(car_bank_fallback_reported & (1u << slot)))
+			{
+				car_bank_fallback_reported |= 1u << slot;
+				printWarning("gamesnd: slot %d has no car sound block of its own (block %d, bank holds %d) - using block 0\n",
+					slot, bankStartSample, blocks);
+			}
+
+			bankStartSample = 0;
+		}
+	}
 
 	return bankStartSample;
 }
@@ -1002,6 +1076,33 @@ static void RestartPlayerCarSoundsForRebuild(void)
 	}
 }
 
+/* JERICHO: a bank that lands in `slot` while a local player already drives the
+ * car in it (a hot load or a car change mid-level). The player's engine/idle
+ * channels were started from the slot's old block, or from the fallback when it
+ * had none, so start them again from the new one. A rebuild restarts every
+ * player itself (RestartPlayerCarSoundsForRebuild). */
+static void RestartPlayerCarSoundsForSlot(int slot)
+{
+	int i;
+
+	if (car_sound_rebuilding)
+		return;
+
+	for (i = 0; i < NumPlayers; i++)
+	{
+		PLAYER* p = &player[i];
+		int carId = p->playerCarId;
+
+		if (p->playerType != PLAYER_TYPE_CAR || carId < 0 || carId >= MAX_CARS)
+			continue;
+
+		if (car_data[carId].ap.model != slot)
+			continue;
+
+		StartPlayerCarSounds(i, slot, (VECTOR*)car_data[carId].hd.where.t);
+	}
+}
+
 /* A bank rebuild can move every appended block, so an AI siren entry that
  * survives it would point at whatever now occupies the old SPU address. Free
  * them all; DoDopplerSFX() rebuilds the ones whose car still qualifies. */
@@ -1193,6 +1294,7 @@ void LoadCarSoundForSlot(int slot)
 	{
 		car_slot_appended[slot] = 1;
 		RestartSirenForSlot(slot);
+		RestartPlayerCarSoundsForSlot(slot);
 		return;
 	}
 
@@ -1254,6 +1356,7 @@ void LoadCarSoundForSlot(int slot)
 
 	RestartCarNoiseForSlot(slot);
 	RestartSirenForSlot(slot);
+	RestartPlayerCarSoundsForSlot(slot);
 }
 
 #if MAX_CAR_RESIDENT_MODELS > 5
@@ -1303,12 +1406,16 @@ void LoadLevelSFX(int missionNum)
 	car_zero_siren_reported = 0;
 	imported_siren_reported = 0;
 	civilian_import_reported = 0;
+	car_bank_fallback_reported = 0;
 
 	for (i = 0; i < CITY_D2_COUNT; i++)
 		cop_siren_sample[i] = -1;
 
 	for (i = 0; i < CITY_COUNT; i++)
 		cop_phrase_base[i] = -1;
+
+	for (i = 0; i < MAX_CAR_RESIDENT_MODELS; i++)
+		cop_voice_logged[i] = 0;
 
 	voices_checkpoint_count = -1;
 
@@ -2097,6 +2204,32 @@ void InitDopplerSFX(void)
 char force_idle[8] = { 0 };
 char force_siren[8] = { 0 };
 
+/* JERICHO: a CONTROL_TYPE_PLAYER car that no local player drives: in a
+ * multiplayer session that is a remote peer's car or a mirror of a peer's
+ * traffic, which the stock sound code never gave an engine (SoundTasks only
+ * runs channels for the NumPlayers local players). Outside a session the
+ * answer is always 0, so single player (and its cutscene/opponent cars that
+ * borrow CONTROL_TYPE_PLAYER) sound exactly as before. */
+static int IsRemoteSessionCar(int car)
+{
+	CAR_DATA* cp = &car_data[car];
+	int i;
+
+	if (!jer_net_is_active())
+		return 0;
+
+	if (cp->ap.carCos == NULL || cp->ap.model < 0 || cp->ap.model >= MAX_CAR_RESIDENT_MODELS)
+		return 0;
+
+	for (i = 0; i < NumPlayers; i++)
+	{
+		if (player[i].playerCarId == car)
+			return 0;
+	}
+
+	return 1;
+}
+
 // [D] [T]
 void DoDopplerSFX(void)
 {
@@ -2135,6 +2268,14 @@ void DoDopplerSFX(void)
 				car_ptr->controlType == CONTROL_TYPE_LEAD_AI ||
 				car_ptr->controlType == CONTROL_TYPE_CUTSCENE && SilenceThisCar(i) == 0)
 			{
+				dist = jsqrt(dx * dx + dz * dz);
+			}
+			else if (car_ptr->controlType == CONTROL_TYPE_PLAYER && IsRemoteSessionCar(i))
+			{
+				// JERICHO: another machine's car in a multiplayer session (a
+				// peer's player car or a mirrored traffic car). Same priority as
+				// a pursuer; never a siren here (the siren pass below only takes
+				// pursuers, cutscene cars and civilian music).
 				dist = jsqrt(dx * dx + dz * dz);
 			}
 			else

@@ -43,6 +43,10 @@ extern void DrawFullscreenMap();
  * lets modules convert cursor offsets back to world units */
 extern int FullscreenMapScale(void);
 
+/* JERICHO-HOOK: a fullscreen-map screen point (320x256 viewport) -> world X/Z, scroll
+ * included. Valid while the map is unrotated (gUseRotatedMap == 0). */
+extern void FullscreenMapScreenToWorld(int sx, int sz, int* wx, int* wz);
+
 extern u_int Long2DDistance(VECTOR *pPoint1, VECTOR *pPoint2); // 0x00016C0C
 
 #endif
