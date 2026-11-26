@@ -47,7 +47,7 @@ of the space is unclaimed for exactly that):
 | +20 .. +29 | `cainescrossfire` | — |
 | +30 .. +39 | `carhacks` | — |
 | +40 .. +49 | **core contracts** | `+40..+46` — the live car query, the per-car crush multiplier |
-| +50 .. +59 | `mp` | — |
+| +50 .. +59 | `mp` | `+50` — `JER_CARQ_UNLOAD`; `+51..+52` — the session query (`jer_session.h`) |
 | +60 .. +69 | `bake` | — |
 | +70 .. +79 | `Alleycat` | — |
 | +80 .. +89 | `antfarm` | — |
@@ -102,6 +102,7 @@ another mod's header and no mod links to another mod's symbols.
 | `jer_carquery.h` roles (`JER_CARQ_ROLES`, `JER_CARQ_ROLEPICK`) | `carhacks` (the join car select) | `mp` (the game mode) |
 | `jer_crumple.h` | `mp` | `crumple` |
 | `jer_ped_archive.h` | `mp` | `pedhacks` |
+| `jer_session.h` | `sandbox` | `mp` |
 
 A new contract belongs in `Game/C/JERICHO/include/` (already on every mod's
 include path), mirrored into `JERICHO/sdk/include/`, with its ids inside the core
