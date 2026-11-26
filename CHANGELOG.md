@@ -9,36 +9,54 @@ is in [changelog.txt](changelog.txt).
 *Hotpatch, not released yet. Multiplayer stays mp 0.24.1, protocol 24: 0.14.0 and
 0.14.1 players can still join each other (unless the host turns Strict Version on).*
 
-### Multiplayer
+### Multiplayer stability
 
-- **Type your player name.** The name field takes typed text (up to 31
-  characters), and the first run asks for a name before you go online. The same
-  field is on JMP Options; the per-letter pad editor is gone.
-- **`!vote <city> [mp 0|1]`** is the form the help, usage lines and docs show.
-  `!vote city <city>` still works.
-- **Each timed mode keeps its own round length**, in seconds.
-- **Allow cheats per mode.** The host decides whether the pause-menu cheats work
-  in a session (Take a Ride on, the contests off by default). Older peers keep the
-  mode's default.
-- **Distance-probe contacts push but no longer tag.**
-- **Super Turbo** has an adjustable boost factor and anti-wheelie forces, so a
-  launch no longer lifts the front wheels.
-- **Cops n Robbers:** the cop players' own sirens sound on every machine (the two
-  nearest), and the police radio reaches every cop the getaway has not escaped
-  and no longer stalls behind the speech queue.
-- **Host commands.** A game host and the dedicated server take `!map`, `!mode`,
-  `!endvote`, `!endround`, `!restart` and (game host) `!kick`, plus `!help`. A
-  vote's cooldown is 15 s.
 - **Other players' cars have engine sound.** A peer's car and mirrored traffic
   now rev and idle like any other car near you. A car whose own engine bank did
   not load plays the level's first car engine instead of nothing, and your own
   engine follows a car change or reload.
+- **A remote car that drew black** (the right model, but its textures never
+  finished) is asked for again and rebuilt once it can draw.
+- **Your last picked car is kept** across a map change, and saved as the default.
+- **Cops n Robbers:** the cop players' own sirens sound on every machine (the two
+  nearest), and those sirens are synced over the wire. The police radio reaches
+  every cop the getaway has not escaped and no longer stalls behind the speech
+  queue. A car pack's per-car police voice is used for that car, and a cop city
+  whose lines could not load is tried again on the next car load.
+- **Distance-probe contacts push but no longer tag.**
+- **Super Turbo** has an adjustable boost factor and anti-wheelie forces, so a
+  launch no longer lifts the front wheels.
+- **Each timed mode keeps its own round length**, in seconds. The host decides
+  whether the pause-menu cheats work in a session (Take a Ride on, the contests
+  off by default). Older peers keep the mode's default.
+- **Host commands.** A game host and the dedicated server take `!map`, `!mode`,
+  `!endvote`, `!endround`, `!restart` and (game host) `!kick`, plus `!help`. A
+  vote's cooldown is 15 s. The form the help shows is `!vote <city> [mp [0-3]]`;
+  `!vote city <city>` still works.
+- **Vegas Ghost Town and North Vegas (MP 2 and 3)** can be used when the mission
+  files have been built (`BAKE_D1_CARS` / `tools/make_vegas_arenas.py`). The host
+  list uses the real area names (Downtown, The Lakes, Ghost Town, North Vegas)
+  and marks a missing bake as not installed. A join hello can report that those
+  files are present (an optional trailing `JPAR` block; protocol 24 is unchanged).
+  The dedicated server only votes or rotates to MP 2/3 when every player has
+  reported the files. Older clients omit the field and are treated as not having
+  the maps. A machine missing the files falls back to MP 0 at launch.
+- **Spawns and marks stay inside the current arena**, so a Cops n Robbers getaway
+  is not placed in a different map.
+- **After a long teleport, the fullscreen map rebuilds its surroundings** so it
+  is not stuck on the old area.
+- **A second level load no longer crashes** from a stale character-hips pointer.
 
-### Police radio
+### Menus
 
-- **A car pack's per-car police voice (lump 207) is used for that car** whatever
-  city it came from. A cop city whose lines could not load is tried again on the
-  next car load, and the log names the radio each cop slot speaks.
+- **Type your player name.** The name field takes typed text (up to 31
+  characters), and the first run asks for a name before you go online. The same
+  field is on JMP Options; the per-letter pad editor is gone.
+- **Multiplayer is on the main pause menu**, above JERICHO Addons. Vehicle
+  Options comes first; Cheats, Settings and Admin are one level down (Admin is
+  hidden unless you are one).
+- **The Vegas map list** shows Downtown, The Lakes, Ghost Town and North Vegas,
+  with "(not installed)" when MP 2 or 3 have not been baked.
 
 ## Unreleased
 
