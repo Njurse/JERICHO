@@ -2232,6 +2232,11 @@ void JerPedImportReset(void)
 
 	for (i = 0; i < JER_PED_HAND_MODELS; i++)
 		pmJerichoHandModels[0][i] = NULL;
+
+	/* entry 0's HIPS too: the v5 import points it into sJerPedMem, freed above.
+	 * Left set, the next level's InitTanner -> StoreVertexLists(0) reads the freed
+	 * block (the crash on the second level load, e.g. hosting a second lobby). */
+	pmJerichoHipsModels[0] = NULL;
 }
 
 
