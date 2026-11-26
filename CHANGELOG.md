@@ -23,7 +23,9 @@ is in [changelog.txt](changelog.txt).
   every cop the getaway has not escaped and no longer stalls behind the speech
   queue. A car pack's per-car police voice is used for that car, and a cop city
   whose lines could not load is tried again on the next car load.
-- **Distance-probe contacts push but no longer tag.**
+- **Distance-probe contacts push but no longer tag.** Car Bomb Tag and Fox n Hounds only transfer the bomb or fox role on a real collision, not a distance probe or a near miss.
+- **Between rounds, "Next round in N" is shown** in the centre of the screen, counting down the seconds left in the intermission.
+- **Opening multiplayer chat with T no longer kills the gamepad.** Typing in chat, or closing it with Enter, used to switch the pad to digital mode, so analogue steering stayed dead until Select+Start was toggled.
 - **Super Turbo** has an adjustable boost factor and anti-wheelie forces, so a
   launch no longer lifts the front wheels.
 - **Each timed mode keeps its own round length**, in seconds. The host decides
