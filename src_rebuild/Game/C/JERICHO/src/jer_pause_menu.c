@@ -106,6 +106,40 @@ const JER_PAUSE_MENU_ITEM* jer_pause_menu_extra_at(const char* target, int index
 	return NULL;
 }
 
+/* Pages put on the root pause menu (jer_pause_menu_promote). */
+#define JER_PAUSE_PROMOTE_MAX	4
+static char gPromoted[JER_PAUSE_PROMOTE_MAX][48];
+static int gPromotedCount;
+
+int jer_pause_menu_promote(const char* target)
+{
+	if (target == NULL || target[0] == '\0' || gPromotedCount >= JER_PAUSE_PROMOTE_MAX)
+	{
+		jer_log("[jericho] pause menus: can't put '%s' on the main pause menu (%d/%d used)\n",
+			target != NULL ? target : "?", gPromotedCount, JER_PAUSE_PROMOTE_MAX);
+		return 0;
+	}
+
+	snprintf(gPromoted[gPromotedCount++], sizeof(gPromoted[0]), "%s", target);
+	return 1;
+}
+
+int jer_pause_menu_is_promoted(const JER_PAUSE_MENU* menu)
+{
+	int i;
+
+	if (menu == NULL)
+		return 0;
+
+	for (i = 0; i < gPromotedCount; i++)
+	{
+		if ((menu->id != NULL && strcmp(menu->id, gPromoted[i]) == 0) ||
+		    (menu->title != NULL && strcmp(menu->title, gPromoted[i]) == 0))
+			return 1;
+	}
+	return 0;
+}
+
 void jer_pause_menu_register(const JER_PAUSE_MENU* menu)
 {
 	if (menu == NULL)
@@ -137,6 +171,7 @@ void jer_pause_menu_reset(void)
 	 * they are boot-time declarations, not session state. */
 	gAddCount = 0;
 	gAddItems = 0;
+	gPromotedCount = 0;
 }
 
 int jer_pause_menu_count(void)

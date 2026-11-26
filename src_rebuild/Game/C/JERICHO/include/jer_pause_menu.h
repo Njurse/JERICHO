@@ -129,6 +129,24 @@ int jer_pause_menu_add_items(const char* target, const JER_PAUSE_MENU_ITEM* item
  * host table (jer_host_api.h). */
 int jer_pause_menu_open(const char* target);
 
+/* PUT A PAGE ON THE MAIN PAUSE MENU (0.15).
+ *
+ * `target` is a registered page's id or title, as above. The page is listed on the
+ * root pause menu itself, after Continue and before "JERICHO Addons", instead of
+ * inside JERICHO Addons -- for the one page a player reaches for all the time
+ * (mp's Multiplayer page). Its submenus nest one level shallower as a result.
+ * Like the registrations it is cleared by jer_pause_menu_reset, so call it from
+ * the module entry beside jer_pause_menu_register. Returns 1 when recorded.
+ *
+ * HIDDEN ROWS: a row with no static label whose get_label writes an EMPTY string
+ * is left out of the menu. The labels are read each time the pause opens, so a
+ * row can come and go between pauses (mp hides its Admin row from non-admins).
+ * A page whose rows are ALL hidden is left out too (sandbox outside Take a Ride).
+ *
+ * Engine-side, like jer_pause_menu_open: for COMPILED-IN modules. */
+int jer_pause_menu_promote(const char* target);
+int jer_pause_menu_is_promoted(const JER_PAUSE_MENU* menu);
+
 /* Reading the contributions back. THE BRIDGE USES THESE when it builds a menu; they
  * are here (rather than engine-side) because the two copies of this header must be
  * identical, and a module has no less right to see what was contributed to it. */
