@@ -6,7 +6,7 @@ is in [changelog.txt](changelog.txt).
 
 ## v0.14.1
 
-*Hotpatch, not released yet. Multiplayer stays mp 0.24.1, protocol 24: 0.14.0 and
+*Released 2026-11-25. Multiplayer stays mp 0.24.1, protocol 24: 0.14.0 and
 0.14.1 players can still join each other (unless the host turns Strict Version on).*
 
 ### Multiplayer stability
@@ -57,8 +57,6 @@ is in [changelog.txt](changelog.txt).
   hidden unless you are one).
 - **The Vegas map list** shows Downtown, The Lakes, Ghost Town and North Vegas,
   with "(not installed)" when MP 2 or 3 have not been baked.
-
-## Unreleased
 
 ### Imported cars: refused up front, banks found on their own, easy colour variants
 
