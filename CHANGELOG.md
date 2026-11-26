@@ -1,10 +1,14 @@
 # JERICHO changelog
 
-User-facing changes per release. Engine/module internals are documented in
+User-facing changes per release. The first paragraph under each `## vX.Y.Z`
+heading is a short plain summary of every change in that release; the sections
+below it hold the details. Engine/module internals are documented in
 [HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md); the inherited REDRIVER2 history
 is in [changelog.txt](changelog.txt).
 
 ## v0.14.1
+
+0.14.1 tightens multiplayer and imported cars. Other players' cars have engine sound; Cops n Robbers sirens and police radio reach every cop; the bomb and fox roles transfer only on a real collision; between rounds the centre of the screen counts down "Next round in N"; opening chat with T no longer kills the gamepad; and Cops n Robbers shows the suspect's damage on the top-right Damage bar only, without a second percentage next to the clock. You can type your player name, Multiplayer is on the main pause menu, and Vegas Ghost Town and North Vegas (MP 2 and 3) can be used when they have been baked. Imported cars are turned away if they cannot get texture room, find their banks on their own, and keep their colours, wheels, damage and radio; world textures stay the level's after a car is let go; a bank can describe its police lights; Caine's Crossfire weapons sound like weapons and Fixer's lock tells you when to fire. Host commands, per-mode round times, kept car picks, arena-local spawns, and several crash and map fixes come with it.
 
 *Released 2026-11-25. Multiplayer stays mp 0.24.1, protocol 24: 0.14.0 and
 0.14.1 players can still join each other (unless the host turns Strict Version on).*
@@ -23,7 +27,10 @@ is in [changelog.txt](changelog.txt).
   every cop the getaway has not escaped and no longer stalls behind the speech
   queue. A car pack's per-car police voice is used for that car, and a cop city
   whose lines could not load is tried again on the next car load.
-- **Distance-probe contacts push but no longer tag.**
+- **Distance-probe contacts push but no longer tag.** Car Bomb Tag and Fox n Hounds only transfer the bomb or fox role on a real collision, not a distance probe or a near miss.
+- **Between rounds, "Next round in N" is shown** in the centre of the screen, counting down the seconds left in the intermission.
+- **Opening multiplayer chat with T no longer kills the gamepad.** Typing in chat, or closing it with Enter, used to switch the pad to digital mode, so analogue steering stayed dead until Select+Start was toggled.
+- **Cops n Robbers shows the suspect's damage on the top-right Damage bar only.** The extra "DMG n%" / "DAMAGE n%" percentages next to the clock were a second copy of the same meter.
 - **Super Turbo** has an adjustable boost factor and anti-wheelie forces, so a
   launch no longer lifts the front wheels.
 - **Each timed mode keeps its own round length**, in seconds. The host decides

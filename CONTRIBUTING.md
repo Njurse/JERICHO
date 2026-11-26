@@ -6,7 +6,9 @@
 - **Engine hooks and modules:** [src_rebuild/Game/C/JERICHO/docs/HOOKS.md](src_rebuild/Game/C/JERICHO/docs/HOOKS.md)
   and [events.md](src_rebuild/Game/C/JERICHO/docs/events.md).
 - **Before a pull request:** `python tools/doccheck.py` must pass, and record user-facing
-  changes in [CHANGELOG.md](CHANGELOG.md).
+  changes in [CHANGELOG.md](CHANGELOG.md). The first paragraph under that release's
+  `## vX.Y.Z` heading must be a short plain summary of every change in the release;
+  the sections below it hold the details.
 - **Git hooks (optional, local):** `git config core.hooksPath .githooks` so
   commits and pushes are checked for disallowed agent attribution.
 - Bugs and requests: https://github.com/Njurse/JERICHO/issues

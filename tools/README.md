@@ -288,6 +288,11 @@ git tag -a v0.9.0 -m "JERICHO 0.9.0"
 git push origin v0.9.0
 ```
 
+Before tagging, the `## vX.Y.Z` section in `CHANGELOG.md` must open with a short
+plain paragraph that summarises every change in that release. The sections below
+it hold the details. That first paragraph is what a player should be able to
+read to know what the release contains.
+
 Watch the tag land *after* the fixes it should contain: the tag triggers a
 permanent, public release, not a rebuild of a previous one.
 
