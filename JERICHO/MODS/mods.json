@@ -15,7 +15,7 @@
       "name": "mp",
       "path": "JERICHO/MODS/mp",
       "repo": "https://github.com/Njurse/JERICHO-Mod-MP.git",
-      "ref": "ccaf3db5dfe0e626bad26d6da79401009d1b9357",
+      "ref": "8a0ff56d4e61950e033d0066448dab9fe8b4f959",
       "branch": "staging",
       "required": true,
       "release": true
